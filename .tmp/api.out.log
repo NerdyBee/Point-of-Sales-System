@@ -1,0 +1,10 @@
+
+> pos-platform@0.1.0 dev:api
+> npm --workspace server/api run dev
+
+
+> @pos/api@0.1.0 dev
+> tsx watch src/index.ts
+
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000

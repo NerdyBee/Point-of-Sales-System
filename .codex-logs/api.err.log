@@ -1,0 +1,40 @@
+C:\Users\DELL\Dev\pos\server\api\src\modules\sales\sales.service.ts:2
+import { paymentMethodSchema, saleChargeControlSchema, saleLineSchema } from "@pos/validation";
+                              ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'saleChargeControlSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0
+C:\Users\DELL\Dev\pos\server\api\src\modules\sales\sales.service.ts:2
+import { paymentMethodSchema, saleChargeControlSchema, saleLineSchema } from "@pos/validation";
+                              ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'saleChargeControlSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0
+C:\Users\DELL\Dev\pos\server\api\src\modules\sales\sales.service.ts:2
+import { paymentMethodSchema, saleChargeControlSchema, saleLineSchema } from "@pos/validation";
+                              ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'saleChargeControlSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0
+C:\Users\DELL\Dev\pos\server\api\src\modules\sales\sales.service.ts:2
+import { paymentMethodSchema, saleChargeControlSchema, saleLineSchema } from "@pos/validation";
+                              ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'saleChargeControlSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0

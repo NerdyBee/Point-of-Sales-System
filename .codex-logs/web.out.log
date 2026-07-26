@@ -1,0 +1,41 @@
+
+> pos-platform@0.1.0 dev
+> npm --workspace apps/admin-web run dev
+
+
+> @pos/admin-web@0.1.0 dev
+> vite --host 127.0.0.1
+
+[2m7:05:19 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m Re-optimizing dependencies because vite config has changed
+
+  [32m[1mVITE[22m v8.1.5[39m  [2mready in [0m[1m298[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m5173[22m/[39m
+[2m7:53:11 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/sales/SalesHistoryView.tsx[22m
+[2m7:53:17 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/approvals/ApprovalsView.tsx, /src/modules/branches/BranchesView.tsx, /src/modules/customers/CustomersView.tsx, /src/modules/registers/RegisterView.tsx, /src/modules/catalog/CatalogView.tsx, /src/modules/kitchen/KitchenDisplay.tsx, /src/modules/reports/Dashboard.tsx, /src/modules/staff/StaffView.tsx, /src/modules/audit/AuditLogView.tsx, /src/modules/restaurant/FloorPlanView.tsx, /src/modules/inventory/InventoryView.tsx, /src/modules/sales/SalesTerminal.tsx and 2 more[22m
+[2m7:53:31 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/reports/Dashboard.tsx[22m
+[2m8:08:31 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/approvals/ApprovalsView.tsx, /src/modules/branches/BranchesView.tsx, /src/modules/customers/CustomersView.tsx, /src/modules/registers/RegisterView.tsx, /src/modules/catalog/CatalogView.tsx, /src/modules/kitchen/KitchenDisplay.tsx, /src/modules/reports/Dashboard.tsx, /src/modules/staff/StaffView.tsx, /src/modules/audit/AuditLogView.tsx, /src/modules/restaurant/FloorPlanView.tsx, /src/modules/inventory/InventoryView.tsx, /src/modules/sales/SalesTerminal.tsx and 2 more[22m
+[2m8:08:52 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/catalog/CatalogView.tsx[22m
+[2m8:08:52 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/sales/SalesTerminal.tsx[22m
+[2m8:08:52 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/shared/styles/global.css[22m
+[2m8:10:23 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/reports/Dashboard.tsx[22m
+[2m8:10:33 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/App.tsx[22m
+[2m8:17:59 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/sales/SalesTerminal.tsx[22m
+[2m8:18:04 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/sales/SalesTerminal.tsx[22m
+[2m8:18:05 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mdependency optimized: [33mreact-dom/server[32m[39m
+[2m8:18:23 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/sales/SalesTerminal.tsx[22m
+[2m8:18:32 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/sales/SalesTerminal.tsx[22m
+[2m8:18:41 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/sales/SalesHistoryView.tsx[22m
+[2m8:18:58 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/approvals/ApprovalsView.tsx, /src/modules/branches/BranchesView.tsx, /src/modules/customers/CustomersView.tsx, /src/modules/registers/RegisterView.tsx, /src/modules/catalog/CatalogView.tsx, /src/modules/kitchen/KitchenDisplay.tsx, /src/modules/reports/Dashboard.tsx, /src/modules/staff/StaffView.tsx, /src/modules/audit/AuditLogView.tsx, /src/modules/restaurant/FloorPlanView.tsx, /src/modules/inventory/InventoryView.tsx, /src/modules/sales/SalesTerminal.tsx and 3 more[22m
+[2m9:10:20 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/approvals/ApprovalsView.tsx, /src/modules/branches/BranchesView.tsx, /src/modules/customers/CustomersView.tsx, /src/modules/registers/RegisterView.tsx, /src/modules/catalog/CatalogView.tsx, /src/modules/kitchen/KitchenDisplay.tsx, /src/modules/reports/Dashboard.tsx, /src/modules/staff/StaffView.tsx, /src/modules/audit/AuditLogView.tsx, /src/modules/restaurant/FloorPlanView.tsx, /src/modules/inventory/InventoryView.tsx, /src/modules/sales/SalesTerminal.tsx and 3 more[22m
+[2m9:10:35 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/settings/SettingsView.tsx[22m
+[2m9:10:46 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/registers/RegisterView.tsx, /src/modules/sales/SalesTerminal.tsx[22m
+[2m9:10:57 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/sales/SalesTerminal.tsx[22m
+[2m9:11:10 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/sales/SalesTerminal.tsx[22m
+[2m9:11:21 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/sales/SalesTerminal.tsx[22m
+[2m9:11:29 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/shared/styles/global.css[22m
+[2m9:13:58 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/approvals/ApprovalsView.tsx, /src/modules/branches/BranchesView.tsx, /src/modules/customers/CustomersView.tsx, /src/modules/registers/RegisterView.tsx, /src/modules/catalog/CatalogView.tsx, /src/modules/kitchen/KitchenDisplay.tsx, /src/modules/reports/Dashboard.tsx, /src/modules/staff/StaffView.tsx, /src/modules/audit/AuditLogView.tsx, /src/modules/restaurant/FloorPlanView.tsx, /src/modules/inventory/InventoryView.tsx, /src/modules/sales/SalesTerminal.tsx and 3 more[22m
+[2m9:14:10 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/sales/SalesTerminal.tsx[22m
+[2m9:14:19 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/sales/SalesTerminal.tsx[22m
+[2m9:14:27 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/shared/styles/global.css[22m
+[2m9:55:41 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/modules/settings/SettingsView.tsx[22m
