@@ -63,6 +63,7 @@ export function StaffView() {
   const pendingInviteCount = useMemo(() => staff.filter((member) => member.inviteStatus === "pending").length, [staff]);
   const branchNameById = useMemo(() => new Map(branches.map((branch) => [branch.id, `${branch.name}, ${branch.city}`])), [branches]);
   const staffPage = usePaginatedRows(staff, 10);
+  const permissionPage = usePaginatedRows(detailStaff?.permissions ?? [], 12);
 
   async function loadStaff(nextBranchId = branchId) {
     setStatus("Syncing staff...");
@@ -332,14 +333,14 @@ export function StaffView() {
               <label>
                 Branch
                 <select value={form.branchId} onChange={(event) => updateForm("branchId", event.target.value)} required>
-                  <option value="">Branch</option>
+                  <option value="" disabled>Branch</option>
                   {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                 </select>
               </label>
               <label>
                 Role
                 <select value={form.role} onChange={(event) => updateForm("role", event.target.value as StaffRole)}>
-                  <option value="">Role</option>
+                  <option value="" disabled>Role</option>
                   {roles.map((role) => <option key={role.id} value={role.name}>{role.label}</option>)}
                 </select>
               </label>
@@ -415,10 +416,22 @@ export function StaffView() {
               </div>
             </div>
             <div className="permission-list">
-              {detailStaff.permissions.map((permission) => (
-                <span className="permission-chip" key={permission}>{permission}</span>
+              {permissionPage.pageRows.map((permission, index) => (
+                <span className="permission-chip" key={permission}>
+                  <span className="number-cell">{permissionPage.startIndex + index + 1}</span>{permission}
+                </span>
               ))}
             </div>
+            <TablePagination
+              page={permissionPage.page}
+              pageCount={permissionPage.pageCount}
+              pageSize={permissionPage.pageSize}
+              totalRows={permissionPage.totalRows}
+              startIndex={permissionPage.startIndex}
+              visibleCount={permissionPage.pageRows.length}
+              onPageChange={permissionPage.setPage}
+              onPageSizeChange={permissionPage.setPageSize}
+            />
             <div className="modal-footer-actions">
               {detailStaff.inviteStatus !== "accepted" ? (
                 <button className="secondary-button" onClick={() => resendInvite(detailStaff)}><MailPlus size={18} /> Resend invite</button>

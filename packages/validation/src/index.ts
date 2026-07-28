@@ -12,8 +12,14 @@ export const saleLineSchema = z.object({
   discount: z.number().min(0).default(0)
 });
 
-export const productCategorySchema = z.string().min(2).max(60);
+export const productCategorySchema = z.string().trim().min(2).max(60).transform((value) => value.replace(/\s+/g, " "));
 export const preparationStationSchema = z.enum(["Kitchen", "Bar", "Counter"]);
+
+export const profileUpdateSchema = z.object({
+  name: z.string().min(2).max(120),
+  email: z.string().email(),
+  phone: z.string().min(7).max(24)
+});
 
 export const productInputSchema = z.object({
   branchId: z.string().min(1),
@@ -69,7 +75,69 @@ export const supplierReceiptSchema = z.object({
   productId: z.string().min(1),
   quantity: z.number().int().positive(),
   reference: z.string().min(2).max(80),
-  note: z.string().min(3).max(160)
+  note: z.string().min(3).max(160),
+  purchaseOrderId: z.string().max(80).optional().or(z.literal(""))
+});
+
+export const purchaseOrderInputSchema = z.object({
+  branchId: z.string().min(1),
+  supplierId: z.string().min(1),
+  expectedAt: z.string().datetime().optional().or(z.literal("")),
+  note: z.string().max(240).optional().or(z.literal("")),
+  lines: z.array(z.object({
+    productId: z.string().min(1),
+    quantity: z.number().int().positive(),
+    unitCost: z.number().int().nonnegative().optional()
+  })).min(1)
+});
+
+export const purchaseOrderStatusSchema = z.object({
+  status: z.enum(["pending_approval", "approved", "cancelled"]),
+  note: z.string().min(3).max(160).optional()
+});
+
+export const supplierInvoiceInputSchema = z.object({
+  branchId: z.string().min(1),
+  supplierId: z.string().min(1),
+  purchaseOrderId: z.string().max(80).optional().or(z.literal("")),
+  invoiceNumber: z.string().min(2).max(80),
+  invoiceDate: z.string().datetime(),
+  dueDate: z.string().datetime().optional().or(z.literal("")),
+  amount: z.number().int().positive(),
+  note: z.string().max(240).optional().or(z.literal(""))
+});
+
+export const supplierInvoicePaymentSchema = z.object({
+  amount: z.number().int().positive(),
+  paymentMethod: z.enum(["cash", "card", "bank_transfer", "mobile_money", "customer_credit", "voucher"]),
+  reference: z.string().min(2).max(80),
+  paidAt: z.string().datetime(),
+  note: z.string().max(160).optional().or(z.literal(""))
+});
+
+export const supplierReturnInputSchema = z.object({
+  branchId: z.string().min(1),
+  supplierId: z.string().min(1),
+  productId: z.string().min(1),
+  supplierInvoiceId: z.string().max(80).optional().or(z.literal("")),
+  quantity: z.number().int().positive(),
+  unitCost: z.number().int().nonnegative().optional(),
+  reference: z.string().min(2).max(80),
+  reason: z.string().min(3).max(180),
+  returnedAt: z.string().datetime()
+});
+
+export const stockTransferInputSchema = z.object({
+  sourceBranchId: z.string().min(1),
+  destinationBranchId: z.string().min(1),
+  sourceProductId: z.string().min(1),
+  destinationProductId: z.string().min(1),
+  quantity: z.number().int().positive(),
+  reference: z.string().min(2).max(80),
+  note: z.string().min(3).max(180)
+}).refine((value) => value.sourceBranchId !== value.destinationBranchId, {
+  message: "Destination branch must be different",
+  path: ["destinationBranchId"]
 });
 
 export const tableStateSchema = z.enum(["available", "occupied", "reserved", "awaiting_payment", "delayed", "unavailable"]);
@@ -93,6 +161,11 @@ export const tableBillRequestSchema = z.object({
   note: z.string().min(3).max(160).optional()
 });
 
+export const tableTransferSchema = z.object({
+  targetTableId: z.string().min(1),
+  reason: z.string().min(3).max(160).optional()
+});
+
 export const tableStateUpdateSchema = z.object({
   state: tableStateSchema,
   reason: z.string().min(3).max(160).optional()
@@ -106,6 +179,10 @@ export const tableLayoutUpdateSchema = z.object({
   y: z.number().min(0).max(100)
 });
 
+export const tableCreateSchema = tableLayoutUpdateSchema.extend({
+  branchId: z.string().min(1)
+});
+
 export const tableReservationInputSchema = z.object({
   branchId: z.string().min(1),
   tableId: z.string().min(1),
@@ -117,10 +194,20 @@ export const tableReservationInputSchema = z.object({
   note: z.string().max(240).optional()
 });
 
+export const tableReservationStatusSchema = z.object({
+  status: z.enum(["seated", "cancelled", "no_show"]),
+  note: z.string().min(3).max(160).optional()
+});
+
 export const prepTicketStatusSchema = z.enum(["new", "accepted", "preparing", "ready", "served", "cancelled"]);
 
 export const prepTicketStatusUpdateSchema = z.object({
   status: prepTicketStatusSchema,
+  note: z.string().max(160).optional()
+});
+
+export const prepTicketPriorityUpdateSchema = z.object({
+  priority: z.enum(["normal", "rush"]),
   note: z.string().max(160).optional()
 });
 
@@ -182,9 +269,16 @@ export const staffRoleAssignmentSchema = z.object({
 
 export const authLoginSchema = z.object({
   tenantId: z.string().min(1),
-  email: z.string().email(),
+  identifier: z.string().min(1).max(160).optional(),
+  email: z.string().min(1).max(160).optional(),
   password: z.string().min(6).max(120),
   terminalId: z.string().max(80).optional().or(z.literal(""))
+}).transform((payload) => ({
+  ...payload,
+  identifier: (payload.identifier ?? payload.email ?? "").trim()
+})).refine((payload) => payload.identifier.length > 0, {
+  message: "User ID or email is required",
+  path: ["identifier"]
 });
 
 export const authPinLoginSchema = z.object({
@@ -246,7 +340,8 @@ export const cashMovementSchema = z.object({
   shiftId: z.string().min(1),
   type: z.enum(["cash_in", "cash_out", "paid_in", "paid_out"]),
   amount: z.number().int().positive(),
-  reason: z.string().min(3).max(160)
+  reason: z.string().min(3).max(160),
+  approvalId: z.string().min(1).max(80).optional().or(z.literal(""))
 });
 
 export const paymentReconciliationSchema = z.object({
@@ -256,11 +351,13 @@ export const paymentReconciliationSchema = z.object({
 export const closeRegisterShiftSchema = z.object({
   shiftId: z.string().min(1),
   countedCash: z.number().int().nonnegative(),
-  managerNote: z.string().min(3).max(160).optional()
+  managerNote: z.string().min(3).max(160).optional(),
+  approvalId: z.string().min(1).max(80).optional().or(z.literal(""))
 });
 
 export const saleActionSchema = z.object({
-  reason: z.string().min(3).max(160)
+  reason: z.string().min(3).max(160),
+  approvalId: z.string().min(1).max(80).optional().or(z.literal(""))
 });
 
 export const saleRefundSchema = saleActionSchema.extend({

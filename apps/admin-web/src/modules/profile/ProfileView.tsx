@@ -1,5 +1,6 @@
 import { Check, KeyRound, Mail, Phone, ShieldCheck, UserRound } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { fetchMyProfile, updateMyProfile, updateStoredAuthStaff } from "../../shared/api/client";
 import { StatCard } from "../../shared/components/StatCard";
 
 interface ProfileViewProps {
@@ -25,9 +26,71 @@ export function ProfileView({ user }: ProfileViewProps) {
     [profile.name]
   );
 
-  function saveProfile(event: FormEvent) {
+  useEffect(() => {
+    setProfile(user);
+  }, [user.email, user.name, user.phone, user.role, user.branch]);
+
+  useEffect(() => {
+    let mounted = true;
+    setStatus("Loading profile...");
+    fetchMyProfile()
+      .then((response) => {
+        if (!mounted) return;
+        setProfile((current) => ({
+          ...current,
+          name: response.staff.name,
+          email: response.staff.email,
+          phone: response.staff.phone,
+          role: response.staff.role
+        }));
+        updateStoredAuthStaff({
+          name: response.staff.name,
+          email: response.staff.email,
+          phone: response.staff.phone,
+          role: response.staff.role,
+          branchId: response.staff.branchId,
+          permissions: response.staff.permissions
+        });
+        setStatus("Profile synced");
+      })
+      .catch((error) => {
+        if (mounted) setStatus(error instanceof Error ? error.message : "Unable to load profile");
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  async function saveProfile(event: FormEvent) {
     event.preventDefault();
-    setStatus("Profile saved");
+    setStatus("Saving profile...");
+
+    try {
+      const response = await updateMyProfile({
+        name: profile.name,
+        email: profile.email,
+        phone: profile.phone
+      });
+      setProfile((current) => ({
+        ...current,
+        name: response.staff.name,
+        email: response.staff.email,
+        phone: response.staff.phone,
+        role: response.staff.role
+      }));
+      updateStoredAuthStaff({
+        name: response.staff.name,
+        email: response.staff.email,
+        phone: response.staff.phone,
+        role: response.staff.role,
+        branchId: response.staff.branchId,
+        permissions: response.staff.permissions
+      });
+      setStatus("Profile saved");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to save profile");
+    }
   }
 
   return (

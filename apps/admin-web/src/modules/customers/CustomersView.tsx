@@ -1,4 +1,4 @@
-import { Check, Gift, MessageCircle, Pencil, Plus, RefreshCcw, Search, X } from "lucide-react";
+import { Check, CreditCard, Gift, MessageCircle, Pencil, Plus, RefreshCcw, Search, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyApproval,
@@ -32,9 +32,9 @@ const blankCustomer: CustomerPayload = {
 const groups: CustomerGroup[] = ["Walk-in", "VIP", "Credit account", "Wholesale", "Staff"];
 const blankLedger: CustomerLedgerPayload = {
   type: "" as CustomerLedgerPayload["type"],
-  amount: 10000,
+  amount: 0,
   pointsDelta: 0,
-  note: "Customer account payment"
+  note: ""
 };
 
 interface CustomersViewProps {
@@ -63,6 +63,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
   const creditExposure = useMemo(() => customers.reduce((sum, customer) => sum + customer.outstandingBalance, 0), [customers]);
   const loyaltyLiability = useMemo(() => customers.reduce((sum, customer) => sum + customer.loyaltyPoints, 0), [customers]);
   const customerPage = usePaginatedRows(customers, 10);
+  const ledgerPage = usePaginatedRows(ledgerEntries, 8);
   const ledgerCreditAmount = Math.abs(ledgerForm.amount);
   const projectedLedgerBalance = ledgerCustomer ? ledgerCustomer.outstandingBalance + ledgerCreditAmount : ledgerCreditAmount;
 
@@ -121,6 +122,13 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  function updateLedgerForm<K extends keyof CustomerLedgerPayload>(key: K, value: CustomerLedgerPayload[K]) {
+    setLedgerForm((current) => ({ ...current, [key]: value }));
+    if (key === "type" || key === "amount" || key === "note") {
+      setLedgerApprovalId("");
+    }
+  }
+
   function editCustomer(customer: Customer) {
     setSelectedCustomer(customer);
     setForm({
@@ -151,9 +159,9 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
     setLedgerCustomer(customer);
     setLedgerForm({
       type,
-      amount: type === "payment" ? Math.min(customer.outstandingBalance || 10000, 10000) : 0,
+      amount: type === "payment" ? Math.min(customer.outstandingBalance || 10000, 10000) : type === "credit_sale" ? 10000 : 0,
       pointsDelta: type === "loyalty_adjustment" ? 100 : 0,
-      note: type === "payment" ? "Customer account payment" : type === "voucher" ? "Customer voucher" : "Manual loyalty reward"
+      note: type === "payment" ? "Customer account payment" : type === "voucher" ? "Customer voucher" : type === "credit_sale" ? "Manual credit sale" : "Manual loyalty reward"
     });
     setLedgerApprovalId("");
     setLedgerModalOpen(true);
@@ -216,6 +224,16 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
       return;
     }
 
+    if (!ledgerForm.amount && ledgerForm.type !== "loyalty_adjustment") {
+      setStatus("Enter a ledger amount");
+      return;
+    }
+
+    if (!ledgerForm.note.trim()) {
+      setStatus("Enter a ledger note");
+      return;
+    }
+
     const signedAmount = ledgerForm.type === "payment" || ledgerForm.type === "voucher"
       ? -Math.abs(ledgerForm.amount)
       : Math.abs(ledgerForm.amount);
@@ -223,6 +241,11 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
 
     try {
       if (isCreditSale && !ledgerApprovalId.trim()) {
+        if (!activeBranchId) {
+          setStatus("Select a branch before requesting customer credit approval");
+          return;
+        }
+
         setStatus("Requesting customer credit approval...");
         const response = await createApproval({
           branchId: activeBranchId,
@@ -329,6 +352,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
                   <td className="row-actions">
                     <button onClick={() => openLedgerModal(customer, "loyalty_adjustment")} aria-label={`Reward ${customer.name}`}><Gift size={16} /></button>
                     <button onClick={() => openLedgerModal(customer, "payment")} aria-label={`Record payment for ${customer.name}`}><MessageCircle size={16} /></button>
+                    <button onClick={() => openLedgerModal(customer, "credit_sale")} aria-label={`Post credit sale for ${customer.name}`}><CreditCard size={16} /></button>
                     <button onClick={() => editCustomer(customer)} aria-label={`Edit ${customer.name}`}><Pencil size={16} /></button>
                   </td>
                 </tr>
@@ -412,8 +436,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
               <label>
                 Entry type
                 <select value={ledgerForm.type} onChange={(event) => {
-                  setLedgerForm((current) => ({ ...current, type: event.target.value as CustomerLedgerPayload["type"] }));
-                  setLedgerApprovalId("");
+                  updateLedgerForm("type", event.target.value as CustomerLedgerPayload["type"]);
                 }}>
                   <option value="" disabled>Entry type</option>
                   <option value="payment">Payment</option>
@@ -424,15 +447,15 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
               </label>
               <label>
                 Amount
-                <input min="0" type="number" value={ledgerForm.amount} onChange={(event) => setLedgerForm((current) => ({ ...current, amount: Number(event.target.value) }))} />
+                <input min="0" type="number" value={ledgerForm.amount} onChange={(event) => updateLedgerForm("amount", Number(event.target.value))} />
               </label>
               <label>
                 Points delta
-                <input type="number" value={ledgerForm.pointsDelta} onChange={(event) => setLedgerForm((current) => ({ ...current, pointsDelta: Number(event.target.value) }))} />
+                <input type="number" value={ledgerForm.pointsDelta} onChange={(event) => updateLedgerForm("pointsDelta", Number(event.target.value))} />
               </label>
               <label>
                 Note
-                <input value={ledgerForm.note} onChange={(event) => setLedgerForm((current) => ({ ...current, note: event.target.value }))} required />
+                <input value={ledgerForm.note} onChange={(event) => updateLedgerForm("note", event.target.value)} required />
               </label>
               {ledgerForm.type === "credit_sale" ? (
                 <>
@@ -455,19 +478,36 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
                 </button>
               </div>
               <div className="customer-ledger-list wide-field">
-                {ledgerEntries.length === 0 ? (
-                  <div className="empty-state">No ledger entries yet.</div>
-                ) : (
-                  ledgerEntries.map((entry) => (
-                    <div className="list-row" key={entry.id}>
-                      <div>
-                        <strong>{entry.type.replace("_", " ")}</strong>
-                        <span>{entry.note} - {new Date(entry.createdAt).toLocaleString()}</span>
-                      </div>
-                      <b>{displayMoney(entry.amount)}</b>
-                    </div>
-                  ))
-                )}
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>#</th><th>Created</th><th>Type</th><th>Note</th><th>Amount</th><th>Balance</th><th>Points</th></tr></thead>
+                    <tbody>
+                      {ledgerPage.pageRows.length === 0 ? (
+                        <tr><td colSpan={7}>No ledger entries yet.</td></tr>
+                      ) : ledgerPage.pageRows.map((entry, index) => (
+                        <tr key={entry.id}>
+                          <td className="number-cell">{ledgerPage.startIndex + index + 1}</td>
+                          <td>{new Date(entry.createdAt).toLocaleString()}</td>
+                          <td>{entry.type.replace("_", " ")}</td>
+                          <td>{entry.note}</td>
+                          <td>{displayMoney(entry.amount)}</td>
+                          <td>{displayMoney(entry.balanceAfter)}</td>
+                          <td>{entry.pointsAfter}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <TablePagination
+                  page={ledgerPage.page}
+                  pageCount={ledgerPage.pageCount}
+                  pageSize={ledgerPage.pageSize}
+                  totalRows={ledgerPage.totalRows}
+                  startIndex={ledgerPage.startIndex}
+                  visibleCount={ledgerPage.pageRows.length}
+                  onPageChange={ledgerPage.setPage}
+                  onPageSizeChange={ledgerPage.setPageSize}
+                />
               </div>
             </form>
           </section>

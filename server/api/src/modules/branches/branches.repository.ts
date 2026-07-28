@@ -362,9 +362,13 @@ export async function createTerminal(tenantId: string, userId: string, input: Te
   return { status: "created" as const, terminal: toApiTerminal(terminal) };
 }
 
-export async function updateTerminal(tenantId: string, userId: string, terminalId: string, input: Partial<TerminalInput>) {
+export async function updateTerminal(tenantId: string, userId: string, terminalId: string, input: Partial<TerminalInput>, requestBranchId?: string) {
   if (useDemoStore) {
-    const terminalIndex = terminals.findIndex((terminal) => terminal.tenantId === tenantId && terminal.id === terminalId);
+    const terminalIndex = terminals.findIndex((terminal) =>
+      terminal.tenantId === tenantId &&
+      terminal.id === terminalId &&
+      (!requestBranchId || terminal.branchId === requestBranchId)
+    );
     if (terminalIndex === -1) return { status: "not_found" as const };
 
     const nextBranchId = input.branchId ?? terminals[terminalIndex].branchId;
@@ -400,7 +404,7 @@ export async function updateTerminal(tenantId: string, userId: string, terminalI
     return { status: "updated" as const, terminal };
   }
 
-  const existingTerminal = await prisma.terminal.findFirst({ where: { tenantId, id: terminalId } });
+  const existingTerminal = await prisma.terminal.findFirst({ where: { tenantId, id: terminalId, branchId: requestBranchId } });
   if (!existingTerminal) return { status: "not_found" as const };
 
   const nextBranchId = input.branchId ?? existingTerminal.branchId;

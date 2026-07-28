@@ -8,3 +8,838 @@
 
 ◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
 NaijaPOS API listening on http://127.0.0.1:4000
+8:13:08 AM [tsx] change in ./src\modules\auth\auth.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+[0mPOST /api/v1/auth/login [32m200[0m 380.289 ms - 1297[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=Adaeze+Okafor [36m304[0m 17.322 ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=Adaeze+Okafor [36m304[0m 4.396 ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=Adaeze+Okafor [36m304[0m 4.707 ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=Adaeze+Okafor [36m304[0m 6.017 ms - -[0m
+8:15:52 AM [tsx] change in ./src\modules\auth\auth.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ encrypted .env [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+[0mPOST /api/v1/auth/login [33m401[0m 300.857 ms - 87[0m
+8:16:03 AM [tsx] change in ./src\modules\auth\auth.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+NaijaPOS API listening on http://127.0.0.1:4000
+8:23:16 AM [tsx] change in ./src\shared\security\accessControl.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ◈ encrypted .env [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+8:23:22 AM [tsx] change in ./src\shared\http\tenantContext.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+[0mPOST /api/v1/auth/pin-login [32m200[0m 348.742 ms - 1027[0m
+[0mPOST /api/v1/registers/open [33m409[0m 22.554 ms - 54[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 16.104 ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 7.076 ms - -[0m
+[0mPOST /api/v1/auth/pin-login [33m401[0m 4.340 ms - 31[0m
+[0mPOST /api/v1/auth/pin-login [33m401[0m 3.814 ms - 31[0m
+[0mPOST /api/v1/auth/pin-login [33m401[0m 5.015 ms - 31[0m
+[0mPOST /api/v1/auth/pin-login [33m401[0m 3.458 ms - 31[0m
+[0mPOST /api/v1/auth/pin-login [33m401[0m 3.679 ms - 31[0m
+[0mPOST /api/v1/auth/login [32m200[0m 30.241 ms - 1297[0m
+[0mGET /api/v1/branches/options [36m304[0m 10.835 ms - -[0m
+[0mGET /api/v1/branches [36m304[0m 15.110 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 25.403 ms - -[0m
+[0mGET /api/v1/branches [36m304[0m 10.477 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 12.235 ms - -[0m
+[0mGET /api/v1/inventory/stock?branchId=branch-lagos-main [36m304[0m 30.637 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 33.045 ms - -[0m
+[0mGET /api/v1/inventory/suppliers?branchId=branch-lagos-main [36m304[0m 34.910 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 48.578 ms - -[0m
+[0mGET /api/v1/inventory/stock?branchId=branch-lagos-main [36m304[0m 20.281 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 20.834 ms - -[0m
+[0mGET /api/v1/inventory/suppliers?branchId=branch-lagos-main [36m304[0m 20.291 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 18.309 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 17.794 ms - -[0m
+[0mGET /api/v1/inventory/stock?branchId=branch-lagos-lekki [32m200[0m 21.151 ms - 30[0m
+[0mGET /api/v1/inventory/suppliers?branchId=branch-lagos-lekki [32m200[0m 20.453 ms - 16[0m
+[0mGET /api/v1/branches/options [36m304[0m 19.195 ms - -[0m
+[0mGET /api/v1/inventory/stock?branchId=branch-citec-01-mrw21h0u [32m200[0m 17.361 ms - 30[0m
+[0mGET /api/v1/inventory/suppliers?branchId=branch-citec-01-mrw21h0u [32m200[0m 18.306 ms - 16[0m
+[0mGET /api/v1/branches/options [36m304[0m 22.458 ms - -[0m
+[0mGET /api/v1/inventory/stock?branchId=branch-lagos-ikeja [32m200[0m 21.962 ms - 30[0m
+[0mGET /api/v1/inventory/suppliers?branchId=branch-lagos-ikeja [32m200[0m 21.991 ms - 16[0m
+[0mGET /api/v1/inventory/stock?branchId=branch-lagos-lekki [36m304[0m 20.765 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 25.115 ms - -[0m
+[0mGET /api/v1/inventory/suppliers?branchId=branch-lagos-lekki [36m304[0m 22.890 ms - -[0m
+[0mGET /api/v1/inventory/stock?branchId=branch-lagos-main [36m304[0m 26.900 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 29.871 ms - -[0m
+[0mGET /api/v1/inventory/suppliers?branchId=branch-lagos-main [36m304[0m 28.797 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 9.936 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 18.589 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 8.786 ms - -[0m
+[0mGET /api/v1/expenses?branchId=branch-lagos-main&status=all [36m304[0m 8.861 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 13.957 ms - -[0m
+[0mGET /api/v1/expenses?branchId=branch-lagos-main&status=all [36m304[0m 5.806 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 8.015 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 10.147 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-main&status=all [36m304[0m 13.273 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-main&status=all [36m304[0m 9.996 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 6.643 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-lekki&status=all [32m200[0m 5.132 ms - 12[0m
+[0mGET /api/v1/branches/options [36m304[0m 11.412 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-ikeja&status=all [32m200[0m 5.184 ms - 12[0m
+[0mGET /api/v1/branches/options [36m304[0m 11.397 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-citec-01-mrw21h0u&status=all [32m200[0m 5.236 ms - 12[0m
+[0mPOST /api/v1/auth/logout [32m200[0m 33.566 ms - 501[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 4.431 ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 1.806 ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 6.183 ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 5.240 ms - -[0m
+[0mPOST /api/v1/auth/pin-login [33m401[0m 3.025 ms - 31[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [32m200[0m 5.168 ms - 1842[0m
+8:28:32 AM [tsx] change in ./src\modules\auth\auth.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ enable debugging { debug: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+8:28:42 AM [tsx] change in ./src\modules\auth\auth.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 199.600 ms - -[0m
+[0mPOST /api/v1/auth/pin-login [33m401[0m 13.606 ms - 186[0m
+[0mPOST /api/v1/auth/pin-login [32m200[0m 51.126 ms - 1027[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 12.776 ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 4.131 ms - -[0m
+[0mPOST /api/v1/auth/pin-login [32m200[0m 25.675 ms - 1057[0m
+[0mGET /api/v1/branches/options [36m304[0m 13.346 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 8.083 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 8.371 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-main&status=all [36m304[0m 14.474 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-main&status=all [36m304[0m 13.108 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 10.397 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 23.447 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 11.388 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 16.304 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 19.698 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 9.593 ms - -[0m
+[0mGET /api/v1/customers [36m304[0m 19.672 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 23.563 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 28.081 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 37.311 ms - -[0m
+[0mGET /api/v1/catalog/products?branchId=branch-lagos-main [36m304[0m 44.132 ms - -[0m
+[0mGET /api/v1/customers [36m304[0m 19.724 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 19.590 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 23.872 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 28.473 ms - -[0m
+[0mGET /api/v1/catalog/products?branchId=branch-lagos-main [36m304[0m 25.281 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 11.638 ms - -[0m
+[0mPOST /api/v1/sales [32m201[0m 80.125 ms - 808[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [32m200[0m 5.789 ms - 2469[0m
+[0mPOST /api/v1/sales/INV-00009/receipt-actions [32m200[0m 17.277 ms - 109[0m
+[0mGET /api/v1/branches/options [36m304[0m 10.222 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 6.593 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-main&status=all [32m200[0m 14.371 ms - 11202[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-main&status=all [36m304[0m 10.263 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 9.800 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-ikeja&status=all [36m304[0m 3.541 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 9.959 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-citec-01-mrw21h0u&status=all [36m304[0m 5.247 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 8.264 ms - -[0m
+8:35:37 AM [tsx] change in ./src\shared\http\tenantContext.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+8:35:49 AM [tsx] change in ./src\shared\security\accessControl.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ enable debugging { debug: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+8:36:03 AM [tsx] change in ./src\modules\branches\branches.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+8:36:13 AM [tsx] change in ./src\modules\sales\sales.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ suppress logs { quiet: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+8:36:23 AM [tsx] change in ./src\modules\sales\sales.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ enable debugging { debug: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+8:36:32 AM [tsx] change in ./src\modules\registers\registers.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+8:36:45 AM [tsx] change in ./src\modules\registers\registers.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+8:37:13 AM [tsx] change in ./src\modules\staff\staff.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ enable debugging { debug: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+8:37:22 AM [tsx] change in ./src\modules\reports\reports.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+NaijaPOS API listening on http://127.0.0.1:4000
+8:37:51 AM [tsx] change in ./src\modules\approvals\approvals.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+8:38:01 AM [tsx] change in ./src\modules\audit\audit.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+8:38:10 AM [tsx] change in ./src\modules\audit\audit.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+8:38:32 AM [tsx] change in ./src\modules\catalog\catalog.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ suppress logs { quiet: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+8:38:44 AM [tsx] change in ./src\modules\inventory\inventory.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+8:38:52 AM [tsx] change in ./src\modules\kitchen\kitchen.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ encrypted .env [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+8:39:02 AM [tsx] change in ./src\modules\restaurant\restaurant.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+8:39:24 AM [tsx] change in ./src\modules\branches\branches.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+[0mGET /api/v1/customers [36m304[0m 305.918 ms - -[0m
+[0mGET /api/v1/branches/options [32m200[0m 312.177 ms - 572[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [32m200[0m 315.445 ms - 43[0m
+[0mGET /api/v1/tenants/current [36m304[0m 360.041 ms - -[0m
+[0mGET /api/v1/catalog/products?branchId=branch-lagos-main [32m200[0m 336.226 ms - 11710[0m
+[0mGET /api/v1/customers [36m304[0m 31.909 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 30.195 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 29.432 ms - -[0m
+[0mGET /api/v1/catalog/products?branchId=branch-lagos-main [36m304[0m 32.001 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 39.046 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 9.778 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 8.452 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 7.318 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-main&status=all [32m200[0m 9.294 ms - 1372[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-main&status=all [36m304[0m 6.896 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 17.352 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 29.791 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 11.899 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 10.138 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 15.190 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 4.144 ms - -[0m
+8:40:46 AM [tsx] change in ./src\shared\http\tenantContext.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+8:40:54 AM [tsx] change in ./src\modules\branches\branches.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+8:41:02 AM [tsx] change in ./src\shared\security\accessControl.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+8:47:23 AM [tsx] change in ./src\shared\data\demoStore.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+8:59:24 AM [tsx] change in ./src\modules\approvals\approvals.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+9:06:04 AM [tsx] change in ./src\modules\inventory\inventory.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+9:08:33 AM [tsx] change in ./src\modules\kitchen\kitchen.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+9:10:23 AM [tsx] change in ./src\modules\restaurant\restaurant.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+9:10:35 AM [tsx] change in ./src\modules\restaurant\restaurant.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+9:22:33 AM [tsx] change in ./src\modules\customers\customers.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+9:24:27 AM [tsx] change in ./src\modules\staff\staff.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+[0mGET /api/v1/branches/options [33m401[0m 2.670 ms - 38[0m
+[0mGET /api/v1/branches/options [33m401[0m 0.481 ms - 38[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 450.837 ms - 1057[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 444.091 ms - 1057[0m
+[0mGET /api/v1/branches/options [36m304[0m 24.871 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 6.829 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-main&status=all [36m304[0m 11.637 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-main&status=all [36m304[0m 9.273 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 13.343 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 8.766 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-main&status=all [36m304[0m 8.014 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 18.789 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 30.361 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 15.180 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 13.112 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 11.730 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 6.359 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 7.146 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 10.649 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 4.718 ms - -[0m
+[0mGET /api/v1/customers [36m304[0m 24.814 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 24.701 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 21.082 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 40.137 ms - -[0m
+[0mGET /api/v1/catalog/products?branchId=branch-lagos-main [36m304[0m 41.932 ms - -[0m
+[0mGET /api/v1/customers [36m304[0m 14.744 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 14.579 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 14.812 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 19.230 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 8.899 ms - -[0m
+[0mGET /api/v1/catalog/products?branchId=branch-lagos-main [36m304[0m 19.636 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 8.107 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 18.862 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 9.157 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 9.104 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 8.397 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 3.297 ms - -[0m
+9:29:58 AM [tsx] change in ./src\modules\expenses\expenses.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+9:30:09 AM [tsx] change in ./src\modules\expenses\expenses.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ suppress logs { quiet: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+9:30:20 AM [tsx] change in ./src\modules\expenses\expenses.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+9:32:20 AM [tsx] change in ./src\modules\sync\sync.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+9:36:58 AM [tsx] change in ./src\modules\approvals\approvals.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ suppress logs { quiet: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+9:37:15 AM [tsx] change in ./src\modules\registers\registers.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ enable debugging { debug: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+9:41:39 AM [tsx] change in ./src\modules\sales\sales.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+NaijaPOS API listening on http://127.0.0.1:4000
+[0mPOST /api/v1/auth/logout [33m401[0m 3.654 ms - 38[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 387.217 ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 6.562 ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 14.920 ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 8.972 ms - -[0m
+[0mPOST /api/v1/auth/pin-login [32m200[0m 70.882 ms - 1357[0m
+[0mGET /api/v1/branches/options [32m200[0m 13.916 ms - 1378[0m
+[0mGET /api/v1/customers [36m304[0m 35.889 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 43.609 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [32m200[0m 51.201 ms - 2469[0m
+[0mGET /api/v1/tenants/current [36m304[0m 67.307 ms - -[0m
+[0mGET /api/v1/catalog/products?branchId=branch-lagos-main [36m304[0m 67.138 ms - -[0m
+[0mGET /api/v1/customers [36m304[0m 31.852 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 26.493 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 31.577 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 38.821 ms - -[0m
+[0mGET /api/v1/catalog/products?branchId=branch-lagos-main [36m304[0m 38.841 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 20.472 ms - -[0m
+9:43:46 AM [tsx] change in ./src\modules\reports\reports.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ enable debugging { debug: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+9:43:55 AM [tsx] change in ./src\modules\audit\audit.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ suppress logs { quiet: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+[0mGET /api/v1/branches [36m304[0m 380.092 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 411.193 ms - -[0m
+[0mGET /api/v1/branches [36m304[0m 31.970 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 26.321 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 11.244 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 12.714 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-main&status=all [32m200[0m 19.826 ms - 11202[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-main&status=all [36m304[0m 14.929 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 15.297 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 27.921 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 13.838 ms - -[0m
+[0mGET /api/v1/reports/dashboard?branchId=branch-lagos-main&period=today [32m200[0m 79.412 ms - 1571[0m
+[0mGET /api/v1/tenants/current [36m304[0m 86.555 ms - -[0m
+[0mGET /api/v1/reports/dashboard?branchId=branch-lagos-main&period=today [36m304[0m 37.636 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 17.393 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 31.777 ms - -[0m
+[0mGET /api/v1/catalog/products [32m200[0m 28.444 ms - 11710[0m
+[0mGET /api/v1/branches/options [36m304[0m 11.921 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 18.326 ms - -[0m
+[0mGET /api/v1/catalog/products [36m304[0m 16.663 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 20.534 ms - -[0m
+[0mGET /api/v1/inventory/stock?branchId=branch-lagos-main [32m200[0m 25.946 ms - 17986[0m
+[0mGET /api/v1/inventory/suppliers?branchId=branch-lagos-main [36m304[0m 30.418 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 38.737 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 17.222 ms - -[0m
+[0mGET /api/v1/inventory/stock?branchId=branch-lagos-main [36m304[0m 14.100 ms - -[0m
+[0mGET /api/v1/inventory/suppliers?branchId=branch-lagos-main [36m304[0m 13.960 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 18.107 ms - -[0m
+[0mGET /api/v1/branches [36m304[0m 9.200 ms - -[0m
+[0mGET /api/v1/branches [36m304[0m 5.313 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 16.241 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 7.855 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 11.327 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 21.320 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 13.954 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 16.347 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 18.436 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 8.263 ms - -[0m
+9:45:04 AM [tsx] change in ./src\modules\reports\reports.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+NaijaPOS API listening on http://127.0.0.1:4000
+9:49:29 AM [tsx] change in ./src\modules\restaurant\restaurant.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ◈ encrypted .env [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+9:49:41 AM [tsx] change in ./src\modules\restaurant\restaurant.routes.ts Rerunning...
+9:50:52 AM [tsx] change in ./..\..\packages\validation\dist\index.js Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+9:51:13 AM [tsx] change in ./src\shared\data\demoStore.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+9:53:01 AM [tsx] change in ./src\modules\restaurant\restaurant.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+9:53:06 AM [tsx] change in ./src\shared\data\demoStore.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+9:53:18 AM [tsx] change in ./src\modules\restaurant\restaurant.routes.ts Rerunning...
+9:54:45 AM [tsx] change in ./..\..\packages\validation\dist\index.js Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+[0mGET /api/v1/branches/options [36m304[0m 235.151 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 28.349 ms - -[0m
+[0mGET /api/v1/kitchen/tickets?branchId=branch-lagos-main&station=All [36m304[0m 28.015 ms - -[0m
+[0mGET /api/v1/kitchen/tickets?branchId=branch-lagos-main&station=All [36m304[0m 12.742 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 75.316 ms - -[0m
+[0mGET /api/v1/restaurant/tables?branchId=branch-lagos-main [36m304[0m 157.058 ms - -[0m
+[0mGET /api/v1/staff?branchId=branch-lagos-main [36m304[0m 161.887 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 192.358 ms - -[0m
+[0mGET /api/v1/catalog/products?branchId=branch-lagos-main [36m304[0m 190.386 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 92.522 ms - -[0m
+[0mGET /api/v1/restaurant/tables?branchId=branch-lagos-main [36m304[0m 43.716 ms - -[0m
+[0mGET /api/v1/staff?branchId=branch-lagos-main [36m304[0m 42.843 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 33.692 ms - -[0m
+[0mGET /api/v1/catalog/products?branchId=branch-lagos-main [36m304[0m 30.748 ms - -[0m
+10:05:05 AM [tsx] change in ./src\shared\data\demoStore.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+10:05:11 AM [tsx] change in ./src\shared\data\demoStore.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ◈ encrypted .env [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+10:06:26 AM [tsx] change in ./src\modules\inventory\inventory.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+[0mGET /api/v1/tenants/current [33m401[0m 2.405 ms - 38[0m
+[0mGET /api/v1/inventory/stock?branchId=branch-lagos-main [33m401[0m 0.586 ms - 38[0m
+[0mGET /api/v1/branches/options [33m401[0m 0.439 ms - 38[0m
+[0mGET /api/v1/tenants/current [33m401[0m 0.244 ms - 38[0m
+[0mGET /api/v1/inventory/suppliers?branchId=branch-lagos-main [33m401[0m 0.452 ms - 38[0m
+[0mGET /api/v1/inventory/stock?branchId=branch-lagos-main [33m401[0m 0.228 ms - 38[0m
+[0mGET /api/v1/branches/options [33m401[0m 0.369 ms - 38[0m
+[0mGET /api/v1/inventory/suppliers?branchId=branch-lagos-main [33m401[0m 0.412 ms - 38[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 386.377 ms - 1357[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 373.300 ms - 1357[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 384.346 ms - 1357[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 395.068 ms - 1357[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 408.696 ms - 1357[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 428.369 ms - 1357[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 90.443 ms - 1357[0m
+[0mGET /api/v1/inventory/suppliers?branchId=branch-lagos-main [36m304[0m 51.026 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 66.239 ms - -[0m
+[0mGET /api/v1/inventory/stock?branchId=branch-lagos-main [36m304[0m 44.875 ms - -[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 87.079 ms - 1357[0m
+[0mGET /api/v1/branches/options [36m304[0m 36.522 ms - -[0m
+[0mGET /api/v1/inventory/stock?branchId=branch-lagos-main [36m304[0m 22.786 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 24.116 ms - -[0m
+[0mGET /api/v1/inventory/suppliers?branchId=branch-lagos-main [36m304[0m 30.255 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 46.384 ms - -[0m
+10:08:31 AM [tsx] change in ./src\modules\inventory\inventory.routes.ts Restarting...
+10:11:50 AM [tsx] change in ./..\..\node_modules\.prisma\client\query_compiler_fast_bg.wasm-base64.js Rerunning...
+10:13:04 AM [tsx] change in ./..\..\packages\validation\dist\index.js Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+10:13:42 AM [tsx] change in ./src\modules\inventory\inventory.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+NaijaPOS API listening on http://127.0.0.1:4000
+10:16:32 AM [tsx] change in ./src\shared\data\demoStore.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ enable debugging { debug: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+10:16:39 AM [tsx] change in ./src\shared\data\demoStore.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ suppress logs { quiet: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+10:17:03 AM [tsx] change in ./src\modules\inventory\inventory.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+NaijaPOS API listening on http://127.0.0.1:4000
+10:17:52 AM [tsx] change in ./src\modules\inventory\inventory.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+10:18:17 AM [tsx] change in ./src\modules\inventory\inventory.routes.ts Rerunning...
+10:20:46 AM [tsx] change in ./..\..\packages\validation\dist\index.js Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ enable debugging { debug: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+10:20:47 AM [tsx] unlink in ./..\..\node_modules\.prisma\client\index.js Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+10:25:03 AM [tsx] change in ./src\shared\data\demoStore.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+10:25:11 AM [tsx] change in ./src\shared\data\demoStore.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ enable debugging { debug: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+10:25:30 AM [tsx] change in ./src\modules\inventory\inventory.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+10:25:36 AM [tsx] change in ./src\modules\inventory\inventory.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+10:26:18 AM [tsx] change in ./src\modules\inventory\inventory.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+10:26:39 AM [tsx] change in ./src\modules\inventory\inventory.routes.ts Restarting...
+10:28:42 AM [tsx] change in ./..\..\packages\validation\dist\index.js Rerunning...
+10:28:42 AM [tsx] change in ./src\modules\roles\roles.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ suppress logs { quiet: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+10:29:08 AM [tsx] unlink in ./..\..\node_modules\.prisma\client\default.js Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+10:31:15 AM [tsx] change in ./src\modules\inventory\inventory.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+10:31:24 AM [tsx] change in ./src\modules\inventory\inventory.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+[0mGET /api/v1/tenants/current [33m401[0m 3.133 ms - 38[0m
+[0mGET /api/v1/inventory/supplier-returns?branchId=branch-lagos-main&supplierId= [33m401[0m 0.622 ms - 38[0m
+[0mGET /api/v1/branches/options [33m401[0m 0.400 ms - 38[0m
+[0mGET /api/v1/inventory/supplier-invoices?branchId=branch-lagos-main&status=all&supplierId= [33m401[0m 0.596 ms - 38[0m
+[0mGET /api/v1/inventory/stock?branchId=branch-lagos-main [33m401[0m 0.411 ms - 38[0m
+[0mGET /api/v1/inventory/purchase-orders?branchId=branch-lagos-main&status=all [33m401[0m 0.348 ms - 38[0m
+[0mGET /api/v1/inventory/suppliers?branchId=branch-lagos-main [33m401[0m 0.306 ms - 38[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 635.639 ms - 1357[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 618.819 ms - 1357[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 635.938 ms - 1357[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 651.739 ms - 1357[0m
+[0mGET /api/v1/branches/options [36m304[0m 40.919 ms - -[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 667.451 ms - 1357[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 673.924 ms - 1357[0m
+[0mGET /api/v1/inventory/stock?branchId=branch-lagos-main [36m304[0m 38.465 ms - -[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 87.827 ms - 1357[0m
+[0mGET /api/v1/inventory/purchase-orders?branchId=branch-lagos-main&status=all [32m200[0m 39.092 ms - 21[0m
+[0mGET /api/v1/tenants/current [36m304[0m 67.765 ms - -[0m
+[0mGET /api/v1/inventory/supplier-returns?branchId=branch-lagos-main&supplierId= [32m200[0m 38.198 ms - 22[0m
+[0mGET /api/v1/inventory/suppliers?branchId=branch-lagos-main [36m304[0m 38.969 ms - -[0m
+[0mGET /api/v1/inventory/supplier-invoices?branchId=branch-lagos-main&status=all&supplierId= [32m200[0m 24.104 ms - 23[0m
+10:37:17 AM [tsx] change in ./src\shared\data\demoStore.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ encrypted .env [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+10:37:55 AM [tsx] change in ./src\modules\inventory\inventory.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+10:38:07 AM [tsx] change in ./src\modules\inventory\inventory.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+10:38:46 AM [tsx] change in ./src\modules\inventory\inventory.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ enable debugging { debug: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+10:40:23 AM [tsx] change in ./src\modules\inventory\inventory.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+10:40:43 AM [tsx] change in ./src\modules\inventory\inventory.routes.ts Rerunning...
+10:44:56 AM [tsx] unlink in ./..\..\node_modules\.prisma\client\default.js Rerunning...
+10:49:43 AM [tsx] change in ./..\..\packages\validation\dist\index.js Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ enable debugging { debug: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+11:03:37 AM [tsx] change in ./src\modules\restaurant\restaurant.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+11:03:54 AM [tsx] change in ./src\modules\restaurant\restaurant.routes.ts Rerunning...
+11:04:02 AM [tsx] change in ./src\modules\restaurant\restaurant.routes.ts Rerunning...
+11:05:08 AM [tsx] change in ./..\..\packages\validation\dist\index.js Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ suppress logs { quiet: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+11:05:36 AM [tsx] change in ./src\shared\data\demoStore.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+11:07:23 AM [tsx] change in ./src\shared\data\demoStore.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+11:07:38 AM [tsx] change in ./src\modules\restaurant\restaurant.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+11:07:54 AM [tsx] change in ./src\modules\kitchen\kitchen.routes.ts Restarting...
+11:09:22 AM [tsx] change in ./..\..\packages\validation\dist\index.js Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+11:24:25 AM [tsx] change in ./src\modules\audit\audit.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+11:27:36 AM [tsx] change in ./src\modules\auth\auth.repository.ts Rerunning...
+11:29:13 AM [tsx] change in ./..\..\packages\validation\dist\index.js Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+11:31:42 AM [tsx] change in ./src\modules\auth\auth.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+11:38:35 AM [tsx] change in ./src\modules\branches\branches.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+11:38:45 AM [tsx] change in ./src\modules\branches\branches.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+11:43:18 AM [tsx] change in ./src\modules\restaurant\restaurant.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ encrypted .env [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+11:45:00 AM [tsx] change in ./src\modules\kitchen\kitchen.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+11:45:08 AM [tsx] change in ./src\modules\kitchen\kitchen.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+11:49:22 AM [tsx] change in ./src\modules\staff\staff.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+11:51:02 AM [tsx] change in ./src\shared\http\tenantContext.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+11:51:15 AM [tsx] change in ./src\modules\auth\auth.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+11:51:43 AM [tsx] change in ./src\modules\roles\roles.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+NaijaPOS API listening on http://127.0.0.1:4000
+11:51:51 AM [tsx] change in ./src\shared\http\tenantContext.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+11:52:00 AM [tsx] change in ./src\modules\auth\auth.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ encrypted .env [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+11:52:12 AM [tsx] change in ./src\modules\auth\auth.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ suppress logs { quiet: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+11:54:19 AM [tsx] change in ./src\modules\auth\auth.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+11:57:38 AM [tsx] change in ./..\..\packages\validation\dist\index.js Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+11:58:52 AM [tsx] change in ./src\modules\branches\branches.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+11:58:59 AM [tsx] change in ./src\modules\branches\branches.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+12:02:29 PM [tsx] change in ./src\modules\approvals\approvals.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+12:02:47 PM [tsx] change in ./src\modules\registers\registers.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+12:02:57 PM [tsx] change in ./src\modules\registers\registers.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ enable debugging { debug: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+12:05:12 PM [tsx] change in ./..\..\packages\validation\dist\index.js Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ suppress logs { quiet: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+12:07:48 PM [tsx] change in ./src\modules\registers\registers.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+12:08:03 PM [tsx] change in ./src\modules\registers\registers.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ encrypted .env [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+12:08:35 PM [tsx] change in ./..\..\packages\validation\dist\index.js Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+12:13:20 PM [tsx] change in ./src\modules\sales\sales.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+12:13:35 PM [tsx] change in ./src\modules\sales\sales.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+NaijaPOS API listening on http://127.0.0.1:4000
+12:13:50 PM [tsx] change in ./src\modules\sales\sales.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ enable debugging { debug: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+12:14:06 PM [tsx] change in ./src\modules\sales\sales.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+NaijaPOS API listening on http://127.0.0.1:4000
+12:15:40 PM [tsx] change in ./..\..\packages\validation\dist\index.js Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ encrypted .env [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+12:18:04 PM [tsx] change in ./src\modules\sales\sales.service.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+12:18:36 PM [tsx] change in ./src\modules\sales\sales.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+12:18:50 PM [tsx] change in ./src\modules\sales\sales.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ suppress logs { quiet: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+12:19:03 PM [tsx] change in ./src\modules\sales\sales.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+12:24:05 PM [tsx] change in ./src\modules\auth\auth.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+12:24:55 PM [tsx] change in ./src\modules\auth\auth.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ enable debugging { debug: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+12:25:56 PM [tsx] change in ./..\..\node_modules\.prisma\client\query_compiler_fast_bg.wasm-base64.js Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+4:29:49 PM [tsx] change in ./src\modules\reports\reports.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+11:40:52 AM [tsx] change in ./src\modules\sales\sales.repository.ts Rerunning...
+11:41:06 AM [tsx] change in ./src\modules\reports\reports.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+12:00:52 PM [tsx] change in ./src\modules\inventory\inventory.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000
+12:01:21 PM [tsx] change in ./src\modules\inventory\inventory.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+12:11:41 PM [tsx] change in ./src\modules\catalog\catalog.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+12:12:08 PM [tsx] change in ./src\shared\data\demoStore.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+12:12:24 PM [tsx] change in ./src\modules\catalog\catalog.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ suppress logs { quiet: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+12:18:54 PM [tsx] change in ./src\shared\data\demoStore.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+12:24:53 PM [tsx] change in ./src\modules\auth\auth.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+12:35:20 PM [tsx] change in ./src\modules\auth\auth.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ enable debugging { debug: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+12:36:24 PM [tsx] change in ./src\modules\auth\auth.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ◈ encrypted .env [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+[0mGET /api/v1/tenants/current [33m401[0m 2.985 ms - 38[0m
+[0mGET /api/v1/branches/options [33m401[0m 0.683 ms - 38[0m
+[0mGET /api/v1/reports/dashboard?branchId=branch-lagos-main&period=today [33m401[0m 0.642 ms - 38[0m
+[0mGET /api/v1/tenants/current [33m401[0m 0.355 ms - 38[0m
+[0mGET /api/v1/branches/options [33m401[0m 0.415 ms - 38[0m
+[0mGET /api/v1/reports/dashboard?branchId=branch-lagos-main&period=today [33m401[0m 0.381 ms - 38[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 392.415 ms - 1382[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 376.690 ms - 1382[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 388.351 ms - 1382[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 398.830 ms - 1382[0m
+[0mGET /api/v1/branches/options [36m304[0m 32.665 ms - -[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 414.118 ms - 1382[0m
+[0mGET /api/v1/tenants/current [36m304[0m 54.809 ms - -[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 432.728 ms - 1382[0m
+[0mGET /api/v1/reports/dashboard?branchId=branch-lagos-main&period=today [32m200[0m 130.220 ms - 1616[0m
+[0mGET /api/v1/branches/options [36m304[0m 119.698 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 130.221 ms - -[0m
+[0mGET /api/v1/reports/dashboard?branchId=branch-lagos-main&period=today [32m200[0m 43.666 ms - 1616[0m
+[0mPOST /api/v1/auth/logout [32m200[0m 36.148 ms - 491[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 5.596 ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 2.785 ms - -[0m
+12:42:30 PM [tsx] change in ./..\..\packages\validation\dist\index.js Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ suppress logs { quiet: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+1:14:44 PM [tsx] change in ./src\modules\auth\auth.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+1:52:13 PM [tsx] change in ./src\modules\auth\auth.repository.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ◈ secrets for agents [www.dotenvx.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+1:52:22 PM [tsx] change in ./src\modules\auth\auth.routes.ts Rerunning...
+◇ injected env (1) from ..\..\.env // tip: ⌘ override existing { override: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+1:56:30 PM [tsx] change in ./src\modules\staff\staff.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ suppress logs { quiet: true }
+NaijaPOS API listening on http://127.0.0.1:4000
+[0mPOST /api/v1/auth/login [32m200[0m 309.775 ms - 1352[0m
+2:01:24 PM [tsx] change in ./src\modules\branches\branches.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+[0mGET /api/v1/tenants/current [33m401[0m 8.880 ms - 38[0m
+[0mGET /api/v1/tenants/current [33m401[0m 1.590 ms - 38[0m
+[0mGET /api/v1/branches/options [33m401[0m 1.381 ms - 38[0m
+[0mGET /api/v1/reports/dashboard?branchId=branch-lagos-main&period=today [33m401[0m 1.387 ms - 38[0m
+[0mGET /api/v1/branches/options [33m401[0m 0.893 ms - 38[0m
+[0mGET /api/v1/reports/dashboard?branchId=branch-lagos-main&period=today [33m401[0m 1.496 ms - 38[0m
+[0mPOST /api/v1/auth/refresh [0m-[0m - ms - -[0m
+[0mPOST /api/v1/auth/refresh [0m-[0m - ms - -[0m
+[0mPOST /api/v1/auth/refresh [0m-[0m - ms - -[0m
+[0mPOST /api/v1/auth/refresh [0m-[0m - ms - -[0m
+[0mPOST /api/v1/auth/refresh [0m-[0m - ms - -[0m
+[0mPOST /api/v1/auth/refresh [0m-[0m - ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 28.591 ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 17.363 ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 23.344 ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 21.953 ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 32.032 ms - -[0m
+[0mGET /api/v1/auth/bootstrap?tenantId=tenant-lagos-foods [36m304[0m 26.753 ms - -[0m
+[0mPOST /api/v1/auth/pin-login [32m200[0m 104.167 ms - 1382[0m
+[0mGET /api/v1/branches/options [36m304[0m 15.781 ms - -[0m
+[0mGET /api/v1/staff/me [32m200[0m 23.066 ms - 685[0m
+[0mGET /api/v1/staff/me [36m304[0m 14.744 ms - -[0m
+[0mGET /api/v1/customers [36m304[0m 43.035 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 45.038 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 56.724 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 71.458 ms - -[0m
+[0mGET /api/v1/catalog/products?branchId=branch-lagos-main [36m304[0m 71.422 ms - -[0m
+[0mGET /api/v1/customers [36m304[0m 33.890 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 34.294 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 42.412 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 55.065 ms - -[0m
+[0mGET /api/v1/catalog/products?branchId=branch-lagos-main [36m304[0m 55.403 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 38.430 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 34.002 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 23.624 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-main&status=all [36m304[0m 39.380 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-main&status=all [36m304[0m 23.353 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 33.251 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 53.657 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 23.988 ms - -[0m
+[0mGET /api/v1/reports/dashboard?branchId=branch-lagos-main&period=today [32m200[0m 82.000 ms - 1713[0m
+[0mGET /api/v1/tenants/current [36m304[0m 86.828 ms - -[0m
+[0mGET /api/v1/reports/dashboard?branchId=branch-lagos-main&period=today [32m200[0m 69.412 ms - 1713[0m
+[0mGET /api/v1/branches/options [36m304[0m 28.388 ms - -[0m
+[0mGET /api/v1/reports/dashboard?branchId=branch-lagos-main&period=today [36m304[0m 82.694 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 31.135 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 50.397 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 21.460 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 28.332 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 32.932 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 16.467 ms - -[0m
+[0mPOST /api/v1/approvals [32m201[0m 65.067 ms - 329[0m
+[0mPOST /api/v1/approvals/approval-1785247577711-zzzb8n/apply [33m409[0m 31.833 ms - 49[0m
+[0mPOST /api/v1/approvals/approval-1785247577711-zzzb8n/apply [33m409[0m 26.043 ms - 49[0m
+[0mGET /api/v1/branches/options [36m304[0m 79.968 ms - -[0m
+[0mGET /api/v1/reports/dashboard?branchId=branch-lagos-main&period=today [32m200[0m 172.475 ms - 1952[0m
+[0mGET /api/v1/tenants/current [36m304[0m 192.657 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 101.933 ms - -[0m
+[0mGET /api/v1/reports/dashboard?branchId=branch-lagos-main&period=today [32m200[0m 145.971 ms - 1952[0m
+[0mGET /api/v1/branches/options [36m304[0m 126.203 ms - -[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 323.566 ms - 1382[0m
+[0mPOST /api/v1/auth/refresh [32m200[0m 338.740 ms - 1382[0m
+[0mGET /api/v1/tenants/current [36m304[0m 155.017 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 15.539 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 31.480 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 51.741 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 24.786 ms - -[0m
+[0mGET /api/v1/approvals?branchId=branch-lagos-main&status=pending&type=all [32m200[0m 20.533 ms - 332[0m
+[0mGET /api/v1/approvals?branchId=branch-lagos-main&status=pending&type=all [36m304[0m 12.908 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 28.989 ms - -[0m
+[0mPATCH /api/v1/approvals/approval-1785247577711-zzzb8n/decision [32m200[0m 58.486 ms - 433[0m
+[0mGET /api/v1/customers [36m304[0m 39.976 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 39.995 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 73.143 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 51.401 ms - -[0m
+[0mGET /api/v1/catalog/products?branchId=branch-lagos-main [36m304[0m 72.385 ms - -[0m
+[0mGET /api/v1/customers [36m304[0m 29.898 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 32.311 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 34.185 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 46.261 ms - -[0m
+[0mGET /api/v1/catalog/products?branchId=branch-lagos-main [36m304[0m 37.552 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 17.286 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 24.766 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 32.715 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-main&status=all [36m304[0m 54.561 ms - -[0m
+[0mGET /api/v1/sales?branchId=branch-lagos-main&status=all [36m304[0m 40.801 ms - -[0m
+[0mGET /api/v1/branches [36m304[0m 33.712 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 58.050 ms - -[0m
+[0mGET /api/v1/branches [36m304[0m 21.599 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 30.586 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 28.064 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 59.152 ms - -[0m
+[0mGET /api/v1/branches/options [36m304[0m 35.951 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 43.054 ms - -[0m
+[0mGET /api/v1/tenants/current [36m304[0m 51.774 ms - -[0m
+[0mGET /api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1 [36m304[0m 27.353 ms - -[0m
+3:10:31 PM [tsx] change in ./src\modules\registers\registers.repository.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+NaijaPOS API listening on http://127.0.0.1:4000
+3:10:56 PM [tsx] change in ./src\modules\reports\reports.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌁ auth for agents [www.vestauth.com]
+NaijaPOS API listening on http://127.0.0.1:4000
+3:11:09 PM [tsx] change in ./src\modules\reports\reports.routes.ts Restarting...
+◇ injected env (1) from ..\..\.env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+NaijaPOS API listening on http://127.0.0.1:4000

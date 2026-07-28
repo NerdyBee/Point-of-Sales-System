@@ -1,0 +1,120 @@
+C:\Users\DELL\Dev\pos\server\api\src\modules\restaurant\restaurant.routes.ts:3
+  tableCreateSchema,
+  ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'tableCreateSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0
+C:\Users\DELL\Dev\pos\server\api\src\modules\restaurant\restaurant.routes.ts:8
+  tableReservationStatusSchema,
+  ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'tableReservationStatusSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0
+C:\Users\DELL\Dev\pos\server\api\src\modules\inventory\inventory.routes.ts:1
+import { purchaseOrderInputSchema, purchaseOrderStatusSchema, stockAdjustmentSchema, stockCountSchema, supplierInputSchema, supplierReceiptSchema } from "@pos/validation";
+         ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'purchaseOrderInputSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0
+C:\Users\DELL\Dev\pos\server\api\src\modules\inventory\inventory.routes.ts:1
+import { purchaseOrderInputSchema, purchaseOrderStatusSchema, stockAdjustmentSchema, stockCountSchema, supplierInputSchema, supplierReceiptSchema } from "@pos/validation";
+         ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'purchaseOrderInputSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0
+C:\Users\DELL\Dev\pos\server\api\src\modules\inventory\inventory.routes.ts:1
+import { purchaseOrderInputSchema, purchaseOrderStatusSchema, stockAdjustmentSchema, stockCountSchema, supplierInputSchema, supplierInvoiceInputSchema, supplierInvoicePaymentSchema, supplierReceiptSchema } from "@pos/validation";
+                                                                                                                            ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'supplierInvoiceInputSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0
+C:\Users\DELL\Dev\pos\server\api\src\modules\inventory\inventory.routes.ts:1
+import { purchaseOrderInputSchema, purchaseOrderStatusSchema, stockAdjustmentSchema, stockCountSchema, supplierInputSchema, supplierInvoiceInputSchema, supplierInvoicePaymentSchema, supplierReceiptSchema, supplierReturnInputSchema } from "@pos/validation";
+                                                                                                                                                                                                             ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'supplierReturnInputSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0
+C:\Users\DELL\Dev\pos\server\api\src\modules\inventory\inventory.routes.ts:1
+import { purchaseOrderInputSchema, purchaseOrderStatusSchema, stockAdjustmentSchema, stockCountSchema, stockTransferInputSchema, supplierInputSchema, supplierInvoiceInputSchema, supplierInvoicePaymentSchema, supplierReceiptSchema, supplierReturnInputSchema } from "@pos/validation";
+                                                                                                       ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'stockTransferInputSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0
+C:\Users\DELL\Dev\pos\server\api\src\modules\inventory\inventory.routes.ts:1
+import { purchaseOrderInputSchema, purchaseOrderStatusSchema, stockAdjustmentSchema, stockCountSchema, stockTransferInputSchema, supplierInputSchema, supplierInvoiceInputSchema, supplierInvoicePaymentSchema, supplierReceiptSchema, supplierReturnInputSchema } from "@pos/validation";
+                                                                                                       ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'stockTransferInputSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0
+C:\Users\DELL\Dev\pos\server\api\src\modules\restaurant\restaurant.routes.ts:10
+  , tableTransferSchema
+    ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'tableTransferSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0
+C:\Users\DELL\Dev\pos\server\api\src\modules\restaurant\restaurant.routes.ts:10
+  tableTransferSchema
+  ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'tableTransferSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0
+C:\Users\DELL\Dev\pos\server\api\src\modules\kitchen\kitchen.routes.ts:1
+import { prepTicketItemStatusUpdateSchema, prepTicketPriorityUpdateSchema, prepTicketStatusUpdateSchema } from "@pos/validation";
+                                           ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'prepTicketPriorityUpdateSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0
+C:\Users\DELL\Dev\pos\server\api\src\modules\staff\staff.routes.ts:1
+import { profileUpdateSchema, staffInputSchema, staffStatusSchema } from "@pos/validation";
+         ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'profileUpdateSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0

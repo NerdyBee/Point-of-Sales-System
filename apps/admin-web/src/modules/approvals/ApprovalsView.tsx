@@ -148,6 +148,16 @@ export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
     void loadApprovals();
   }, []);
 
+  useEffect(() => {
+    setDecisionNote(selectedApproval?.status === "pending" ? "Manager reviewed request" : selectedApproval?.decisionNote ?? "Manager reviewed request");
+  }, [selectedApproval?.id]);
+
+  function approvalMatchesFilters(approval: ApprovalRequest, nextStatus = statusFilter, nextType = typeFilter) {
+    const statusMatches = !nextStatus || nextStatus === "all" || approval.status === nextStatus;
+    const typeMatches = !nextType || nextType === "all" || approval.type === nextType;
+    return statusMatches && typeMatches;
+  }
+
   function updateRequestForm<K extends keyof ApprovalPayload>(key: K, value: ApprovalPayload[K]) {
     setRequestForm((current) => ({ ...current, [key]: value }));
   }
@@ -204,8 +214,13 @@ export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
 
     try {
       const response = await decideApproval(selectedApproval.id, decision, decisionNote, branchId, activeUserId);
-      setApprovals((current) => current.map((approval) => (approval.id === response.approval.id ? response.approval : approval)));
-      setSelectedApproval(response.approval);
+      setApprovals((current) => {
+        const nextApprovals = current
+          .map((approval) => (approval.id === response.approval.id ? response.approval : approval))
+          .filter((approval) => approvalMatchesFilters(approval));
+        setSelectedApproval(approvalMatchesFilters(response.approval) ? response.approval : nextApprovals[0] ?? null);
+        return nextApprovals;
+      });
       setStatus(decision === "approved" ? "Request approved" : "Request rejected");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to decide approval");
@@ -338,7 +353,7 @@ export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
                 <div><dt>Decided by</dt><dd>{selectedApproval.decidedBy ?? "Pending"}</dd></div>
                 <div><dt>Decision</dt><dd>{selectedApproval.decisionNote ?? "Pending manager decision"}</dd></div>
               </dl>
-              <button className="secondary-button wide-field" onClick={() => onOpenSource?.(sourceModule(selectedApproval), selectedApproval)}>
+              <button className="secondary-button wide-field" disabled={selectedApproval.status === "pending" || selectedApproval.status === "rejected"} onClick={() => onOpenSource?.(sourceModule(selectedApproval), selectedApproval)}>
                 Open {sourceLabel(selectedApproval)}
               </button>
               <label>

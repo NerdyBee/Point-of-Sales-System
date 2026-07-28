@@ -39,6 +39,8 @@ interface RegisterViewProps {
 export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: RegisterViewProps) {
   const storedAuth = useMemo(() => readStoredAuth(), []);
   const activeUserId = storedAuth?.staff.id ?? "";
+  const activePermissions = storedAuth?.staff.permissions ?? [];
+  const canCloseRegister = activePermissions.includes("register.close");
   const [branchId, setBranchId] = useState(storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "");
   const [branches, setBranches] = useState<BranchOption[]>(fallbackBranches);
   const [terminalId, setTerminalId] = useState(storedAuth?.session.terminalId ?? "");
@@ -77,6 +79,32 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
   const branchTerminals = useMemo(() => terminals.filter((terminal) => terminal.branchId === branchId), [branchId, terminals]);
   const selectedTerminal = useMemo(() => terminals.find((terminal) => terminal.id === terminalId), [terminalId, terminals]);
   const paymentsPage = usePaginatedRows(payments, 10);
+  const movementsPage = usePaginatedRows(movements, 10);
+
+  function movementSign(type: CashMovement["type"]) {
+    return type === "cash_in" || type === "paid_in" ? "+" : "-";
+  }
+
+  function closeShiftButtonLabel() {
+    if (closeApprovalId.trim() && canCloseRegister) return "Apply close";
+    if (!canCloseRegister || (shift && applyManagerApproval("register-close", Math.abs(variance)))) return "Request close approval";
+    return "Close shift";
+  }
+
+  function updateMovementForm<K extends keyof typeof movement>(key: K, value: (typeof movement)[K]) {
+    setMovement((current) => ({ ...current, [key]: value }));
+    setMovementApprovalId("");
+  }
+
+  function updateCountedCash(value: number) {
+    setCountedCash(value);
+    setCloseApprovalId("");
+  }
+
+  function updateManagerNote(value: string) {
+    setManagerNote(value);
+    setCloseApprovalId("");
+  }
 
   async function loadRegister(nextTerminalId = terminalId, nextBranchId = branchId) {
     setStatus("Syncing register...");
@@ -267,7 +295,8 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
           amount: movement.amount,
           reason: `${movement.type.replace("_", " ")}: ${movement.reason}`
         });
-        setStatus(`Approval requested: ${response.approval.id}`);
+        setMovementApprovalId(response.approval.id);
+        setStatus(`Approval requested: ${response.approval.id}. Approve it, then apply movement.`);
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Unable to request movement approval");
       }
@@ -287,10 +316,11 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
         activeUserId,
         branchId
       );
-      const response = await createCashMovement({ ...movement, shiftId: shift.id }, branchId, activeUserId);
+      const response = await createCashMovement({ ...movement, shiftId: shift.id, approvalId: approvalResponse.approval.id }, branchId, activeUserId);
       setShift(response.shift);
       setMovements((current) => [response.movement, ...current]);
       setCountedCash(response.shift.expectedCash);
+      setMovement(defaultMovement);
       setMovementApprovalId("");
       setStatus(`Cash movement recorded with ${approvalResponse.approval.id}`);
     } catch (error) {
@@ -316,7 +346,7 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
       return;
     }
 
-    if (applyManagerApproval("register-close", Math.abs(variance)) && !closeApprovalId.trim()) {
+    if ((!canCloseRegister || applyManagerApproval("register-close", Math.abs(variance))) && !closeApprovalId.trim()) {
       setStatus("Requesting close approval...");
 
       try {
@@ -325,13 +355,19 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
           type: "register_close",
           entityType: "registerShift",
           entityId: shift.id,
-          amount: Math.abs(variance),
-          reason: managerNote || `Close shift with variance ${displayMoney(variance)}`
-        });
-        setStatus(`Close approval requested: ${response.approval.id}`);
+        amount: Math.abs(variance),
+        reason: managerNote || `Close shift with variance ${displayMoney(variance)}`
+      });
+        setCloseApprovalId(response.approval.id);
+        setStatus(`Close approval requested: ${response.approval.id}. Approve it, then apply close.`);
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Unable to request close approval");
       }
+      return;
+    }
+
+    if (!canCloseRegister) {
+      setStatus("Your role can request close approval, but cannot close the register");
       return;
     }
 
@@ -339,7 +375,7 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
 
     try {
       if (closeApprovalId.trim()) {
-        await applyApproval(
+        const approvalResponse = await applyApproval(
           closeApprovalId.trim(),
           "registerShift",
           shift.id,
@@ -349,8 +385,14 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
           activeUserId,
           branchId
         );
+        await closeRegisterShift(
+          { shiftId: shift.id, countedCash, managerNote: managerNote || undefined, approvalId: approvalResponse.approval.id },
+          branchId,
+          activeUserId
+        );
+      } else {
+        await closeRegisterShift({ shiftId: shift.id, countedCash, managerNote: managerNote || undefined }, branchId, activeUserId);
       }
-      await closeRegisterShift({ shiftId: shift.id, countedCash, managerNote: managerNote || undefined }, branchId, activeUserId);
       setShift(null);
       setPayments([]);
       setMovements([]);
@@ -462,7 +504,7 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
             </div>
             <label>
               Type
-              <select value={movement.type} onChange={(event) => setMovement((current) => ({ ...current, type: event.target.value as CashMovement["type"] }))}>
+              <select value={movement.type} onChange={(event) => updateMovementForm("type", event.target.value as CashMovement["type"])}>
                 <option value="" disabled>Type</option>
                 <option value="cash_in">Cash in</option>
                 <option value="cash_out">Cash out</option>
@@ -472,11 +514,11 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
             </label>
             <label>
               Amount
-              <input type="number" min={1} value={movement.amount} onChange={(event) => setMovement((current) => ({ ...current, amount: Number(event.target.value) }))} required />
+              <input type="number" min={1} value={movement.amount} onChange={(event) => updateMovementForm("amount", Number(event.target.value))} required />
             </label>
             <label className="wide-field">
               Reason
-              <input value={movement.reason} onChange={(event) => setMovement((current) => ({ ...current, reason: event.target.value }))} required />
+              <input value={movement.reason} onChange={(event) => updateMovementForm("reason", event.target.value)} required />
             </label>
             <label className="wide-field">
               Approved request ID
@@ -497,7 +539,7 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
             </div>
             <label>
               Counted cash
-              <input type="number" min={0} value={countedCash} onChange={(event) => setCountedCash(Number(event.target.value))} required />
+              <input type="number" min={0} value={countedCash} onChange={(event) => updateCountedCash(Number(event.target.value))} required />
             </label>
             <label>
               Variance
@@ -505,18 +547,22 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
             </label>
             <label className="wide-field">
               Manager note
-              <input value={managerNote} onChange={(event) => setManagerNote(event.target.value)} placeholder="Optional reconciliation note" />
+              <input value={managerNote} onChange={(event) => updateManagerNote(event.target.value)} placeholder="Optional reconciliation note" />
             </label>
-            <label className="wide-field">
-              Approved request ID
-              <input value={closeApprovalId} onChange={(event) => setCloseApprovalId(event.target.value)} placeholder="Leave blank to request manager approval" />
-            </label>
+            {canCloseRegister ? (
+              <label className="wide-field">
+                Approved request ID
+                <input value={closeApprovalId} onChange={(event) => setCloseApprovalId(event.target.value)} placeholder="Leave blank to request manager approval" />
+              </label>
+            ) : null}
             <div className="approval-warning wide-field">
-              <span>{pendingNonCashPayments.length > 0 ? "Reconciliation required" : "Register close requires approval"}</span>
+              <span>{pendingNonCashPayments.length > 0 ? "Reconciliation required" : canCloseRegister ? "Register close control" : "Manager close approval required"}</span>
               <strong>{pendingNonCashPayments.length > 0 ? `${pendingNonCashPayments.length} pending` : displayMoney(Math.abs(variance))}</strong>
-              <small>{pendingNonCashPayments.length > 0 ? "Match card, bank transfer, and mobile money payments first" : closeApprovalId.trim() ? "Approved close will lock the drawer" : "Manager approval request will be created"}</small>
+              <small>{pendingNonCashPayments.length > 0 ? "Match card, bank transfer, and mobile money payments first" : closeApprovalId.trim() && canCloseRegister ? "Approved close will lock the drawer" : "Manager approval request will be created"}</small>
             </div>
-            <button className="danger-button wide-field" disabled={!shift || pendingNonCashPayments.length > 0} type="submit"><LockKeyhole size={18} /> {closeApprovalId.trim() ? "Apply close" : "Request close approval"}</button>
+            <button className="danger-button wide-field" disabled={!shift || pendingNonCashPayments.length > 0 || (closeApprovalId.trim().length > 0 && !canCloseRegister)} type="submit">
+              <LockKeyhole size={18} /> {closeShiftButtonLabel()}
+            </button>
           </form>
         </section>
 
@@ -570,21 +616,38 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
             <h2>Drawer movements</h2>
             <span>{movements.length} records</span>
           </div>
-          <div className="stack">
-            {movements.length === 0 ? (
-              <div className="empty-state">No cash movement recorded.</div>
-            ) : (
-              movements.map((item) => (
-                <div className="list-row" key={item.id}>
-                  <div>
-                    <strong>{item.type.replace("_", " ")}</strong>
-                    <span>{item.reason}</span>
-                  </div>
-                  <b>{item.type === "cash_in" || item.type === "paid_in" ? "+" : "-"}{displayMoney(item.amount)}</b>
-                </div>
-              ))
-            )}
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>Created</th><th>Type</th><th>Reason</th><th>Amount</th><th>Expected after</th><th>Created by</th></tr></thead>
+              <tbody>
+                {movementsPage.pageRows.length === 0 ? (
+                  <tr><td colSpan={7}>No cash movement recorded.</td></tr>
+                ) : (
+                  movementsPage.pageRows.map((item, index) => (
+                    <tr key={item.id}>
+                      <td className="number-cell">{movementsPage.startIndex + index + 1}</td>
+                      <td>{new Date(item.createdAt).toLocaleString()}</td>
+                      <td><StatusBadge label={item.type.replace("_", " ")} tone={movementSign(item.type) === "+" ? "success" : "warning"} /></td>
+                      <td>{item.reason}</td>
+                      <td><strong>{movementSign(item.type)}{displayMoney(item.amount)}</strong></td>
+                      <td>{typeof item.expectedCashAfter === "number" ? displayMoney(item.expectedCashAfter) : "Not captured"}</td>
+                      <td>{item.createdBy}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
+          <TablePagination
+            page={movementsPage.page}
+            pageCount={movementsPage.pageCount}
+            pageSize={movementsPage.pageSize}
+            totalRows={movementsPage.totalRows}
+            startIndex={movementsPage.startIndex}
+            visibleCount={movementsPage.pageRows.length}
+            onPageChange={movementsPage.setPage}
+            onPageSizeChange={movementsPage.setPageSize}
+          />
         </section>
       </div>
 

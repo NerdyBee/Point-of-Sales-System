@@ -41,7 +41,9 @@ export function RolesView() {
     groups[permission.group] = [...(groups[permission.group] ?? []), permission];
     return groups;
   }, {}), [permissions]);
+  const permissionGroupEntries = useMemo(() => Object.entries(groupedPermissions), [groupedPermissions]);
   const rolePage = usePaginatedRows(roles, 10);
+  const permissionGroupPage = usePaginatedRows(permissionGroupEntries, 4);
 
   async function loadAccessControl(nextBranchId = branchId) {
     setStatus("Syncing roles...");
@@ -249,10 +251,10 @@ export function RolesView() {
                 <button className="secondary-button wide-field" type="submit"><Check size={18} /> Save role details</button>
               </form>
               <div className="permission-groups">
-                {Object.entries(groupedPermissions).map(([group, groupPermissions]) => (
+                {permissionGroupPage.pageRows.map(([group, groupPermissions], groupIndex) => (
                   <div className="permission-group" key={group}>
-                    <h3>{group}</h3>
-                    {groupPermissions.map((permission) => (
+                    <h3><span className="number-cell">{permissionGroupPage.startIndex + groupIndex + 1}</span>{group}</h3>
+                    {groupPermissions.map((permission, permissionIndex) => (
                       <label className="permission-row" key={permission.action}>
                         <input
                           type="checkbox"
@@ -261,7 +263,7 @@ export function RolesView() {
                           onChange={() => togglePermission(permission.action)}
                         />
                         <span>
-                          <strong>{permission.label}</strong>
+                          <strong><span className="number-cell">{permissionIndex + 1}</span>{permission.label}</strong>
                           <small>{permission.description}</small>
                         </span>
                       </label>
@@ -269,6 +271,16 @@ export function RolesView() {
                   </div>
                 ))}
               </div>
+              <TablePagination
+                page={permissionGroupPage.page}
+                pageCount={permissionGroupPage.pageCount}
+                pageSize={permissionGroupPage.pageSize}
+                totalRows={permissionGroupPage.totalRows}
+                startIndex={permissionGroupPage.startIndex}
+                visibleCount={permissionGroupPage.pageRows.length}
+                onPageChange={permissionGroupPage.setPage}
+                onPageSizeChange={permissionGroupPage.setPageSize}
+              />
             </>
           ) : <p>No role selected.</p>}
         </section>

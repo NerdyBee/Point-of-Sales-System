@@ -1,12 +1,14 @@
 import { Check, CircleDollarSign, ClipboardCheck, Plus, RefreshCcw, X } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
+  applyApproval,
   createApproval,
   createExpense,
   fetchBranchOptions,
   fetchExpenses,
   readStoredAuth,
   updateExpenseStatus,
+  type ApprovalRequest,
   type BranchOption,
   type Expense,
   type ExpensePayload,
@@ -50,10 +52,16 @@ function statusTone(status: ExpenseStatus): "success" | "warning" | "danger" | "
   return "info";
 }
 
-export function ExpensesView() {
+interface ExpensesViewProps {
+  approvalHandoff?: ApprovalRequest | null;
+  onApprovalHandoffConsumed?: () => void;
+}
+
+export function ExpensesView({ approvalHandoff, onApprovalHandoffConsumed }: ExpensesViewProps) {
   const storedAuth = useMemo(() => readStoredAuth(), []);
   const initialBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
   const activeUserId = storedAuth?.staff.id ?? "";
+  const handledApprovalIdRef = useRef<string | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [branches, setBranches] = useState<BranchOption[]>(fallbackBranches);
   const [branchId, setBranchId] = useState(initialBranchId);
@@ -66,6 +74,7 @@ export function ExpensesView() {
   const paidTotal = useMemo(() => expenses.filter((expense) => expense.status === "paid").reduce((sum, expense) => sum + expense.amount, 0), [expenses]);
   const pendingTotal = useMemo(() => expenses.filter((expense) => expense.status === "pending_approval").reduce((sum, expense) => sum + expense.amount, 0), [expenses]);
   const approvedUnpaid = useMemo(() => expenses.filter((expense) => expense.status === "approved").reduce((sum, expense) => sum + expense.amount, 0), [expenses]);
+  const rejectedOrVoided = useMemo(() => expenses.filter((expense) => expense.status === "rejected" || expense.status === "voided").reduce((sum, expense) => sum + expense.amount, 0), [expenses]);
   const expensePage = usePaginatedRows(expenses, 10);
 
   async function loadExpenses(nextStatus = statusFilter, nextBranchId = branchId) {
@@ -94,6 +103,37 @@ export function ExpensesView() {
   useEffect(() => {
     void loadExpenses();
   }, []);
+
+  useEffect(() => {
+    if (
+      !approvalHandoff ||
+      approvalHandoff.type !== "expense" ||
+      approvalHandoff.entityType !== "expense" ||
+      approvalHandoff.status !== "approved" ||
+      handledApprovalIdRef.current === approvalHandoff.id
+    ) {
+      return;
+    }
+
+    if (approvalHandoff.branchId && approvalHandoff.branchId !== branchId) {
+      setBranchId(approvalHandoff.branchId);
+      setForm(blankExpense(approvalHandoff.branchId));
+      setStatusFilter("all");
+      void loadExpenses("all", approvalHandoff.branchId);
+      return;
+    }
+
+    const expense = expenses.find((item) => item.id === approvalHandoff.entityId);
+    if (!expense) {
+      setStatusFilter("all");
+      void loadExpenses("all", approvalHandoff.branchId || branchId);
+      setStatus(`Waiting for expense ${approvalHandoff.entityId}`);
+      return;
+    }
+
+    handledApprovalIdRef.current = approvalHandoff.id;
+    void approveExpenseFromHandoff(expense, approvalHandoff);
+  }, [approvalHandoff?.id, branchId, expenses]);
 
   function updateForm<K extends keyof ExpensePayload>(key: K, value: ExpensePayload[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -140,7 +180,7 @@ export function ExpensesView() {
       setExpenses((current) => [response.expense, ...current]);
       if (response.expense.status === "pending_approval") {
         await createApproval({
-          branchId,
+          branchId: response.expense.branchId,
           type: "expense",
           entityType: "expense",
           entityId: response.expense.id,
@@ -172,6 +212,32 @@ export function ExpensesView() {
       setStatus(`Expense ${nextStatus.replace("_", " ")}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to update expense");
+    }
+  }
+
+  async function approveExpenseFromHandoff(expense: Expense, approval: ApprovalRequest) {
+    if (expense.status !== "pending_approval") {
+      setStatus(`Expense ${expense.description} is already ${expense.status.replace("_", " ")}`);
+      onApprovalHandoffConsumed?.();
+      return;
+    }
+
+    setStatus(`Applying expense approval ${approval.id}...`);
+
+    try {
+      const response = await updateExpenseStatus(
+        expense.id,
+        "approved",
+        approval.reason,
+        expense.branchId,
+        activeUserId
+      );
+      await applyApproval(approval.id, "expense", expense.id, "expense", expense.amount, approval.reason, activeUserId, expense.branchId);
+      setExpenses((current) => current.map((item) => (item.id === response.expense.id ? response.expense : item)));
+      setStatus(`Expense approval applied: ${approval.id}`);
+      onApprovalHandoffConsumed?.();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to apply expense approval");
     }
   }
 
@@ -214,6 +280,7 @@ export function ExpensesView() {
         <StatCard label="Paid expenses" value={displayMoney(paidTotal)} detail={status} icon={CircleDollarSign} tone="dark" />
         <StatCard label="Pending approval" value={displayMoney(pendingTotal)} detail="Manager review" icon={ClipboardCheck} />
         <StatCard label="Approved unpaid" value={displayMoney(approvedUnpaid)} detail="Ready to settle" icon={Check} />
+        <StatCard label="Rejected or voided" value={displayMoney(rejectedOrVoided)} detail="Blocked from payment" icon={X} />
       </section>
 
       <section className="panel">
@@ -239,6 +306,7 @@ export function ExpensesView() {
                   <td><StatusBadge label={expense.status.replace("_", " ")} tone={statusTone(expense.status)} /></td>
                   <td className="row-actions">
                     <button disabled={expense.status !== "pending_approval"} onClick={() => changeStatus(expense, "approved")}>Approve</button>
+                    <button disabled={expense.status !== "pending_approval"} onClick={() => changeStatus(expense, "rejected")}>Reject</button>
                     <button disabled={expense.status !== "approved"} onClick={() => changeStatus(expense, "paid")}>Pay</button>
                     <button disabled={expense.status === "paid" || expense.status === "voided"} onClick={() => changeStatus(expense, "voided")}>Void</button>
                   </td>

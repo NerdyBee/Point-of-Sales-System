@@ -16,6 +16,7 @@ export interface CreateSalePayload {
   tableId?: string;
   tableOrderId?: string;
   idempotencyKey: string;
+  discountApprovalId?: string;
   lines: Array<{
     productId: string;
     quantity: number;
@@ -127,6 +128,7 @@ export interface CashMovement {
   type: "cash_in" | "cash_out" | "paid_in" | "paid_out";
   amount: number;
   reason: string;
+  expectedCashAfter?: number;
   createdAt: string;
   createdBy: string;
 }
@@ -178,12 +180,14 @@ export interface CashMovementPayload {
   type: CashMovement["type"];
   amount: number;
   reason: string;
+  approvalId?: string;
 }
 
 export interface CloseRegisterPayload {
   shiftId: string;
   countedCash: number;
   managerNote?: string;
+  approvalId?: string;
 }
 
 export type ProductPayload = Omit<Product, "id"> & {
@@ -221,6 +225,184 @@ export interface Supplier {
   createdAt: string;
 }
 
+export type PurchaseOrderStatus = "draft" | "pending_approval" | "approved" | "partially_received" | "received" | "cancelled";
+
+export interface PurchaseOrderLine {
+  productId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  receivedQuantity: number;
+  unitCost: number;
+  total: number;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  supplierId: string;
+  supplierName: string;
+  orderNumber: string;
+  status: PurchaseOrderStatus;
+  expectedAt?: string;
+  lines: PurchaseOrderLine[];
+  subtotal: number;
+  note?: string;
+  createdBy: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  receivedAt?: string;
+  cancelledAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type SupplierInvoiceStatus = "open" | "partially_paid" | "paid" | "voided";
+
+export interface SupplierInvoicePayment {
+  id: string;
+  amount: number;
+  paymentMethod: PaymentMethodCode;
+  reference: string;
+  paidAt: string;
+  note?: string;
+  createdBy: string;
+}
+
+export interface SupplierInvoiceCredit {
+  id: string;
+  supplierReturnId: string;
+  amount: number;
+  reference: string;
+  creditedAt: string;
+  createdBy: string;
+}
+
+export interface SupplierInvoice {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  supplierId: string;
+  supplierName: string;
+  purchaseOrderId?: string;
+  invoiceNumber: string;
+  status: SupplierInvoiceStatus;
+  invoiceDate: string;
+  dueDate?: string;
+  amount: number;
+  amountPaid: number;
+  creditTotal: number;
+  balanceDue: number;
+  payments: SupplierInvoicePayment[];
+  credits: SupplierInvoiceCredit[];
+  note?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SupplierInvoicePayload {
+  branchId: string;
+  supplierId: string;
+  purchaseOrderId?: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  dueDate?: string;
+  amount: number;
+  note?: string;
+}
+
+export interface SupplierInvoicePaymentPayload {
+  amount: number;
+  paymentMethod: PaymentMethodCode;
+  reference: string;
+  paidAt: string;
+  note?: string;
+}
+
+export interface SupplierReturn {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  supplierId: string;
+  supplierName: string;
+  productId: string;
+  productName: string;
+  supplierInvoiceId?: string;
+  quantity: number;
+  unitCost: number;
+  creditAmount: number;
+  reference: string;
+  reason: string;
+  returnedAt: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface SupplierReturnPayload {
+  branchId: string;
+  supplierId: string;
+  productId: string;
+  supplierInvoiceId?: string;
+  quantity: number;
+  unitCost?: number;
+  reference: string;
+  reason: string;
+  returnedAt: string;
+}
+
+export interface SupplierStatementEntry {
+  id: string;
+  date: string;
+  type: "invoice" | "payment" | "credit";
+  reference: string;
+  description: string;
+  debit: number;
+  credit: number;
+  balance: number;
+}
+
+export interface SupplierStatement {
+  supplier: Supplier;
+  totals: {
+    invoiced: number;
+    paid: number;
+    credited: number;
+    balanceDue: number;
+  };
+  entries: SupplierStatementEntry[];
+}
+
+export interface InventoryTransfer {
+  id: string;
+  tenantId: string;
+  sourceBranchId: string;
+  destinationBranchId: string;
+  sourceProductId: string;
+  destinationProductId: string;
+  productName: string;
+  quantity: number;
+  reference: string;
+  note: string;
+  sourceMovementId: string;
+  destinationMovementId: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface PurchaseOrderPayload {
+  branchId: string;
+  supplierId: string;
+  expectedAt?: string;
+  note?: string;
+  lines: Array<{
+    productId: string;
+    quantity: number;
+    unitCost?: number;
+  }>;
+}
+
 export interface StockAdjustmentPayload {
   productId: string;
   branchId: string;
@@ -238,6 +420,16 @@ export interface StockCountPayload {
     productId: string;
     countedQuantity: number;
   }>;
+}
+
+export interface StockTransferPayload {
+  sourceBranchId: string;
+  destinationBranchId: string;
+  sourceProductId: string;
+  destinationProductId: string;
+  quantity: number;
+  reference: string;
+  note: string;
 }
 
 export interface SupplierPayload {
@@ -258,6 +450,7 @@ export interface PurchaseReceiptPayload {
   quantity: number;
   reference: string;
   note: string;
+  purchaseOrderId?: string;
 }
 
 export type RestaurantTableState = "available" | "occupied" | "reserved" | "awaiting_payment" | "delayed" | "unavailable";
@@ -287,6 +480,10 @@ export interface TableLayoutPayload {
   x: number;
   y: number;
 }
+
+export type TableCreatePayload = TableLayoutPayload & {
+  branchId: string;
+};
 
 export interface TableOrder {
   id: string;
@@ -347,6 +544,11 @@ export interface TableOrderItemPayload {
   note?: string;
 }
 
+export interface TableTransferPayload {
+  targetTableId: string;
+  reason?: string;
+}
+
 export interface TableReservationPayload {
   branchId: string;
   tableId: string;
@@ -357,6 +559,11 @@ export interface TableReservationPayload {
   durationMinutes: number;
   note?: string;
 }
+
+export type TableReservationStatusPayload = {
+  status: Extract<TableReservation["status"], "seated" | "cancelled" | "no_show">;
+  note?: string;
+};
 
 export type PrepTicketStatus = "new" | "accepted" | "preparing" | "ready" | "served" | "cancelled";
 export type PrepStation = "Kitchen" | "Bar" | "Counter";
@@ -465,6 +672,7 @@ export interface AuthStaff {
   branchId: string;
   name: string;
   email: string;
+  phone: string;
   role: StaffRole;
   permissions: string[];
 }
@@ -543,6 +751,22 @@ export function storeAuth(auth: AuthResponse, persist = true) {
   window.sessionStorage.removeItem(authStorageKey);
   storage.setItem(authStorageKey, JSON.stringify(auth));
   window.dispatchEvent(new CustomEvent("naijapos-auth-changed", { detail: auth }));
+}
+
+export function updateStoredAuthStaff(staff: Partial<AuthStaff>) {
+  const currentAuth = readStoredAuth();
+  if (!currentAuth) return null;
+
+  const nextAuth = {
+    ...currentAuth,
+    staff: {
+      ...currentAuth.staff,
+      ...staff
+    }
+  };
+  authStorage().setItem(authStorageKey, JSON.stringify(nextAuth));
+  window.dispatchEvent(new CustomEvent("naijapos-auth-changed", { detail: nextAuth }));
+  return nextAuth;
 }
 
 export function clearStoredAuth() {
@@ -838,6 +1062,9 @@ export interface DashboardReport {
     netProfit: number;
     lowStockCount: number;
     openRegisterCash: number;
+    cashMovementIn: number;
+    cashMovementOut: number;
+    cashMovementNet: number;
     auditEventCount: number;
     pendingApprovalCount: number;
     pendingApprovalValue: number;
@@ -845,10 +1072,18 @@ export interface DashboardReport {
   };
   hourlySales: Array<{ label: string; amount: number }>;
   lowStock: Array<{ id: string; name: string; sku: string; stock: number; reorderPoint: number }>;
-  staffPerformance: Array<{ id: string; name: string; role: string; salesTotal: number; status: string }>;
+  staffPerformance: Array<{ id: string; name: string; role: string; salesTotal: number; status: "active" | "inactive" }>;
   paymentMix: Record<string, number>;
   categorySales: Array<{ category: string; quantity: number; sales: number; cost: number; profit: number }>;
   topProducts: Array<{ id: string; name: string; quantity: number; sales: number; profit: number }>;
+  cashMovements: Array<{
+    id: string;
+    type: CashMovement["type"];
+    amount: number;
+    reason: string;
+    createdBy: string;
+    createdAt: string;
+  }>;
   approvals: Array<{
     id: string;
     type: ApprovalType;
@@ -895,7 +1130,8 @@ async function requestPublicJson<T>(path: string, init?: RequestInit): Promise<T
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    const diagnostic = [body.reason, body.email, body.tenantId].filter(Boolean).join(" | ");
+    const lockedUntil = body.lockedUntil ? `locked until ${new Date(body.lockedUntil).toLocaleTimeString()}` : "";
+    const diagnostic = [body.reason, body.identifier, body.staffId, body.branchId, body.terminalId, body.tenantId, lockedUntil].filter(Boolean).join(" | ");
     throw new Error(`${body.error ?? `API request failed with ${response.status}`}${diagnostic ? ` (${diagnostic})` : ""}`);
   }
 
@@ -1000,7 +1236,7 @@ export async function fetchAuthBootstrap(tenantId: string, branchId?: string) {
   return requestJson<{
     branches: BranchOption[];
     terminals: TerminalOption[];
-    staff: Array<Pick<StaffMember, "id" | "tenantId" | "branchId" | "name" | "role" | "pinEnabled" | "active">>;
+    staff: Array<Pick<StaffMember, "id" | "tenantId" | "branchId" | "name" | "email" | "role" | "pinEnabled" | "active">>;
   }>(`/api/v1/auth/bootstrap?${params.toString()}`);
 }
 
@@ -1090,19 +1326,19 @@ export async function fetchSales(branchId = "", status = "all", userId = "") {
   });
 }
 
-export async function voidSale(saleId: string, reason: string, branchId = "", userId = "") {
+export async function voidSale(saleId: string, reason: string, branchId = "", userId = "", approvalId = "") {
   return requestJson<{ sale: CompletedSale }>(`/api/v1/sales/${saleId}/void`, {
     method: "POST",
     headers: { "x-branch-id": branchId },
-    body: JSON.stringify({ reason })
+    body: JSON.stringify({ reason, approvalId })
   });
 }
 
-export async function refundSale(saleId: string, amount: number, reason: string, branchId = "", userId = "") {
+export async function refundSale(saleId: string, amount: number, reason: string, branchId = "", userId = "", approvalId = "") {
   return requestJson<{ sale: CompletedSale }>(`/api/v1/sales/${saleId}/refund`, {
     method: "POST",
     headers: { "x-branch-id": branchId },
-    body: JSON.stringify({ amount, reason })
+    body: JSON.stringify({ amount, reason, approvalId })
   });
 }
 
@@ -1191,8 +1427,38 @@ export async function fetchInventoryStock(branchId = "", userId = "") {
   });
 }
 
+export async function fetchInventoryTransfers(branchId = "", userId = "") {
+  return requestJson<{ transfers: InventoryTransfer[] }>(`/api/v1/inventory/transfers?branchId=${branchId}`, {
+    headers: { "x-branch-id": branchId }
+  });
+}
+
 export async function fetchSuppliers(branchId = "", userId = "") {
   return requestJson<{ suppliers: Supplier[] }>(`/api/v1/inventory/suppliers?branchId=${branchId}`, {
+    headers: { "x-branch-id": branchId }
+  });
+}
+
+export async function fetchPurchaseOrders(branchId = "", status = "all", userId = "") {
+  return requestJson<{ purchaseOrders: PurchaseOrder[] }>(`/api/v1/inventory/purchase-orders?branchId=${branchId}&status=${status}`, {
+    headers: { "x-branch-id": branchId }
+  });
+}
+
+export async function fetchSupplierInvoices(branchId = "", status = "all", supplierId = "", userId = "") {
+  return requestJson<{ supplierInvoices: SupplierInvoice[] }>(`/api/v1/inventory/supplier-invoices?branchId=${branchId}&status=${status}&supplierId=${supplierId}`, {
+    headers: { "x-branch-id": branchId }
+  });
+}
+
+export async function fetchSupplierReturns(branchId = "", supplierId = "", userId = "") {
+  return requestJson<{ supplierReturns: SupplierReturn[] }>(`/api/v1/inventory/supplier-returns?branchId=${branchId}&supplierId=${supplierId}`, {
+    headers: { "x-branch-id": branchId }
+  });
+}
+
+export async function fetchSupplierStatement(branchId: string, supplierId: string, userId = "") {
+  return requestJson<{ statement: SupplierStatement }>(`/api/v1/inventory/suppliers/${supplierId}/statement?branchId=${branchId}`, {
     headers: { "x-branch-id": branchId }
   });
 }
@@ -1205,8 +1471,54 @@ export async function createSupplier(payload: SupplierPayload, userId = "") {
   });
 }
 
+export async function createPurchaseOrder(payload: PurchaseOrderPayload, userId = "") {
+  return requestJson<{ purchaseOrder: PurchaseOrder }>("/api/v1/inventory/purchase-orders", {
+    method: "POST",
+    headers: { "x-branch-id": payload.branchId },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updatePurchaseOrderStatus(
+  orderId: string,
+  status: Extract<PurchaseOrderStatus, "pending_approval" | "approved" | "cancelled">,
+  note = "",
+  branchId = "",
+  userId = ""
+) {
+  return requestJson<{ purchaseOrder: PurchaseOrder }>(`/api/v1/inventory/purchase-orders/${orderId}/status`, {
+    method: "PATCH",
+    headers: { "x-branch-id": branchId },
+    body: JSON.stringify({ status, note })
+  });
+}
+
+export async function createSupplierInvoice(payload: SupplierInvoicePayload, userId = "") {
+  return requestJson<{ supplierInvoice: SupplierInvoice }>("/api/v1/inventory/supplier-invoices", {
+    method: "POST",
+    headers: { "x-branch-id": payload.branchId },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function recordSupplierInvoicePayment(invoiceId: string, payload: SupplierInvoicePaymentPayload, branchId = "", userId = "") {
+  return requestJson<{ supplierInvoice: SupplierInvoice; payment: SupplierInvoicePayment }>(`/api/v1/inventory/supplier-invoices/${invoiceId}/payments`, {
+    method: "POST",
+    headers: { "x-branch-id": branchId },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function createSupplierReturn(payload: SupplierReturnPayload, userId = "") {
+  return requestJson<{ supplierReturn: SupplierReturn; product: Product; movement: StockMovement; supplierInvoice?: SupplierInvoice }>("/api/v1/inventory/supplier-returns", {
+    method: "POST",
+    headers: { "x-branch-id": payload.branchId },
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function receivePurchase(payload: PurchaseReceiptPayload, userId = "") {
-  return requestJson<{ product: Product; movement: StockMovement; supplier: Supplier }>("/api/v1/inventory/purchase-receipts", {
+  return requestJson<{ product: Product; movement: StockMovement; supplier: Supplier; purchaseOrder?: PurchaseOrder }>("/api/v1/inventory/purchase-receipts", {
     method: "POST",
     headers: { "x-branch-id": payload.branchId },
     body: JSON.stringify(payload)
@@ -1217,6 +1529,14 @@ export async function createStockAdjustment(payload: StockAdjustmentPayload, use
   return requestJson<{ product: Product; movement: StockMovement }>("/api/v1/inventory/adjustments", {
     method: "POST",
     headers: { "x-branch-id": payload.branchId },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function createInventoryTransfer(payload: StockTransferPayload, userId = "") {
+  return requestJson<{ transfer: InventoryTransfer; sourceProduct: Product; destinationProduct: Product; sourceMovement: StockMovement; destinationMovement: StockMovement }>("/api/v1/inventory/transfers", {
+    method: "POST",
+    headers: { "x-branch-id": payload.sourceBranchId },
     body: JSON.stringify(payload)
   });
 }
@@ -1232,6 +1552,14 @@ export async function createStockCount(payload: StockCountPayload, userId = "") 
 export async function fetchRestaurantTables(branchId = "", userId = "") {
   return requestJson<{ tables: RestaurantTable[]; openOrders: TableOrder[]; reservations: TableReservation[] }>(`/api/v1/restaurant/tables?branchId=${branchId}`, {
     headers: { "x-branch-id": branchId }
+  });
+}
+
+export async function createRestaurantTable(payload: TableCreatePayload, userId = "") {
+  return requestJson<{ table: RestaurantTable }>("/api/v1/restaurant/tables", {
+    method: "POST",
+    headers: { "x-branch-id": payload.branchId },
+    body: JSON.stringify(payload)
   });
 }
 
@@ -1266,6 +1594,14 @@ export async function requestTableBill(orderId: string, note = "Bill requested",
   });
 }
 
+export async function transferTableOrder(orderId: string, payload: TableTransferPayload, branchId = "", userId = "") {
+  return requestJson<{ order: TableOrder; sourceTable?: RestaurantTable; targetTable: RestaurantTable }>(`/api/v1/restaurant/table-orders/${orderId}/transfer`, {
+    method: "PATCH",
+    headers: { "x-branch-id": branchId },
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function updateTableState(tableId: string, state: RestaurantTableState, reason: string, branchId = "", userId = "") {
   return requestJson<{ table: RestaurantTable }>(`/api/v1/restaurant/tables/${tableId}/state`, {
     method: "PATCH",
@@ -1290,8 +1626,18 @@ export async function createTableReservation(payload: TableReservationPayload, u
   });
 }
 
-export async function fetchPrepTickets(branchId = "", station: PrepStation | "All" = "All", userId = "") {
-  return requestJson<{ tickets: PrepTicket[] }>(`/api/v1/kitchen/tickets?branchId=${branchId}&station=${station}`, {
+export async function updateTableReservationStatus(reservationId: string, payload: TableReservationStatusPayload, branchId = "", userId = "") {
+  return requestJson<{ table?: RestaurantTable; reservation: TableReservation }>(`/api/v1/restaurant/reservations/${reservationId}/status`, {
+    method: "PATCH",
+    headers: { "x-branch-id": branchId },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function fetchPrepTickets(branchId = "", station: PrepStation | "All" = "All", userId = "", status = "") {
+  const params = new URLSearchParams({ branchId, station });
+  if (status) params.set("status", status);
+  return requestJson<{ tickets: PrepTicket[] }>(`/api/v1/kitchen/tickets?${params.toString()}`, {
     headers: { "x-branch-id": branchId }
   });
 }
@@ -1301,6 +1647,14 @@ export async function updatePrepTicketStatus(ticketId: string, status: PrepTicke
     method: "PATCH",
     headers: { "x-branch-id": branchId },
     body: JSON.stringify({ status, note })
+  });
+}
+
+export async function updatePrepTicketPriority(ticketId: string, priority: PrepTicket["priority"], note?: string, branchId = "", userId = "", station: PrepStation | "All" = "Kitchen") {
+  return requestJson<{ ticket: PrepTicket }>(`/api/v1/kitchen/tickets/${ticketId}/priority`, {
+    method: "PATCH",
+    headers: { "x-branch-id": branchId },
+    body: JSON.stringify({ priority, note })
   });
 }
 
@@ -1353,6 +1707,18 @@ export async function fetchStaff(branchId = "", userId = "") {
   });
 }
 
+export async function fetchMyProfile() {
+  return requestJson<{ staff: StaffMember }>("/api/v1/staff/me");
+}
+
+export async function updateMyProfile(payload: Pick<StaffPayload, "name" | "email" | "phone">) {
+  return requestJson<{ staff: StaffMember }>("/api/v1/staff/me", {
+    method: "PATCH",
+    headers: { "x-branch-id": readStoredAuth()?.session.branchId ?? readStoredAuth()?.staff.branchId ?? "" },
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function fetchRoles() {
   return requestJson<{ roles: AccessRole[]; permissions: AccessPermission[] }>("/api/v1/roles");
 }
@@ -1390,7 +1756,7 @@ export async function assignStaffRole(staffId: string, role: string, branchId = 
   });
 }
 
-export async function loginWithPassword(payload: { tenantId: string; email: string; password: string; terminalId?: string }) {
+export async function loginWithPassword(payload: { tenantId: string; identifier: string; password: string; terminalId?: string }) {
   return requestPublicJson<AuthResponse>("/api/v1/auth/login", {
     method: "POST",
     body: JSON.stringify(payload)
@@ -1418,13 +1784,19 @@ export async function logoutAuthSession() {
 }
 
 export async function fetchAuthSessions(userId = "", branchId = "") {
-  return requestJson<{ sessions: AuthSession[] }>("/api/v1/auth/sessions", {
+  const params = new URLSearchParams();
+  if (branchId) params.set("branchId", branchId);
+  const query = params.toString();
+  return requestJson<{ sessions: AuthSession[] }>(`/api/v1/auth/sessions${query ? `?${query}` : ""}`, {
     headers: { "x-branch-id": branchId }
   });
 }
 
 export async function revokeAuthSession(sessionId: string, userId = "", branchId = "") {
-  return requestJson<{ session: AuthSession }>(`/api/v1/auth/sessions/${sessionId}/revoke`, {
+  const params = new URLSearchParams();
+  if (branchId) params.set("branchId", branchId);
+  const query = params.toString();
+  return requestJson<{ session: AuthSession }>(`/api/v1/auth/sessions/${sessionId}/revoke${query ? `?${query}` : ""}`, {
     method: "POST",
     headers: { "x-branch-id": branchId }
   });
@@ -1468,8 +1840,13 @@ export async function revokeStaffInvite(staffId: string, branchId = "", userId =
   });
 }
 
-export async function fetchAuditEvents(userId = "", branchId = "") {
-  return requestJson<{ events: AuditEvent[] }>("/api/v1/audit", {
+export async function fetchAuditEvents(userId = "", branchId = "", action = "") {
+  const params = new URLSearchParams();
+  if (branchId) params.set("branchId", branchId);
+  if (userId) params.set("userId", userId);
+  if (action) params.set("action", action);
+  const query = params.toString();
+  return requestJson<{ events: AuditEvent[] }>(`/api/v1/audit${query ? `?${query}` : ""}`, {
     headers: { "x-branch-id": branchId }
   });
 }

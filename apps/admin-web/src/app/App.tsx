@@ -89,7 +89,7 @@ export function App() {
   const [branches, setBranches] = useState<BranchOption[]>([]);
   const activeBranchId = auth?.session.branchId ?? auth?.staff.branchId ?? "";
   const activeBranch = branches.find((branch) => branch.id === activeBranchId);
-  const currentUser = { name: auth?.staff.name ?? "", role: auth?.staff.role ?? "", email: auth?.staff.email ?? "", phone: "", branch: activeBranch?.name ?? activeBranchId };
+  const currentUser = { name: auth?.staff.name ?? "", role: auth?.staff.role ?? "", email: auth?.staff.email ?? "", phone: auth?.staff.phone ?? "", branch: activeBranch?.name ?? activeBranchId };
   const currentUserInitials = currentUser.name
     .split(" ")
     .map((part) => part[0])
@@ -225,7 +225,7 @@ export function App() {
     reports: <ReportsView />,
     catalog: <CatalogView />,
     inventory: <InventoryView approvalHandoff={approvalHandoff} onApprovalHandoffConsumed={() => setApprovalHandoff(null)} />,
-    expenses: <ExpensesView />,
+    expenses: <ExpensesView approvalHandoff={approvalHandoff} onApprovalHandoffConsumed={() => setApprovalHandoff(null)} />,
     branches: <BranchesView />,
     registers: <RegisterView approvalHandoff={approvalHandoff} onApprovalHandoffConsumed={() => setApprovalHandoff(null)} />,
     floor: <FloorPlanView onSendToPos={sendTableToPos} settledReceipt={settledTableReceipt} onSettledReceiptSeen={() => setSettledTableReceipt(null)} />,

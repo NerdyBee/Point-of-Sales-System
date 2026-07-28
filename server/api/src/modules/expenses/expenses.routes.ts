@@ -1,7 +1,7 @@
 import { expenseInputSchema } from "@pos/validation";
 import { Router } from "express";
 import { z } from "zod";
-import { requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import { createExpense, listExpenses, updateExpenseStatus } from "./expenses.repository";
 
 export const expensesRouter = Router();
@@ -12,9 +12,14 @@ const expenseStatusUpdateSchema = z.object({
 });
 
 expensesRouter.get("/", requireTenant, requirePermission("expense.manage"), async (req, res) => {
-  const branchId = req.query.branchId?.toString() ?? req.tenantContext!.branchId;
+  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
   const status = req.query.status?.toString();
-  const expenses = await listExpenses(req.tenantContext!.tenantId, { branchId, status });
+  const expenses = await listExpenses(req.tenantContext!.tenantId, { branchId: scope.branchId, status });
 
   res.json({ expenses });
 });
@@ -24,6 +29,12 @@ expensesRouter.post("/", requireTenant, requirePermission("expense.manage"), asy
 
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid expense payload", issues: parsed.error.flatten() });
+    return;
+  }
+
+  const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
+    res.status(403).json({ error: "Branch access denied" });
     return;
   }
 
@@ -45,13 +56,19 @@ expensesRouter.patch("/:expenseId/status", requireTenant, requirePermission("exp
     return;
   }
 
+  const scope = resolveBranchScope(req.tenantContext!, req.tenantContext!.branchId);
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
   const result = await updateExpenseStatus(
     req.tenantContext!.tenantId,
     req.tenantContext!.userId,
     req.params.expenseId.toString(),
     parsed.data.status,
     parsed.data.note,
-    req.tenantContext!.branchId
+    scope.branchId
   );
 
   if (result.status === "not_found") {

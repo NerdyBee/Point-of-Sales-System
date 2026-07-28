@@ -5,13 +5,14 @@ import {
   branches,
   demoProducts,
   expenses,
+  cashMovements,
   paymentRecords,
   registerShifts,
   saleLedger,
   staffMembers
 } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
-import { resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 
 export const reportsRouter = Router();
 const useDemoStore = process.env.NODE_ENV === "test";
@@ -28,6 +29,10 @@ const reportPeriodLabels: Record<ReportPeriod, string> = {
 
 function getReportPeriod(value: unknown): ReportPeriod {
   return value === "week" || value === "month" || value === "year" || value === "all" ? value : "today";
+}
+
+function isServiceCategory(category: string) {
+  return category.trim().toLowerCase() === "services";
 }
 
 function startOfToday(now: Date) {
@@ -188,6 +193,7 @@ async function loadReportSources(tenantId: string) {
       sales: saleLedger,
       products: demoProducts,
       shifts: registerShifts,
+      cashMovements,
       staff: staffMembers,
       payments: paymentRecords,
       expenses,
@@ -196,10 +202,11 @@ async function loadReportSources(tenantId: string) {
     };
   }
 
-  const [sales, products, shifts, staff, payments, expenseRecords, approvals, audits] = await Promise.all([
+  const [sales, products, shifts, movementRecords, staff, payments, expenseRecords, approvals, audits] = await Promise.all([
     prisma.completedSale.findMany({ where: { tenantId } }),
     prisma.product.findMany({ where: { tenantId } }),
     prisma.registerShift.findMany({ where: { tenantId } }),
+    prisma.cashMovement.findMany({ where: { tenantId } }),
     prisma.staffMember.findMany({ where: { tenantId } }),
     prisma.paymentRecord.findMany({ where: { tenantId } }),
     prisma.expense.findMany({ where: { tenantId } }),
@@ -229,6 +236,16 @@ async function loadReportSources(tenantId: string) {
       cost: product.cost
     })),
     shifts: shifts.map((shift) => ({ tenantId: shift.tenantId, branchId: shift.branchId, status: shift.status, expectedCash: shift.expectedCash })),
+    cashMovements: movementRecords.map((movement) => ({
+      id: movement.id,
+      tenantId: movement.tenantId,
+      branchId: movement.branchId,
+      type: movement.type,
+      amount: movement.amount,
+      reason: movement.reason,
+      createdBy: movement.createdBy,
+      createdAt: movement.createdAt.toISOString()
+    })),
     staff: staff.map((member) => ({ id: member.id, tenantId: member.tenantId, branchId: member.branchId, name: member.name, role: member.role, active: member.active })),
     payments: payments.map((payment) => ({ tenantId: payment.tenantId, branchId: payment.branchId, method: payment.method, amount: payment.amount, createdAt: payment.createdAt.toISOString() })),
     expenses: expenseRecords.map((expense) => ({ tenantId: expense.tenantId, branchId: expense.branchId, status: expense.status, category: expense.category, amount: expense.amount, spentAt: expense.spentAt.toISOString() })),
@@ -245,13 +262,13 @@ async function loadReportSources(tenantId: string) {
       requestedBy: approval.requestedBy,
       createdAt: approval.createdAt.toISOString()
     })),
-    audits: audits.map((event) => ({ tenantId: event.tenantId, createdAt: event.createdAt.toISOString() }))
+    audits: audits.map((event) => ({ tenantId: event.tenantId, branchId: event.branchId ?? undefined, createdAt: event.createdAt.toISOString() }))
   };
 }
 
 reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit.view"), async (req, res) => {
   const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
-  if (scope.forbidden) {
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
@@ -296,6 +313,7 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
   const lowStock = sources.products
     .filter((product) => product.tenantId === tenantId)
     .filter((product) => !branchId || product.branchId === branchId)
+    .filter((product) => !isServiceCategory(product.category))
     .filter((product) => product.stock <= product.reorderPoint)
     .map((product) => ({
       id: product.id,
@@ -308,6 +326,17 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
     .filter((shift) => shift.tenantId === tenantId && shift.status === "open")
     .filter((shift) => !branchId || shift.branchId === branchId)
     .reduce((sum, shift) => sum + shift.expectedCash, 0);
+  const periodCashMovements = sources.cashMovements
+    .filter((movement) => movement.tenantId === tenantId)
+    .filter((movement) => !branchId || movement.branchId === branchId)
+    .filter((movement) => isWithinReportPeriod(movement.createdAt, period));
+  const cashMovementIn = periodCashMovements
+    .filter((movement) => movement.type === "cash_in" || movement.type === "paid_in")
+    .reduce((sum, movement) => sum + movement.amount, 0);
+  const cashMovementOut = periodCashMovements
+    .filter((movement) => movement.type === "cash_out" || movement.type === "paid_out")
+    .reduce((sum, movement) => sum + movement.amount, 0);
+  const cashMovementNet = cashMovementIn - cashMovementOut;
   const hourlySales = buildSalesTrend(activeSales, period);
   const staffPerformance = sources.staff
     .filter((member) => member.tenantId === tenantId)
@@ -317,7 +346,7 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
       name: member.name,
       role: member.role,
       salesTotal: activeSales.filter((sale) => sale.cashierId === member.id).reduce((sum, sale) => sum + sale.summary.total - sale.refundTotal, 0),
-      status: member.active ? "Active" : "Inactive"
+      status: member.active ? "active" : "inactive"
     }));
   const paymentMix = sources.payments
     .filter((payment) => payment.tenantId === tenantId)
@@ -372,7 +401,13 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
       netProfit: grossProfit - expenseTotal,
       lowStockCount: lowStock.length,
       openRegisterCash,
-      auditEventCount: sources.audits.filter((event) => event.tenantId === tenantId).filter((event) => isWithinReportPeriod(event.createdAt, period)).length,
+      cashMovementIn,
+      cashMovementOut,
+      cashMovementNet,
+      auditEventCount: sources.audits
+        .filter((event) => event.tenantId === tenantId)
+        .filter((event) => !branchId || event.branchId === branchId)
+        .filter((event) => isWithinReportPeriod(event.createdAt, period)).length,
       pendingApprovalCount: pendingApprovals.length,
       pendingApprovalValue: pendingApprovals.reduce((sum, approval) => sum + approval.amount, 0),
       highPriorityApprovalCount: pendingApprovals.filter((approval) => approval.amount >= 100000).length
@@ -383,6 +418,17 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
     paymentMix,
     categorySales,
     topProducts: topProducts.slice(0, 5),
+    cashMovements: periodCashMovements
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+      .slice(0, 10)
+      .map((movement) => ({
+        id: movement.id,
+        type: movement.type,
+        amount: movement.amount,
+        reason: movement.reason,
+        createdBy: movement.createdBy,
+        createdAt: movement.createdAt
+      })),
     approvals: pendingApprovals.slice(0, 5).map((approval) => ({
       id: approval.id,
       type: approval.type,

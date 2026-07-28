@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -b",
-    "test": "vitest run"
+    "test": "set NODE_ENV=test&& vitest run"
   },
   "dependencies": {
     "@pos/types": "*",

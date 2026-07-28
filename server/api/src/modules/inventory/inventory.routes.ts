@@ -1,14 +1,25 @@
-import { stockAdjustmentSchema, stockCountSchema, supplierInputSchema, supplierReceiptSchema } from "@pos/validation";
+import { purchaseOrderInputSchema, purchaseOrderStatusSchema, stockAdjustmentSchema, stockCountSchema, stockTransferInputSchema, supplierInputSchema, supplierInvoiceInputSchema, supplierInvoicePaymentSchema, supplierReceiptSchema, supplierReturnInputSchema } from "@pos/validation";
 import { Router } from "express";
-import { resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import {
   appendInventoryAudit,
   applyInventoryAdjustment,
   createInventorySupplier,
+  createInventoryTransfer,
+  createPurchaseOrder,
+  createSupplierInvoice,
+  createSupplierReturn,
+  getSupplierStatement,
+  listInventoryTransfers,
   listInventoryStock,
   listInventorySuppliers,
+  listPurchaseOrders,
+  listSupplierInvoices,
+  listSupplierReturns,
   postInventoryCount,
-  receiveSupplierPurchase
+  recordSupplierInvoicePayment,
+  receiveSupplierPurchase,
+  updatePurchaseOrderStatus
 } from "./inventory.repository";
 
 export const inventoryRouter = Router();
@@ -25,6 +36,17 @@ inventoryRouter.get("/stock", requireTenant, requireAuthenticatedUser, async (re
   res.json({ products, movements });
 });
 
+inventoryRouter.get("/transfers", requireTenant, requireAuthenticatedUser, async (req, res) => {
+  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
+  if (scope.forbidden) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
+  const transfers = await listInventoryTransfers(req.tenantContext!.tenantId, { branchId: scope.branchId });
+  res.json({ transfers });
+});
+
 inventoryRouter.get("/suppliers", requireTenant, requireAuthenticatedUser, async (req, res) => {
   const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
   if (scope.forbidden) {
@@ -37,11 +59,79 @@ inventoryRouter.get("/suppliers", requireTenant, requireAuthenticatedUser, async
   res.json({ suppliers: tenantSuppliers });
 });
 
+inventoryRouter.get("/suppliers/:supplierId/statement", requireTenant, requireAuthenticatedUser, async (req, res) => {
+  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
+  if (scope.forbidden) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
+  const result = await getSupplierStatement(req.tenantContext!.tenantId, scope.branchId, String(req.params.supplierId));
+  if (result.status === "supplier_not_found") {
+    res.status(404).json({ error: "Supplier not found" });
+    return;
+  }
+
+  res.json({ statement: result.statement });
+});
+
+inventoryRouter.get("/purchase-orders", requireTenant, requireAuthenticatedUser, async (req, res) => {
+  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
+  if (scope.forbidden) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
+  const orders = await listPurchaseOrders(req.tenantContext!.tenantId, {
+    branchId: scope.branchId,
+    status: req.query.status?.toString()
+  });
+
+  res.json({ purchaseOrders: orders });
+});
+
+inventoryRouter.get("/supplier-invoices", requireTenant, requireAuthenticatedUser, async (req, res) => {
+  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
+  if (scope.forbidden) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
+  const invoices = await listSupplierInvoices(req.tenantContext!.tenantId, {
+    branchId: scope.branchId,
+    supplierId: req.query.supplierId?.toString(),
+    status: req.query.status?.toString()
+  });
+
+  res.json({ supplierInvoices: invoices });
+});
+
+inventoryRouter.get("/supplier-returns", requireTenant, requireAuthenticatedUser, async (req, res) => {
+  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
+  if (scope.forbidden) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
+  const returns = await listSupplierReturns(req.tenantContext!.tenantId, {
+    branchId: scope.branchId,
+    supplierId: req.query.supplierId?.toString()
+  });
+
+  res.json({ supplierReturns: returns });
+});
+
 inventoryRouter.post("/suppliers", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
   const parsed = supplierInputSchema.safeParse(req.body);
 
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid supplier payload", issues: parsed.error.flatten() });
+    return;
+  }
+
+  const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
+  if (scope.forbidden) {
+    res.status(403).json({ error: "Branch access denied" });
     return;
   }
 
@@ -54,6 +144,11 @@ inventoryRouter.post("/suppliers", requireTenant, requirePermission("inventory.a
 
   if (result.status === "missing_products") {
     res.status(404).json({ error: "Supplier product coverage includes unknown products" });
+    return;
+  }
+
+  if (result.status === "non_stock_product") {
+    res.status(409).json({ error: "Services cannot be linked to supplier stock coverage" });
     return;
   }
 
@@ -70,11 +165,221 @@ inventoryRouter.post("/suppliers", requireTenant, requirePermission("inventory.a
   res.status(201).json({ supplier: result.supplier });
 });
 
+inventoryRouter.post("/purchase-orders", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
+  const parsed = purchaseOrderInputSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid purchase order", issues: parsed.error.flatten() });
+    return;
+  }
+
+  const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
+  if (scope.forbidden) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
+  const result = await createPurchaseOrder(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+
+  if (result.status === "branch_not_found") {
+    res.status(404).json({ error: "Inventory branch not found for this tenant" });
+    return;
+  }
+
+  if (result.status === "supplier_not_found") {
+    res.status(404).json({ error: "Active supplier not found" });
+    return;
+  }
+
+  if (result.status === "supplier_product_mismatch") {
+    res.status(409).json({ error: `Supplier is not linked to product ${result.productId}` });
+    return;
+  }
+
+  if (result.status === "product_not_found") {
+    res.status(404).json({ error: `Product ${result.productId} stock record not found` });
+    return;
+  }
+
+  if (result.status === "non_stock_product") {
+    res.status(409).json({ error: "Services cannot be added to purchase orders" });
+    return;
+  }
+
+  res.status(201).json({ purchaseOrder: result.order });
+});
+
+inventoryRouter.patch("/purchase-orders/:orderId/status", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
+  const parsed = purchaseOrderStatusSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid purchase order status", issues: parsed.error.flatten() });
+    return;
+  }
+
+  const branchId = req.tenantContext!.branchId;
+  if (!canAccessAllBranches(req.tenantContext!) && !branchId) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
+  const result = await updatePurchaseOrderStatus(
+    req.tenantContext!.tenantId,
+    branchId,
+    req.tenantContext!.userId,
+    String(req.params.orderId),
+    parsed.data
+  );
+
+  if (result.status === "order_not_found") {
+    res.status(404).json({ error: "Purchase order not found" });
+    return;
+  }
+
+  if (result.status === "locked") {
+    res.status(409).json({ error: "Purchase order cannot be changed in its current status" });
+    return;
+  }
+
+  res.json({ purchaseOrder: result.order });
+});
+
+inventoryRouter.post("/supplier-invoices", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
+  const parsed = supplierInvoiceInputSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid supplier invoice", issues: parsed.error.flatten() });
+    return;
+  }
+
+  const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
+  if (scope.forbidden) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
+  const result = await createSupplierInvoice(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+
+  if (result.status === "branch_not_found") {
+    res.status(404).json({ error: "Inventory branch not found for this tenant" });
+    return;
+  }
+
+  if (result.status === "supplier_not_found") {
+    res.status(404).json({ error: "Active supplier not found" });
+    return;
+  }
+
+  if (result.status === "purchase_order_not_found") {
+    res.status(404).json({ error: "Purchase order not found for this supplier" });
+    return;
+  }
+
+  if (result.status === "duplicate_invoice") {
+    res.status(409).json({ error: "Supplier invoice number already exists" });
+    return;
+  }
+
+  res.status(201).json({ supplierInvoice: result.invoice });
+});
+
+inventoryRouter.post("/supplier-invoices/:invoiceId/payments", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
+  const parsed = supplierInvoicePaymentSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid supplier invoice payment", issues: parsed.error.flatten() });
+    return;
+  }
+
+  const branchId = req.tenantContext!.branchId;
+  if (!canAccessAllBranches(req.tenantContext!) && !branchId) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
+  const result = await recordSupplierInvoicePayment(req.tenantContext!.tenantId, branchId, req.tenantContext!.userId, String(req.params.invoiceId), parsed.data);
+
+  if (result.status === "invoice_not_found") {
+    res.status(404).json({ error: "Supplier invoice not found" });
+    return;
+  }
+
+  if (result.status === "locked") {
+    res.status(409).json({ error: "Supplier invoice cannot receive payments in its current status" });
+    return;
+  }
+
+  if (result.status === "overpayment") {
+    res.status(409).json({ error: "Supplier payment exceeds invoice balance" });
+    return;
+  }
+
+  res.status(201).json({ supplierInvoice: result.invoice, payment: result.payment });
+});
+
+inventoryRouter.post("/supplier-returns", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
+  const parsed = supplierReturnInputSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid supplier return", issues: parsed.error.flatten() });
+    return;
+  }
+
+  const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
+  if (scope.forbidden) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
+  const result = await createSupplierReturn(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+
+  if (result.status === "branch_not_found") {
+    res.status(404).json({ error: "Inventory branch not found for this tenant" });
+    return;
+  }
+  if (result.status === "supplier_not_found") {
+    res.status(404).json({ error: "Active supplier not found" });
+    return;
+  }
+  if (result.status === "supplier_product_mismatch") {
+    res.status(409).json({ error: "Supplier is not linked to this product" });
+    return;
+  }
+  if (result.status === "product_not_found") {
+    res.status(404).json({ error: "Product stock record not found" });
+    return;
+  }
+  if (result.status === "non_stock_product") {
+    res.status(409).json({ error: `${result.productName} is a service and does not use supplier returns` });
+    return;
+  }
+  if (result.status === "insufficient_stock") {
+    res.status(409).json({ error: `${result.productName} has insufficient stock for supplier return` });
+    return;
+  }
+  if (result.status === "invoice_not_found") {
+    res.status(404).json({ error: "Supplier invoice not found" });
+    return;
+  }
+  if (result.status === "credit_exceeds_balance") {
+    res.status(409).json({ error: "Supplier return credit exceeds invoice balance" });
+    return;
+  }
+
+  res.status(201).json({ supplierReturn: result.supplierReturn, product: result.product, movement: result.movement, supplierInvoice: result.supplierInvoice });
+});
+
 inventoryRouter.post("/purchase-receipts", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
   const parsed = supplierReceiptSchema.safeParse(req.body);
 
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid purchase receipt", issues: parsed.error.flatten() });
+    return;
+  }
+
+  const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
+  if (scope.forbidden) {
+    res.status(403).json({ error: "Branch access denied" });
     return;
   }
 
@@ -100,6 +405,31 @@ inventoryRouter.post("/purchase-receipts", requireTenant, requirePermission("inv
     return;
   }
 
+  if (result.status === "non_stock_product") {
+    res.status(409).json({ error: `${result.productName} is a service and does not receive stock` });
+    return;
+  }
+
+  if (result.status === "purchase_order_not_found") {
+    res.status(404).json({ error: "Purchase order not found" });
+    return;
+  }
+
+  if (result.status === "purchase_order_not_receivable") {
+    res.status(409).json({ error: "Purchase order is not approved for receiving" });
+    return;
+  }
+
+  if (result.status === "purchase_order_line_not_found") {
+    res.status(409).json({ error: "Purchase order does not include this product" });
+    return;
+  }
+
+  if (result.status === "purchase_order_over_received") {
+    res.status(409).json({ error: "Receipt quantity exceeds the purchase order balance" });
+    return;
+  }
+
   await appendInventoryAudit({
     tenantId: req.tenantContext!.tenantId,
     branchId: parsed.data.branchId,
@@ -110,7 +440,73 @@ inventoryRouter.post("/purchase-receipts", requireTenant, requirePermission("inv
     metadata: { supplierId: result.supplier.id, productId: result.product.id, quantity: parsed.data.quantity, reference: parsed.data.reference }
   });
 
-  res.status(201).json({ product: result.product, movement: result.movement, supplier: result.supplier });
+  res.status(201).json({ product: result.product, movement: result.movement, supplier: result.supplier, purchaseOrder: result.purchaseOrder });
+});
+
+inventoryRouter.post("/transfers", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
+  const parsed = stockTransferInputSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid stock transfer", issues: parsed.error.flatten() });
+    return;
+  }
+
+  const sourceScope = resolveBranchScope(req.tenantContext!, parsed.data.sourceBranchId);
+  const destinationScope = resolveBranchScope(req.tenantContext!, parsed.data.destinationBranchId);
+  if (sourceScope.forbidden || destinationScope.forbidden) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
+  const result = await createInventoryTransfer(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+
+  if (result.status === "same_branch") {
+    res.status(400).json({ error: "Destination branch must be different" });
+    return;
+  }
+
+  if (result.status === "source_branch_not_found") {
+    res.status(404).json({ error: "Source branch not found for this tenant" });
+    return;
+  }
+
+  if (result.status === "destination_branch_not_found") {
+    res.status(404).json({ error: "Destination branch not found for this tenant" });
+    return;
+  }
+
+  if (result.status === "source_product_not_found") {
+    res.status(404).json({ error: "Source product stock record not found" });
+    return;
+  }
+
+  if (result.status === "destination_product_not_found") {
+    res.status(404).json({ error: "Destination product stock record not found" });
+    return;
+  }
+
+  if (result.status === "non_stock_product") {
+    res.status(409).json({ error: `${result.productName} is a service and cannot be transferred as stock` });
+    return;
+  }
+
+  if (result.status === "insufficient_stock") {
+    res.status(409).json({ error: `${result.productName} has insufficient stock for transfer` });
+    return;
+  }
+
+  if (result.status === "duplicate_reference") {
+    res.status(409).json({ error: "Transfer reference already exists" });
+    return;
+  }
+
+  res.status(201).json({
+    transfer: result.transfer,
+    sourceProduct: result.sourceProduct,
+    destinationProduct: result.destinationProduct,
+    sourceMovement: result.sourceMovement,
+    destinationMovement: result.destinationMovement
+  });
 });
 
 inventoryRouter.post("/adjustments", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
@@ -118,6 +514,12 @@ inventoryRouter.post("/adjustments", requireTenant, requirePermission("inventory
 
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid stock adjustment", issues: parsed.error.flatten() });
+    return;
+  }
+
+  const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
+  if (scope.forbidden) {
+    res.status(403).json({ error: "Branch access denied" });
     return;
   }
 
@@ -130,6 +532,11 @@ inventoryRouter.post("/adjustments", requireTenant, requirePermission("inventory
 
   if (result.status === "product_not_found") {
     res.status(404).json({ error: "Product stock record not found" });
+    return;
+  }
+
+  if (result.status === "non_stock_product") {
+    res.status(409).json({ error: `${result.productName} is a service and cannot be stock-adjusted` });
     return;
   }
 
@@ -164,6 +571,12 @@ inventoryRouter.post("/counts", requireTenant, requirePermission("inventory.adju
     return;
   }
 
+  const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
+  if (scope.forbidden) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
   const result = await postInventoryCount(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
 
   if (result.status === "branch_not_found") {
@@ -173,6 +586,11 @@ inventoryRouter.post("/counts", requireTenant, requirePermission("inventory.adju
 
   if (result.status === "product_not_found") {
     res.status(404).json({ error: `Product ${result.productId} stock record not found` });
+    return;
+  }
+
+  if (result.status === "non_stock_product") {
+    res.status(409).json({ error: `${result.productName} is a service and cannot be stock-counted` });
     return;
   }
 

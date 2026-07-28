@@ -2,6 +2,7 @@ import { Banknote, ClipboardCheck, PackageSearch, ReceiptText, RefreshCcw, Shiel
 import { useEffect, useMemo, useState } from "react";
 import { fetchBranchOptions, fetchDashboardReport, readStoredAuth, type BranchOption, type DashboardReport, type ReportPeriod } from "../../shared/api/client";
 import { StatCard } from "../../shared/components/StatCard";
+import { TablePagination, usePaginatedRows } from "../../shared/components/TablePagination";
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 
 const defaultBranchId = "";
@@ -19,6 +20,9 @@ const fallbackReport: DashboardReport = {
     netProfit: 0,
     lowStockCount: 0,
     openRegisterCash: 0,
+    cashMovementIn: 0,
+    cashMovementOut: 0,
+    cashMovementNet: 0,
     auditEventCount: 0,
     pendingApprovalCount: 0,
     pendingApprovalValue: 0,
@@ -30,6 +34,7 @@ const fallbackReport: DashboardReport = {
   paymentMix: {},
   categorySales: [],
   topProducts: [],
+  cashMovements: [],
   approvals: []
 };
 
@@ -43,6 +48,10 @@ const reportPeriodOptions: Array<{ value: ReportPeriod; label: string }> = [
 
 function formatLabel(value: string) {
   return value.replaceAll("_", " ");
+}
+
+function formatStaffStatus(status: "active" | "inactive") {
+  return status === "active" ? "Active" : "Inactive";
 }
 
 interface DashboardProps {
@@ -67,6 +76,8 @@ export function Dashboard({ onNewSale, onOpenApprovals, onOpenAudit, onOpenInven
   const paymentRows = useMemo(() => Object.entries(report.paymentMix).sort(([, left], [, right]) => right - left), [report.paymentMix]);
   const maxCategorySale = useMemo(() => Math.max(...report.categorySales.map((item) => item.sales), 1), [report.categorySales]);
   const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId), [branchId, branches]);
+  const staffRows = useMemo(() => [...report.staffPerformance].sort((left, right) => right.salesTotal - left.salesTotal), [report.staffPerformance]);
+  const staffPage = usePaginatedRows(staffRows, 10);
 
   async function loadDashboard(nextBranchId = branchId, nextPeriod = reportPeriod) {
     setStatus("Syncing dashboard...");
@@ -238,18 +249,30 @@ export function Dashboard({ onNewSale, onOpenApprovals, onOpenAudit, onOpenInven
                 <tr><th>#</th><th>Staff</th><th>Role</th><th>Sales</th><th>Status</th></tr>
               </thead>
               <tbody>
-                {report.staffPerformance.map((member, index) => (
+                {staffPage.pageRows.length === 0 ? (
+                  <tr><td colSpan={5}>No staff sales for this period.</td></tr>
+                ) : staffPage.pageRows.map((member, index) => (
                   <tr key={member.id}>
-                    <td className="number-cell">{index + 1}</td>
+                    <td className="number-cell">{staffPage.startIndex + index + 1}</td>
                     <td>{member.name}</td>
                     <td>{member.role}</td>
                     <td>{displayMoney(member.salesTotal)}</td>
-                    <td>{member.status}</td>
+                    <td>{formatStaffStatus(member.status)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <TablePagination
+            page={staffPage.page}
+            pageCount={staffPage.pageCount}
+            pageSize={staffPage.pageSize}
+            totalRows={staffPage.totalRows}
+            startIndex={staffPage.startIndex}
+            visibleCount={staffPage.pageRows.length}
+            onPageChange={staffPage.setPage}
+            onPageSizeChange={staffPage.setPageSize}
+          />
         </section>
 
         <section className="panel">

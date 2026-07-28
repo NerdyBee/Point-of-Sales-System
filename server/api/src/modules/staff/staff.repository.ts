@@ -2,7 +2,7 @@ import type { Prisma, StaffMember as DbStaffMember } from "@prisma/client";
 import { appendAudit, branches, staffMembers } from "../../shared/data/demoStore";
 import type { StaffMember } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
-import { permissionsForRole } from "../../shared/http/tenantContext";
+import { getRolePermissions } from "../roles/roles.repository";
 
 const useDemoStore = process.env.NODE_ENV === "test";
 
@@ -51,7 +51,7 @@ function toApiStaff(member: DbStaffMember): StaffMember {
   };
 }
 
-function serializeStaff(member: StaffMember) {
+async function serializeStaff(member: StaffMember) {
   const inviteStatus =
     member.inviteStatus === "pending" && member.inviteExpiresAt && new Date(member.inviteExpiresAt).getTime() < Date.now()
       ? "expired"
@@ -60,7 +60,7 @@ function serializeStaff(member: StaffMember) {
   return {
     ...member,
     inviteStatus,
-    permissions: permissionsForRole(member.role)
+    permissions: await getRolePermissions(member.tenantId, member.role)
   };
 }
 
@@ -99,9 +99,9 @@ async function appendStaffAudit(event: Parameters<typeof appendAudit>[0]) {
 
 export async function listStaff(tenantId: string, branchId?: string) {
   if (useDemoStore) {
-    return staffMembers
+    return await Promise.all(staffMembers
       .filter((member) => member.tenantId === tenantId && (branchId ? member.branchId === branchId : true))
-      .map(serializeStaff);
+      .map(serializeStaff));
   }
 
   const staff = await prisma.staffMember.findMany({
@@ -109,7 +109,69 @@ export async function listStaff(tenantId: string, branchId?: string) {
     orderBy: { name: "asc" }
   });
 
-  return staff.map((member) => serializeStaff(toApiStaff(member)));
+  return await Promise.all(staff.map((member) => serializeStaff(toApiStaff(member))));
+}
+
+export async function getStaffProfile(tenantId: string, staffId: string) {
+  if (useDemoStore) {
+    const member = staffMembers.find((staff) => staff.tenantId === tenantId && staff.id === staffId);
+    return member ? await serializeStaff(member) : null;
+  }
+
+  const member = await prisma.staffMember.findFirst({ where: { tenantId, id: staffId } });
+  return member ? await serializeStaff(toApiStaff(member)) : null;
+}
+
+export async function updateOwnProfile(tenantId: string, userId: string, input: Pick<StaffInput, "name" | "email" | "phone">) {
+  if (useDemoStore) {
+    const staffIndex = staffMembers.findIndex((member) => member.tenantId === tenantId && member.id === userId);
+
+    if (staffIndex === -1) return { status: "not_found" as const };
+
+    const duplicateEmail = staffMembers.some((member) => member.tenantId === tenantId && member.email === input.email && member.id !== userId);
+    if (duplicateEmail) return { status: "duplicate_email" as const };
+
+    const member = { ...staffMembers[staffIndex], ...input };
+    staffMembers[staffIndex] = member;
+    appendAudit({
+      tenantId,
+      branchId: member.branchId,
+      userId,
+      action: "staff.updated",
+      entityType: "staff",
+      entityId: member.id,
+      metadata: { fields: Object.keys(input), source: "profile" }
+    });
+
+    return { status: "updated" as const, staff: await serializeStaff(member) };
+  }
+
+  const existingStaff = await prisma.staffMember.findFirst({ where: { tenantId, id: userId } });
+  if (!existingStaff) return { status: "not_found" as const };
+
+  const duplicateEmail = await prisma.staffMember.findFirst({ where: { tenantId, email: input.email, id: { not: userId } } });
+  if (duplicateEmail) return { status: "duplicate_email" as const };
+
+  const member = await prisma.staffMember.update({
+    where: { id: userId },
+    data: {
+      name: input.name,
+      email: input.email,
+      phone: input.phone
+    }
+  });
+
+  await appendStaffAudit({
+    tenantId,
+    branchId: member.branchId,
+    userId,
+    action: "staff.updated",
+    entityType: "staff",
+    entityId: member.id,
+    metadata: { fields: Object.keys(input), source: "profile" }
+  });
+
+  return { status: "updated" as const, staff: await serializeStaff(toApiStaff(member)) };
 }
 
 export async function createStaff(tenantId: string, userId: string, input: StaffInput) {
@@ -151,7 +213,7 @@ export async function createStaff(tenantId: string, userId: string, input: Staff
       metadata: { role: member.role, active: member.active, inviteStatus: member.inviteStatus }
     });
 
-    return { status: "created" as const, staff: serializeStaff(member) };
+    return { status: "created" as const, staff: await serializeStaff(member) };
   }
 
   const duplicateEmail = await prisma.staffMember.findFirst({ where: { tenantId, email: input.email } });
@@ -187,7 +249,7 @@ export async function createStaff(tenantId: string, userId: string, input: Staff
     metadata: { role: member.role, active: member.active, inviteStatus: member.inviteStatus }
   });
 
-  return { status: "created" as const, staff: serializeStaff(toApiStaff(member)) };
+  return { status: "created" as const, staff: await serializeStaff(toApiStaff(member)) };
 }
 
 export async function updateStaff(tenantId: string, requestBranchId: string | undefined, userId: string, staffId: string, input: StaffPatchInput) {
@@ -222,7 +284,7 @@ export async function updateStaff(tenantId: string, requestBranchId: string | un
       metadata: { fields: Object.keys(input), role: member.role }
     });
 
-    return { status: "updated" as const, staff: serializeStaff(member) };
+    return { status: "updated" as const, staff: await serializeStaff(member) };
   }
 
   const existingStaff = await prisma.staffMember.findFirst({ where: { tenantId, id: staffId, ...staffBranchFilter(requestBranchId) } });
@@ -260,7 +322,7 @@ export async function updateStaff(tenantId: string, requestBranchId: string | un
     metadata: { fields: Object.keys(input), role: member.role }
   });
 
-  return { status: "updated" as const, staff: serializeStaff(toApiStaff(member)) };
+  return { status: "updated" as const, staff: await serializeStaff(toApiStaff(member)) };
 }
 
 export async function setStaffStatus(
@@ -289,7 +351,7 @@ export async function setStaffStatus(
       metadata: { active: member.active, reason: input.reason }
     });
 
-    return { status: "updated" as const, staff: serializeStaff(member) };
+    return { status: "updated" as const, staff: await serializeStaff(member) };
   }
 
   const existingStaff = await prisma.staffMember.findFirst({ where: { tenantId, id: staffId, ...staffBranchFilter(requestBranchId) } });
@@ -314,7 +376,7 @@ export async function setStaffStatus(
     metadata: { active: member.active, reason: input.reason }
   });
 
-  return { status: "updated" as const, staff: serializeStaff(toApiStaff(member)) };
+  return { status: "updated" as const, staff: await serializeStaff(toApiStaff(member)) };
 }
 
 export async function resendStaffInvite(tenantId: string, requestBranchId: string | undefined, userId: string, staffId: string) {
@@ -338,7 +400,7 @@ export async function resendStaffInvite(tenantId: string, requestBranchId: strin
       metadata: { inviteExpiresAt: member.inviteExpiresAt }
     });
 
-    return { status: "resent" as const, staff: serializeStaff(member) };
+    return { status: "resent" as const, staff: await serializeStaff(member) };
   }
 
   const existingStaff = await prisma.staffMember.findFirst({ where: { tenantId, id: staffId, ...staffBranchFilter(requestBranchId) } });
@@ -367,7 +429,7 @@ export async function resendStaffInvite(tenantId: string, requestBranchId: strin
     metadata: { inviteExpiresAt: inviteExpiresAt.toISOString() }
   });
 
-  return { status: "resent" as const, staff: serializeStaff(toApiStaff(member)) };
+  return { status: "resent" as const, staff: await serializeStaff(toApiStaff(member)) };
 }
 
 export async function revokeStaffInvite(tenantId: string, requestBranchId: string | undefined, userId: string, staffId: string) {
@@ -391,7 +453,7 @@ export async function revokeStaffInvite(tenantId: string, requestBranchId: strin
       metadata: { role: member.role }
     });
 
-    return { status: "revoked" as const, staff: serializeStaff(member) };
+    return { status: "revoked" as const, staff: await serializeStaff(member) };
   }
 
   const existingStaff = await prisma.staffMember.findFirst({ where: { tenantId, id: staffId, ...staffBranchFilter(requestBranchId) } });
@@ -417,5 +479,5 @@ export async function revokeStaffInvite(tenantId: string, requestBranchId: strin
     metadata: { role: member.role }
   });
 
-  return { status: "revoked" as const, staff: serializeStaff(toApiStaff(member)) };
+  return { status: "revoked" as const, staff: await serializeStaff(toApiStaff(member)) };
 }

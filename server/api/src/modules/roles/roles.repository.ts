@@ -164,6 +164,20 @@ export async function listRoles(tenantId: string) {
   }));
 }
 
+export async function getRolePermissions(tenantId: string, roleName: string) {
+  if (useDemoStore) {
+    const role = demoTenantRoles(tenantId).find((item) => item.name === roleName);
+    return role ? role.permissions : fallbackPermissionsForRole(roleName);
+  }
+
+  const role = await prisma.accessRole.findFirst({
+    where: { tenantId, name: roleName },
+    include: { permissions: { include: { permission: true } } }
+  });
+
+  return role ? role.permissions.map((item) => item.permission.action as PermissionAction) : fallbackPermissionsForRole(roleName);
+}
+
 export async function createRole(tenantId: string, userId: string, input: { name: string; label: string; description?: string }) {
   if (useDemoStore) {
     const roles = demoTenantRoles(tenantId);

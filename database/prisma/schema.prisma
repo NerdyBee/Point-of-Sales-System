@@ -23,6 +23,10 @@ model Tenant {
   accessPermissions     AccessPermission[]
   authSessions          AuthSession[]
   suppliers             Supplier[]
+  purchaseOrders        PurchaseOrder[]
+  supplierInvoices      SupplierInvoice[]
+  supplierReturns       SupplierReturn[]
+  inventoryTransfers    InventoryTransfer[]
   stockMovements        StockMovement[]
   registerShifts        RegisterShift[]
   paymentRecords        PaymentRecord[]
@@ -58,6 +62,11 @@ model Branch {
 
   products       Product[]
   suppliers      Supplier[]
+  purchaseOrders PurchaseOrder[]
+  supplierInvoices SupplierInvoice[]
+  supplierReturns  SupplierReturn[]
+  outgoingInventoryTransfers InventoryTransfer[] @relation("InventoryTransferSourceBranch")
+  incomingInventoryTransfers InventoryTransfer[] @relation("InventoryTransferDestinationBranch")
   stockMovements StockMovement[]
   staffMembers   StaffMember[]
   registerShifts RegisterShift[]
@@ -154,6 +163,9 @@ model Product {
 
   supplierProducts SupplierProduct[]
   stockMovements   StockMovement[]
+  supplierReturns  SupplierReturn[]
+  sourceInventoryTransfers InventoryTransfer[] @relation("InventoryTransferSourceProduct")
+  destinationInventoryTransfers InventoryTransfer[] @relation("InventoryTransferDestinationProduct")
 
   @@unique([tenantId, sku])
   @@unique([tenantId, barcode])
@@ -178,10 +190,109 @@ model Supplier {
 
   products       SupplierProduct[]
   stockMovements StockMovement[]
+  purchaseOrders PurchaseOrder[]
+  supplierInvoices SupplierInvoice[]
+  supplierReturns  SupplierReturn[]
 
   @@unique([tenantId, branchId, name])
   @@index([tenantId, branchId])
   @@map("suppliers")
+}
+
+model PurchaseOrder {
+  id            String    @id @db.VarChar(80)
+  tenantId      String    @db.VarChar(64)
+  branchId      String    @db.VarChar(64)
+  supplierId    String    @db.VarChar(64)
+  supplierName  String    @db.VarChar(160)
+  orderNumber   String    @db.VarChar(60)
+  status        String    @db.VarChar(40)
+  expectedAt    DateTime?
+  lines         Json
+  subtotal      Int
+  note          String?   @db.VarChar(300)
+  createdBy     String    @db.VarChar(80)
+  approvedBy    String?   @db.VarChar(80)
+  approvedAt    DateTime?
+  receivedAt    DateTime?
+  cancelledAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch   Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+
+  supplierInvoices SupplierInvoice[]
+
+  @@unique([tenantId, orderNumber])
+  @@index([tenantId, branchId, status, createdAt])
+  @@index([tenantId, supplierId, status])
+  @@map("purchase_orders")
+}
+
+model SupplierInvoice {
+  id              String    @id @db.VarChar(80)
+  tenantId        String    @db.VarChar(64)
+  branchId        String    @db.VarChar(64)
+  supplierId      String    @db.VarChar(64)
+  supplierName    String    @db.VarChar(160)
+  purchaseOrderId String?   @db.VarChar(80)
+  invoiceNumber   String    @db.VarChar(80)
+  status          String    @db.VarChar(40)
+  invoiceDate     DateTime
+  dueDate         DateTime?
+  amount          Int
+  amountPaid      Int
+  creditTotal     Int      @default(0)
+  balanceDue      Int
+  payments        Json
+  credits         Json
+  note            String?   @db.VarChar(300)
+  createdBy       String    @db.VarChar(80)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch        Branch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  supplier      Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  supplierReturns SupplierReturn[]
+
+  @@unique([tenantId, supplierId, invoiceNumber])
+  @@index([tenantId, branchId, status, invoiceDate])
+  @@index([tenantId, supplierId, status])
+  @@map("supplier_invoices")
+}
+
+model SupplierReturn {
+  id                String   @id @db.VarChar(80)
+  tenantId          String   @db.VarChar(64)
+  branchId          String   @db.VarChar(64)
+  supplierId        String   @db.VarChar(64)
+  supplierName      String   @db.VarChar(160)
+  productId         String   @db.VarChar(64)
+  productName       String   @db.VarChar(160)
+  supplierInvoiceId String?  @db.VarChar(80)
+  quantity          Int
+  unitCost          Int
+  creditAmount      Int
+  reference         String   @db.VarChar(80)
+  reason            String   @db.VarChar(220)
+  returnedAt        DateTime
+  createdBy         String   @db.VarChar(80)
+  createdAt         DateTime @default(now())
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch          Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  supplier        Supplier         @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  product         Product          @relation(fields: [productId], references: [id], onDelete: Restrict)
+  supplierInvoice SupplierInvoice? @relation(fields: [supplierInvoiceId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, reference])
+  @@index([tenantId, branchId, returnedAt])
+  @@index([tenantId, supplierId, returnedAt])
+  @@map("supplier_returns")
 }
 
 model SupplierProduct {
@@ -219,6 +330,34 @@ model StockMovement {
   @@index([tenantId, branchId, createdAt])
   @@index([productId])
   @@map("stock_movements")
+}
+
+model InventoryTransfer {
+  id                   String   @id @db.VarChar(80)
+  tenantId             String   @db.VarChar(64)
+  sourceBranchId       String   @db.VarChar(64)
+  destinationBranchId  String   @db.VarChar(64)
+  sourceProductId      String   @db.VarChar(64)
+  destinationProductId String   @db.VarChar(64)
+  productName          String   @db.VarChar(160)
+  quantity             Int
+  reference            String   @db.VarChar(80)
+  note                 String   @db.VarChar(220)
+  sourceMovementId     String   @db.VarChar(64)
+  destinationMovementId String  @db.VarChar(64)
+  createdBy            String  @db.VarChar(80)
+  createdAt            DateTime @default(now())
+
+  tenant             Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sourceBranch       Branch  @relation("InventoryTransferSourceBranch", fields: [sourceBranchId], references: [id], onDelete: Restrict)
+  destinationBranch  Branch  @relation("InventoryTransferDestinationBranch", fields: [destinationBranchId], references: [id], onDelete: Restrict)
+  sourceProduct      Product @relation("InventoryTransferSourceProduct", fields: [sourceProductId], references: [id], onDelete: Restrict)
+  destinationProduct Product @relation("InventoryTransferDestinationProduct", fields: [destinationProductId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, reference])
+  @@index([tenantId, sourceBranchId, createdAt])
+  @@index([tenantId, destinationBranchId, createdAt])
+  @@map("inventory_transfers")
 }
 
 model Customer {

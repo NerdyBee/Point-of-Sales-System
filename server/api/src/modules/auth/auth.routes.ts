@@ -2,7 +2,7 @@ import { authLoginSchema, authPinLoginSchema, authRefreshSchema } from "@pos/val
 import { type Request, Router } from "express";
 import { listBranchOptions } from "../branches/branches.repository";
 import { listStaff } from "../staff/staff.repository";
-import { requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, requireAuthenticatedUser, requirePermission, requireTenant, resolveBranchScope } from "../../shared/http/tenantContext";
 import { listAuthSessions, loginWithPassword, loginWithPin, refreshAuthSession, revokeAuthSession } from "./auth.repository";
 
 export const authRouter = Router();
@@ -24,9 +24,11 @@ authRouter.post("/login", async (req, res) => {
 
   const result = await loginWithPassword(parsed.data, requestMeta(req));
   if (result.status === "invalid_credentials") {
-    res.status(401).json({
-      error: "Invalid credentials",
-      ...(process.env.NODE_ENV === "production" ? {} : { reason: result.reason, tenantId: parsed.data.tenantId, email: parsed.data.email })
+    res.status(result.reason === "account_locked" ? 429 : 401).json({
+      error: result.reason === "account_locked" ? "Account temporarily locked" : "Invalid credentials",
+      ...(process.env.NODE_ENV === "production"
+        ? {}
+        : { reason: result.reason, lockedUntil: result.lockedUntil, tenantId: parsed.data.tenantId, identifier: parsed.data.identifier })
     });
     return;
   }
@@ -54,6 +56,7 @@ authRouter.get("/bootstrap", async (req, res) => {
         tenantId: member.tenantId,
         branchId: member.branchId,
         name: member.name,
+        email: member.email,
         role: member.role,
         pinEnabled: member.pinEnabled,
         active: member.active
@@ -71,12 +74,13 @@ authRouter.post("/pin-login", async (req, res) => {
 
   const result = await loginWithPin(parsed.data, requestMeta(req));
   if (result.status === "invalid_credentials") {
-    res.status(401).json({
-      error: "Invalid credentials",
+    res.status(result.reason === "account_locked" ? 429 : 401).json({
+      error: result.reason === "account_locked" ? "Account temporarily locked" : "Invalid credentials",
       ...(process.env.NODE_ENV === "production"
         ? {}
         : {
             reason: result.reason,
+            lockedUntil: result.lockedUntil,
             tenantId: parsed.data.tenantId,
             branchId: parsed.data.branchId,
             terminalId: parsed.data.terminalId,
@@ -124,12 +128,26 @@ authRouter.post("/logout", requireTenant, requireAuthenticatedUser, async (req, 
 });
 
 authRouter.get("/sessions", requireTenant, requirePermission("staff.manage"), async (req, res) => {
-  const sessions = await listAuthSessions(req.tenantContext!.tenantId);
+  const requestedBranchId = req.query.branchId?.toString() ?? req.tenantContext!.branchId;
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranchId);
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
+  const sessions = await listAuthSessions(req.tenantContext!.tenantId, scope.branchId);
   res.json({ sessions });
 });
 
 authRouter.post("/sessions/:sessionId/revoke", requireTenant, requirePermission("staff.manage"), async (req, res) => {
-  const result = await revokeAuthSession(req.tenantContext!.tenantId, req.tenantContext!.userId, req.params.sessionId.toString());
+  const requestedBranchId = req.query.branchId?.toString() ?? req.tenantContext!.branchId;
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranchId);
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
+  const result = await revokeAuthSession(req.tenantContext!.tenantId, req.tenantContext!.userId, req.params.sessionId.toString(), scope.branchId);
 
   if (result.status === "not_found") {
     res.status(404).json({ error: "Session not found" });

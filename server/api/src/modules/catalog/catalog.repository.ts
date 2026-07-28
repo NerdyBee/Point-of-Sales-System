@@ -6,6 +6,22 @@ export type ProductInput = Omit<DemoProduct, "id" | "tenantId" | "taxRate"> & { 
 
 const useDemoStore = process.env.NODE_ENV === "test";
 
+function isServiceCategory(category: string) {
+  return category.trim().toLowerCase() === "services";
+}
+
+function normalizeProductInput<T extends Partial<ProductInput>>(input: T): T {
+  if (!input.category || !isServiceCategory(input.category)) {
+    return input;
+  }
+
+  return {
+    ...input,
+    stock: 0,
+    reorderPoint: 0
+  };
+}
+
 function toApiProduct(product: DbProduct): DemoProduct {
   return {
     id: product.id,
@@ -70,13 +86,15 @@ export async function catalogBranchExists(tenantId: string, branchId: string) {
 }
 
 export async function createCatalogProductRecord(tenantId: string, input: ProductInput) {
+  const normalizedInput = normalizeProductInput(input);
+
   if (useDemoStore) {
     const tenant = demoTenants.find((item) => item.id === tenantId);
     const product = {
       id: nextProductId(),
       tenantId,
-      ...input,
-      taxRate: input.taxRate ?? tenant?.settings.defaultTaxRate ?? 0
+      ...normalizedInput,
+      taxRate: normalizedInput.taxRate ?? tenant?.settings.defaultTaxRate ?? 0
     };
     demoProducts.push(product);
     return product;
@@ -86,19 +104,19 @@ export async function createCatalogProductRecord(tenantId: string, input: Produc
     data: {
       id: `p${Date.now()}`,
       tenantId,
-      branchId: input.branchId,
-      name: input.name,
-      sku: input.sku,
-      barcode: input.barcode,
-      category: input.category,
-      price: input.price,
-      cost: input.cost,
-      taxRate: input.taxRate ?? 0,
-      image: input.image,
-      stock: input.stock,
-      reorderPoint: input.reorderPoint,
-      station: input.station,
-      modifiers: input.modifiers
+      branchId: normalizedInput.branchId,
+      name: normalizedInput.name,
+      sku: normalizedInput.sku,
+      barcode: normalizedInput.barcode,
+      category: normalizedInput.category,
+      price: normalizedInput.price,
+      cost: normalizedInput.cost,
+      taxRate: normalizedInput.taxRate ?? 0,
+      image: normalizedInput.image,
+      stock: normalizedInput.stock,
+      reorderPoint: normalizedInput.reorderPoint,
+      station: normalizedInput.station,
+      modifiers: normalizedInput.modifiers
     }
   });
 
@@ -113,9 +131,14 @@ export async function updateCatalogProductRecord(tenantId: string, productId: st
       return null;
     }
 
+    const normalizedInput = normalizeProductInput({
+      ...input,
+      category: input.category ?? demoProducts[productIndex].category
+    });
+
     const product = {
       ...demoProducts[productIndex],
-      ...input
+      ...normalizedInput
     };
 
     demoProducts[productIndex] = product;
@@ -130,22 +153,27 @@ export async function updateCatalogProductRecord(tenantId: string, productId: st
     return null;
   }
 
+  const normalizedInput = normalizeProductInput({
+    ...input,
+    category: input.category ?? existing.category
+  });
+
   const product = await prisma.product.update({
     where: { id: productId },
     data: {
-      branchId: input.branchId,
-      name: input.name,
-      sku: input.sku,
-      barcode: input.barcode,
-      category: input.category,
-      price: input.price,
-      cost: input.cost,
-      taxRate: input.taxRate,
-      image: input.image,
-      stock: input.stock,
-      reorderPoint: input.reorderPoint,
-      station: input.station,
-      modifiers: input.modifiers
+      branchId: normalizedInput.branchId,
+      name: normalizedInput.name,
+      sku: normalizedInput.sku,
+      barcode: normalizedInput.barcode,
+      category: normalizedInput.category,
+      price: normalizedInput.price,
+      cost: normalizedInput.cost,
+      taxRate: normalizedInput.taxRate,
+      image: normalizedInput.image,
+      stock: normalizedInput.stock,
+      reorderPoint: normalizedInput.reorderPoint,
+      station: normalizedInput.station,
+      modifiers: normalizedInput.modifiers
     }
   });
 

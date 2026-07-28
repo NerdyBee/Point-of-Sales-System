@@ -172,6 +172,115 @@ export interface Supplier {
   createdAt: string;
 }
 
+export interface PurchaseOrderLine {
+  productId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  receivedQuantity: number;
+  unitCost: number;
+  total: number;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  supplierId: string;
+  supplierName: string;
+  orderNumber: string;
+  status: "draft" | "pending_approval" | "approved" | "partially_received" | "received" | "cancelled";
+  expectedAt?: string;
+  lines: PurchaseOrderLine[];
+  subtotal: number;
+  note?: string;
+  createdBy: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  receivedAt?: string;
+  cancelledAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SupplierInvoicePayment {
+  id: string;
+  amount: number;
+  paymentMethod: PaymentMethod;
+  reference: string;
+  paidAt: string;
+  note?: string;
+  createdBy: string;
+}
+
+export interface SupplierInvoiceCredit {
+  id: string;
+  supplierReturnId: string;
+  amount: number;
+  reference: string;
+  creditedAt: string;
+  createdBy: string;
+}
+
+export interface SupplierInvoice {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  supplierId: string;
+  supplierName: string;
+  purchaseOrderId?: string;
+  invoiceNumber: string;
+  status: "open" | "partially_paid" | "paid" | "voided";
+  invoiceDate: string;
+  dueDate?: string;
+  amount: number;
+  amountPaid: number;
+  creditTotal: number;
+  balanceDue: number;
+  payments: SupplierInvoicePayment[];
+  credits: SupplierInvoiceCredit[];
+  note?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SupplierReturn {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  supplierId: string;
+  supplierName: string;
+  productId: string;
+  productName: string;
+  supplierInvoiceId?: string;
+  quantity: number;
+  unitCost: number;
+  creditAmount: number;
+  reference: string;
+  reason: string;
+  returnedAt: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface InventoryTransfer {
+  id: string;
+  tenantId: string;
+  sourceBranchId: string;
+  destinationBranchId: string;
+  sourceProductId: string;
+  destinationProductId: string;
+  productName: string;
+  quantity: number;
+  reference: string;
+  note: string;
+  sourceMovementId: string;
+  destinationMovementId: string;
+  createdBy: string;
+  createdAt: string;
+}
+
 export type RestaurantTableState = "available" | "occupied" | "reserved" | "awaiting_payment" | "delayed" | "unavailable";
 
 export interface RestaurantTable {
@@ -484,6 +593,12 @@ export interface AuditEvent {
     | "product.created"
     | "product.updated"
     | "supplier.created"
+    | "purchase_order.created"
+    | "purchase_order.status_changed"
+    | "supplier_invoice.created"
+    | "supplier_invoice.payment_recorded"
+    | "supplier_return.created"
+    | "inventory.transfer_created"
     | "inventory.count_posted"
     | "inventory.purchase_received"
     | "inventory.sale_stock_issued"
@@ -494,16 +609,20 @@ export interface AuditEvent {
     | "sale.refunded"
     | "receipt.print_queued"
     | "receipt.whatsapp_queued"
+    | "table.created"
     | "table.order_opened"
     | "table.item_added"
     | "table.item_removed"
     | "table.bill_requested"
+    | "table.order_transferred"
     | "table.reservation_created"
+    | "table.reservation_status_changed"
     | "table.layout_updated"
     | "table.state_changed"
     | "prep_ticket.created"
     | "prep_ticket.status_changed"
     | "prep_ticket.item_status_changed"
+    | "prep_ticket.priority_changed"
     | "customer.created"
     | "customer.updated"
     | "customer.ledger_posted"
@@ -517,7 +636,9 @@ export interface AuditEvent {
     | "role.permissions_updated"
     | "staff.role_assigned"
     | "auth.login"
+    | "auth.login_failed"
     | "auth.pin_login"
+    | "auth.pin_login_failed"
     | "auth.refresh"
     | "auth.session_revoked"
     | "branch.created"
@@ -1274,7 +1395,7 @@ export const demoProducts: DemoProduct[] = [
     cost: 0,
     taxRate: 0.075,
     image: "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=600&q=80",
-    stock: 999,
+    stock: 0,
     reorderPoint: 0,
     station: "Counter",
     modifiers: ["Standard", "Premium"]
@@ -1291,7 +1412,7 @@ export const demoProducts: DemoProduct[] = [
     cost: 0,
     taxRate: 0.075,
     image: "https://images.unsplash.com/photo-1519671282429-b44660ead0a7?auto=format&fit=crop&w=600&q=80",
-    stock: 999,
+    stock: 0,
     reorderPoint: 0,
     station: "Counter",
     modifiers: ["Indoor", "Outdoor", "Corporate"]
@@ -1308,7 +1429,7 @@ export const demoProducts: DemoProduct[] = [
     cost: 0,
     taxRate: 0.075,
     image: "https://images.unsplash.com/photo-1526367790999-0150786686a2?auto=format&fit=crop&w=600&q=80",
-    stock: 999,
+    stock: 0,
     reorderPoint: 0,
     station: "Counter",
     modifiers: ["Island", "Mainland", "Express"]
@@ -1368,7 +1489,7 @@ export const suppliers: Supplier[] = [
     email: "retail@counterpartners.example",
     leadTimeDays: 4,
     active: true,
-    productIds: ["p22", "p23", "p24", "p25", "p26", "p27", "p28", "p29", "p30"],
+    productIds: ["p22", "p23", "p24", "p25", "p26", "p27"],
     createdAt: new Date().toISOString()
   },
   {
@@ -1385,20 +1506,26 @@ export const suppliers: Supplier[] = [
     createdAt: new Date().toISOString()
   }
 ];
-export const stockMovements: StockMovement[] = demoProducts.map((product, index) => ({
-  id: `move-${index + 1}`,
-  tenantId: product.tenantId,
-  branchId: product.branchId,
-  productId: product.id,
-  productName: product.name,
-  type: "receipt",
-  quantityDelta: product.stock,
-  balanceAfter: product.stock,
-  reason: "Seed opening stock",
-  reference: `SEED-${product.branchId}-${product.sku}`,
-  createdAt: new Date().toISOString(),
-  createdBy: "system"
-}));
+export const purchaseOrders: PurchaseOrder[] = [];
+export const supplierInvoices: SupplierInvoice[] = [];
+export const supplierReturns: SupplierReturn[] = [];
+export const inventoryTransfers: InventoryTransfer[] = [];
+export const stockMovements: StockMovement[] = demoProducts
+  .filter((product) => product.category.trim().toLowerCase() !== "services")
+  .map((product, index) => ({
+    id: `move-${index + 1}`,
+    tenantId: product.tenantId,
+    branchId: product.branchId,
+    productId: product.id,
+    productName: product.name,
+    type: "receipt",
+    quantityDelta: product.stock,
+    balanceAfter: product.stock,
+    reason: "Seed opening stock",
+    reference: `SEED-${product.branchId}-${product.sku}`,
+    createdAt: new Date().toISOString(),
+    createdBy: "system"
+  }));
 export const restaurantTables: RestaurantTable[] = [
   {
     id: "table-01",

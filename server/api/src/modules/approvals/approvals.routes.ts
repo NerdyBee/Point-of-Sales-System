@@ -1,13 +1,23 @@
 import { approvalApplySchema, approvalDecisionSchema, approvalRequestSchema } from "@pos/validation";
-import { Router } from "express";
-import { resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { Router, type Request, type Response } from "express";
+import { canAccessAllBranches, resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import { applyApproval, decideApproval, listApprovals, requestApproval } from "./approvals.repository";
 
 export const approvalsRouter = Router();
 
+function requireBranchContext(req: Request, res: Response) {
+  const scope = resolveBranchScope(req.tenantContext!, req.tenantContext!.branchId);
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
+    res.status(403).json({ error: "Branch access denied" });
+    return null;
+  }
+
+  return scope;
+}
+
 approvalsRouter.get("/", requireTenant, requirePermission("approval.manage"), async (req, res) => {
   const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
-  if (scope.forbidden) {
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
@@ -30,7 +40,7 @@ approvalsRouter.post("/", requireTenant, requireAuthenticatedUser, async (req, r
   }
 
   const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
-  if (scope.forbidden) {
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
@@ -56,9 +66,12 @@ approvalsRouter.patch("/:approvalId/decision", requireTenant, requirePermission(
     return;
   }
 
+  const scope = requireBranchContext(req, res);
+  if (!scope) return;
+
   const result = await decideApproval(
     req.tenantContext!.tenantId,
-    req.tenantContext!.branchId,
+    scope.branchId,
     req.tenantContext!.userId,
     req.params.approvalId.toString(),
     parsed.data
@@ -84,6 +97,9 @@ approvalsRouter.post("/:approvalId/apply", requireTenant, requireAuthenticatedUs
     res.status(400).json({ error: "Invalid approval application", issues: parsed.error.flatten() });
     return;
   }
+
+  const scope = requireBranchContext(req, res);
+  if (!scope) return;
 
   const result = await applyApproval(req.tenantContext!, req.params.approvalId.toString(), parsed.data);
 

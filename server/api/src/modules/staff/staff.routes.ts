@@ -1,11 +1,22 @@
-import { staffInputSchema, staffStatusSchema } from "@pos/validation";
-import { Router } from "express";
-import { resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
-import { createStaff, listStaff, resendStaffInvite, revokeStaffInvite, setStaffStatus, updateStaff } from "./staff.repository";
+import { profileUpdateSchema, staffInputSchema, staffStatusSchema } from "@pos/validation";
+import { Router, type Request, type Response } from "express";
+import { canAccessAllBranches, resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { createStaff, getStaffProfile, listStaff, resendStaffInvite, revokeStaffInvite, setStaffStatus, updateOwnProfile, updateStaff } from "./staff.repository";
 
 export const staffRouter = Router();
 
+function requireBranchContext(req: Request, res: Response) {
+  if (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId) {
+    res.status(403).json({ error: "Branch access denied" });
+    return false;
+  }
+
+  return true;
+}
+
 staffRouter.get("/", requireTenant, requireAuthenticatedUser, async (req, res) => {
+  if (!requireBranchContext(req, res)) return;
+
   const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
@@ -17,6 +28,40 @@ staffRouter.get("/", requireTenant, requireAuthenticatedUser, async (req, res) =
   res.json({ staff });
 });
 
+staffRouter.get("/me", requireTenant, requireAuthenticatedUser, async (req, res) => {
+  const staff = await getStaffProfile(req.tenantContext!.tenantId, req.tenantContext!.userId);
+
+  if (!staff) {
+    res.status(404).json({ error: "Staff member not found" });
+    return;
+  }
+
+  res.json({ staff });
+});
+
+staffRouter.patch("/me", requireTenant, requireAuthenticatedUser, async (req, res) => {
+  const parsed = profileUpdateSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid profile payload", issues: parsed.error.flatten() });
+    return;
+  }
+
+  const result = await updateOwnProfile(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+
+  if (result.status === "not_found") {
+    res.status(404).json({ error: "Staff member not found" });
+    return;
+  }
+
+  if (result.status === "duplicate_email") {
+    res.status(409).json({ error: "Staff email already exists for this tenant" });
+    return;
+  }
+
+  res.json({ staff: result.staff });
+});
+
 staffRouter.post("/", requireTenant, requirePermission("staff.manage"), async (req, res) => {
   const parsed = staffInputSchema.safeParse(req.body);
 
@@ -24,6 +69,8 @@ staffRouter.post("/", requireTenant, requirePermission("staff.manage"), async (r
     res.status(400).json({ error: "Invalid staff payload", issues: parsed.error.flatten() });
     return;
   }
+
+  if (!requireBranchContext(req, res)) return;
 
   const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
   if (scope.forbidden) {
@@ -52,6 +99,16 @@ staffRouter.patch("/:staffId", requireTenant, requirePermission("staff.manage"),
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid staff payload", issues: parsed.error.flatten() });
     return;
+  }
+
+  if (!requireBranchContext(req, res)) return;
+
+  if (parsed.data.branchId) {
+    const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
+    if (scope.forbidden) {
+      res.status(403).json({ error: "Branch access denied" });
+      return;
+    }
   }
 
   const result = await updateStaff(
@@ -88,6 +145,8 @@ staffRouter.patch("/:staffId/status", requireTenant, requirePermission("staff.ma
     return;
   }
 
+  if (!requireBranchContext(req, res)) return;
+
   const result = await setStaffStatus(
     req.tenantContext!.tenantId,
     req.tenantContext!.branchId,
@@ -110,6 +169,8 @@ staffRouter.patch("/:staffId/status", requireTenant, requirePermission("staff.ma
 });
 
 staffRouter.post("/:staffId/invite/resend", requireTenant, requirePermission("staff.manage"), async (req, res) => {
+  if (!requireBranchContext(req, res)) return;
+
   const result = await resendStaffInvite(
     req.tenantContext!.tenantId,
     req.tenantContext!.branchId,
@@ -126,6 +187,8 @@ staffRouter.post("/:staffId/invite/resend", requireTenant, requirePermission("st
 });
 
 staffRouter.post("/:staffId/invite/revoke", requireTenant, requirePermission("staff.manage"), async (req, res) => {
+  if (!requireBranchContext(req, res)) return;
+
   const result = await revokeStaffInvite(
     req.tenantContext!.tenantId,
     req.tenantContext!.branchId,

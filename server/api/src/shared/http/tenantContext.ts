@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import type { PermissionAction } from "@pos/types";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { prisma } from "../db/prisma";
+import { getRolePermissions } from "../../modules/roles/roles.repository";
 import { fallbackPermissionsForRole } from "../security/accessControl";
 
 export interface TenantContext {
@@ -116,16 +116,9 @@ export function attachTenantContext(req: Request, _res: Response, next: NextFunc
     };
     req.tenantContext = context;
 
-    if (process.env.NODE_ENV !== "test") {
-      void prisma.accessRole.findFirst({
-        where: { tenantId, name: role },
-        include: { permissions: { include: { permission: true } } }
-      }).then((accessRole) => {
-        if (accessRole) {
-          const dbPermissions = accessRole.permissions.map((item) => item.permission.action as PermissionAction);
-          const fallbackPermissions = fallbackPermissionsForRole(role);
-          context.permissions = Array.from(new Set([...dbPermissions, ...fallbackPermissions]));
-        }
+    if (role) {
+      void getRolePermissions(tenantId, role).then((permissions) => {
+        context.permissions = permissions;
         next();
       }).catch(() => next());
       return;

@@ -1,9 +1,18 @@
 import { customerInputSchema, customerLedgerInputSchema } from "@pos/validation";
-import { Router } from "express";
-import { requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { Router, type Request, type Response } from "express";
+import { canAccessAllBranches, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import { createCustomer, listCustomerLedger, listCustomers, postCustomerLedger, updateCustomer } from "./customers.repository";
 
 export const customersRouter = Router();
+
+function requireBranchContext(req: Request, res: Response) {
+  if (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId) {
+    res.status(403).json({ error: "Branch access denied" });
+    return false;
+  }
+
+  return true;
+}
 
 customersRouter.get("/", requireTenant, requireAuthenticatedUser, async (req, res) => {
   const query = req.query.q?.toString().toLowerCase() ?? "";
@@ -19,6 +28,8 @@ customersRouter.post("/", requireTenant, requirePermission("customer.manage"), a
     res.status(400).json({ error: "Invalid customer payload", issues: parsed.error.flatten() });
     return;
   }
+
+  if (!requireBranchContext(req, res)) return;
 
   const result = await createCustomer(req.tenantContext!.tenantId, req.tenantContext!.branchId, req.tenantContext!.userId, parsed.data);
 
@@ -37,6 +48,8 @@ customersRouter.patch("/:customerId", requireTenant, requirePermission("customer
     res.status(400).json({ error: "Invalid customer payload", issues: parsed.error.flatten() });
     return;
   }
+
+  if (!requireBranchContext(req, res)) return;
 
   const result = await updateCustomer(
     req.tenantContext!.tenantId,
@@ -77,6 +90,8 @@ customersRouter.post("/:customerId/ledger", requireTenant, requirePermission("cu
     res.status(400).json({ error: "Invalid customer ledger entry", issues: parsed.error.flatten() });
     return;
   }
+
+  if (!requireBranchContext(req, res)) return;
 
   const result = await postCustomerLedger(
     req.tenantContext!.tenantId,

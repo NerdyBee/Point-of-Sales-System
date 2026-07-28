@@ -1,4 +1,4 @@
-import { ClipboardList, RefreshCcw, Search, ShieldAlert } from "lucide-react";
+import { ClipboardList, Download, RefreshCcw, Search, ShieldAlert, UserRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { fetchAuditEvents, readStoredAuth, type AuditEvent } from "../../shared/api/client";
 import { StatusBadge } from "../../shared/components/StatusBadge";
@@ -17,6 +17,10 @@ function formatMetadata(metadata: Record<string, unknown>) {
   return entries.map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(", ") : String(value)}`).join(" | ");
 }
 
+function csvEscape(value: string | number) {
+  return `"${String(value).replaceAll("\"", "\"\"")}"`;
+}
+
 export function AuditLogView() {
   const storedAuth = useMemo(() => readStoredAuth(), []);
   const activeBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
@@ -25,22 +29,23 @@ export function AuditLogView() {
   const [selectedEvent, setSelectedEvent] = useState<AuditEvent | null>(null);
   const [query, setQuery] = useState("");
   const [actionFilter, setActionFilter] = useState("");
+  const [actorFilter, setActorFilter] = useState("");
   const [status, setStatus] = useState("Ready");
 
   const actionOptions = useMemo(() => ["all", ...Array.from(new Set(events.map((event) => event.action))).sort()], [events]);
+  const actorOptions = useMemo(() => ["all", ...Array.from(new Set(events.map((event) => event.userId))).sort()], [events]);
   const filteredEvents = useMemo(() => {
     const needle = query.toLowerCase();
     return events
-      .filter((event) => !actionFilter || actionFilter === "all" || event.action === actionFilter)
       .filter((event) => `${event.action} ${event.entityType} ${event.entityId} ${event.userId}`.toLowerCase().includes(needle));
-  }, [actionFilter, events, query]);
+  }, [events, query]);
   const eventPage = usePaginatedRows(filteredEvents, 10);
   const sensitiveEvents = useMemo(
     () => events.filter((event) => event.action.includes("void") || event.action.includes("refund") || event.action.includes("closed")).length,
     [events]
   );
 
-  async function loadEvents() {
+  async function loadEvents(nextActionFilter = actionFilter, nextActorFilter = actorFilter) {
     setStatus("Syncing audit trail...");
 
     if (!activeUserId || !activeBranchId) {
@@ -51,7 +56,7 @@ export function AuditLogView() {
     }
 
     try {
-      const response = await fetchAuditEvents(activeUserId, activeBranchId);
+      const response = await fetchAuditEvents(nextActorFilter, activeBranchId, nextActionFilter);
       setEvents(response.events);
       setSelectedEvent((current) => response.events.find((event) => event.id === current?.id) ?? response.events[0] ?? null);
       setStatus("Audit trail synced");
@@ -60,6 +65,40 @@ export function AuditLogView() {
       setSelectedEvent(null);
       setStatus(error instanceof Error ? error.message : "Unable to load audit trail");
     }
+  }
+
+  function changeActionFilter(nextActionFilter: string) {
+    setActionFilter(nextActionFilter);
+    void loadEvents(nextActionFilter, actorFilter);
+  }
+
+  function changeActorFilter(nextActorFilter: string) {
+    setActorFilter(nextActorFilter);
+    void loadEvents(actionFilter, nextActorFilter);
+  }
+
+  function exportCsv() {
+    const rows = [
+      ["number", "created_at", "user_id", "branch_id", "action", "entity_type", "entity_id", "metadata"],
+      ...filteredEvents.map((event, index) => [
+        index + 1,
+        new Date(event.createdAt).toLocaleString(),
+        event.userId,
+        event.branchId ?? "Tenant-wide",
+        event.action,
+        event.entityType,
+        event.entityId,
+        formatMetadata(event.metadata)
+      ])
+    ];
+    const csv = rows.map((row) => row.map((cell) => csvEscape(cell)).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `naijapos-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setStatus("Audit trail exported");
   }
 
   useEffect(() => {
@@ -74,11 +113,16 @@ export function AuditLogView() {
           <h1>Audit log</h1>
         </div>
         <div className="button-group">
-          <select className="compact-select" value={actionFilter} onChange={(event) => setActionFilter(event.target.value)}>
+          <select className="compact-select" value={actionFilter} onChange={(event) => changeActionFilter(event.target.value)}>
             <option value="">Action</option>
             {actionOptions.map((action) => <option key={action} value={action}>{action.replace("_", " ")}</option>)}
           </select>
-          <button className="secondary-button" onClick={loadEvents}><RefreshCcw size={18} /> Sync</button>
+          <select className="compact-select" value={actorFilter} onChange={(event) => changeActorFilter(event.target.value)}>
+            <option value="">Actor</option>
+            {actorOptions.map((actor) => <option key={actor} value={actor}>{actor}</option>)}
+          </select>
+          <button className="secondary-button" onClick={() => loadEvents()}><RefreshCcw size={18} /> Sync</button>
+          <button className="primary-button" onClick={exportCsv} disabled={filteredEvents.length === 0}><Download size={18} /> Export CSV</button>
         </div>
       </div>
 
@@ -92,6 +136,11 @@ export function AuditLogView() {
           <div className="stat-card-top"><span>Sensitive events</span><ShieldAlert size={20} /></div>
           <strong>{sensitiveEvents}</strong>
           <small>Refunds, voids and closures</small>
+        </article>
+        <article className="stat-card">
+          <div className="stat-card-top"><span>Actors</span><UserRound size={20} /></div>
+          <strong>{actorOptions.length > 1 ? actorOptions.length - 1 : 0}</strong>
+          <small>{!actorFilter || actorFilter === "all" ? "All users" : actorFilter}</small>
         </article>
         <article className="stat-card">
           <div className="stat-card-top"><span>Filtered view</span></div>

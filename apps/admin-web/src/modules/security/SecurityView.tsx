@@ -23,7 +23,7 @@ import { TablePagination, usePaginatedRows } from "../../shared/components/Table
 
 const lastTenantKey = "naijapos:last-tenant-id";
 const fallbackBranches: BranchOption[] = [];
-type PinStaffOption = Pick<StaffMember, "id" | "tenantId" | "branchId" | "name" | "role" | "pinEnabled" | "active">;
+type PinStaffOption = Pick<StaffMember, "id" | "tenantId" | "branchId" | "name" | "email" | "role" | "pinEnabled" | "active">;
 
 interface SecurityViewProps {
   auth: AuthResponse | null;
@@ -63,7 +63,7 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
   const [branches, setBranches] = useState<BranchOption[]>(fallbackBranches);
   const [terminals, setTerminals] = useState<TerminalOption[]>([]);
   const [allLoginTerminals, setAllLoginTerminals] = useState<TerminalOption[]>([]);
-  const [loginForm, setLoginForm] = useState({ email: auth?.staff.email ?? "adaeze@example.com", password: "", terminalId: auth?.session.terminalId ?? "" });
+  const [loginForm, setLoginForm] = useState({ identifier: auth?.staff.email ?? "", password: "", terminalId: auth?.session.terminalId ?? "" });
   const [pinForm, setPinForm] = useState({ staffId: "", terminalId: "", pin: "" });
   const [rememberDevice, setRememberDevice] = useState(true);
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -72,6 +72,49 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
   const activeSessions = useMemo(() => sessions.filter((session) => sessionLabel(session) === "active").length, [sessions]);
   const pinEnabledStaff = useMemo(() => staff.filter((member) => member.pinEnabled && member.active).length, [staff]);
   const sessionsPage = usePaginatedRows(sessions, 10);
+
+  function preferredBranchId(branchOptions: BranchOption[], terminalOptions: TerminalOption[], requestedBranchId?: string) {
+    if (requestedBranchId && branchOptions.some((branch) => branch.id === requestedBranchId)) return requestedBranchId;
+    if (branchOptions.some((branch) => branch.id === "branch-lagos-main")) return "branch-lagos-main";
+    return terminalOptions.find((terminal) => terminal.id === "terminal-web-1")?.branchId ?? branchOptions[0]?.id ?? "";
+  }
+
+  function preferredTerminalId(terminalOptions: TerminalOption[], requestedTerminalId?: string) {
+    if (requestedTerminalId && terminalOptions.some((terminal) => terminal.id === requestedTerminalId)) return requestedTerminalId;
+    return (terminalOptions.find((terminal) => terminal.id === "terminal-web-1")
+      ?? terminalOptions.find((terminal) => terminal.status === "online")
+      ?? terminalOptions[0])?.id ?? "";
+  }
+
+  function findLoginStaff(identifier: string) {
+    const identifierKey = normalizeLoginText(identifier).toLowerCase();
+    return staff.find((member) => member.id.toLowerCase() === identifierKey || member.email.toLowerCase() === identifierKey);
+  }
+
+  function loginContextForStaff(identifier: string, requestedTerminalId?: string) {
+    const member = findLoginStaff(identifier);
+    const effectiveBranchId = member?.branchId ?? branchId;
+    const branchTerminals = allLoginTerminals.filter((terminal) => terminal.branchId === effectiveBranchId);
+    return {
+      branchId: effectiveBranchId,
+      terminalId: preferredTerminalId(branchTerminals, requestedTerminalId),
+      terminals: branchTerminals
+    };
+  }
+
+  function applyLoginContext(identifier: string, requestedTerminalId?: string) {
+    const member = findLoginStaff(identifier);
+    if (!member) return null;
+
+    const branchTerminals = allLoginTerminals.filter((terminal) => terminal.branchId === member.branchId);
+    const terminalId = preferredTerminalId(branchTerminals, requestedTerminalId);
+    setBranchId(member.branchId);
+    setTerminals(branchTerminals);
+    setLoginForm((current) => ({ ...current, terminalId }));
+    setPinForm((current) => ({ ...current, terminalId }));
+    setStatus(`Ready for ${member.name}`);
+    return member;
+  }
 
   async function loadSecurity(nextBranchId = branchId, nextTenantId = tenantId) {
     setStatus("Syncing security...");
@@ -90,14 +133,12 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
         }
 
         rememberTenantId(loginTenantId);
-        const bootstrap = await fetchAuthBootstrap(loginTenantId, nextBranchId || undefined);
-        const preferredStaff = bootstrap.staff.find((member) => member.role === "cashier" || member.role === "teller")
-          ?? bootstrap.staff.find((member) => member.pinEnabled && member.active);
-        const effectiveBranchId = nextBranchId || preferredStaff?.branchId || bootstrap.branches[0]?.id || "";
+        const bootstrap = await fetchAuthBootstrap(loginTenantId);
+        const effectiveBranchId = preferredBranchId(bootstrap.branches, bootstrap.terminals, nextBranchId);
         const branchTerminals = effectiveBranchId
           ? bootstrap.terminals.filter((terminal) => terminal.branchId === effectiveBranchId)
           : [];
-        const effectiveTerminalId = (branchTerminals.find((terminal) => terminal.status === "online") ?? branchTerminals[0])?.id || "";
+        const effectiveTerminalId = preferredTerminalId(branchTerminals);
         setBranches(bootstrap.branches);
         setAllLoginTerminals(bootstrap.terminals);
         setSessions([]);
@@ -110,12 +151,10 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
         }));
         setPinForm((current) => ({
           ...current,
-          staffId: bootstrap.staff.some((member) => member.id === current.staffId && member.pinEnabled && member.branchId === effectiveBranchId)
-            ? current.staffId
-            : preferredStaff?.id ?? "",
+          staffId: "",
           terminalId: branchTerminals.some((terminal) => terminal.id === current.terminalId) ? current.terminalId : effectiveTerminalId
         }));
-        setStatus(effectiveBranchId ? "Ready for PIN" : "Select a branch");
+        setStatus(effectiveBranchId ? "Enter staff ID and PIN" : "Select a branch");
         return;
       }
 
@@ -178,45 +217,6 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
     setPinForm((current) => ({ ...current, staffId: "", terminalId: "" }));
   }
 
-  function selectedStaffInitials(name: string) {
-    return name.split(" ").filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
-  }
-
-  function seededEmailForStaff(staffId: string, name: string) {
-    const seededEmails: Record<string, string> = {
-      "owner-1": "adaeze@example.com",
-      "staff-1": "chinelo@example.com",
-      "staff-2": "musa@example.com",
-      "staff-3": "sarah@example.com",
-      "staff-4": "tunde@example.com"
-    };
-    return seededEmails[staffId] ?? `${name.split(" ")[0].toLowerCase()}@example.com`;
-  }
-
-  function displayRole(role: string) {
-    if (role === "cashier" || role === "teller") return "Cashier / Teller";
-    return role.split("_").map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`).join(" ");
-  }
-
-  function selectPinStaff(member: PinStaffOption) {
-    const memberTerminals = allLoginTerminals.filter((terminal) => terminal.branchId === member.branchId);
-    const selectedTerminal = memberTerminals.find((terminal) => terminal.status === "online") ?? memberTerminals[0];
-    setBranchId(member.branchId);
-    setTerminals(memberTerminals);
-    setPinForm((current) => ({
-      ...current,
-      staffId: member.id,
-      terminalId: selectedTerminal?.id ?? current.terminalId,
-      pin: ""
-    }));
-    setLoginForm((current) => ({
-      ...current,
-      email: seededEmailForStaff(member.id, member.name),
-      terminalId: selectedTerminal?.id ?? current.terminalId
-    }));
-    setStatus(`${displayRole(member.role)} selected for ${member.branchId}`);
-  }
-
   function appendPinDigit(digit: string) {
     setPinForm((current) => current.pin.length >= 4 ? current : { ...current, pin: `${current.pin}${digit}` });
   }
@@ -229,39 +229,57 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
     setPinForm((current) => ({ ...current, pin: current.pin.slice(0, -1) }));
   }
 
+  function changePasswordIdentifier(identifier: string) {
+    setLoginForm((current) => ({ ...current, identifier }));
+    applyLoginContext(identifier, loginForm.terminalId || pinForm.terminalId);
+  }
+
+  function changePinStaffId(staffId: string) {
+    setPinForm((current) => ({ ...current, staffId, pin: "" }));
+    applyLoginContext(staffId, pinForm.terminalId || loginForm.terminalId);
+  }
+
   async function submitPasswordLogin(event: FormEvent) {
     event.preventDefault();
 
     const submittedTenantId = normalizeLoginText(tenantId);
-    const submittedEmail = normalizeLoginText(loginForm.email).toLowerCase();
+    const submittedIdentifier = normalizeLoginText(loginForm.identifier).toLowerCase();
     const submittedPassword = normalizeLoginText(loginForm.password).replace(/^["'](.+)["']$/, "$1");
+    const inferredContext = loginContextForStaff(submittedIdentifier, loginForm.terminalId || pinForm.terminalId);
+    const submittedTerminalId = inferredContext.terminalId || loginForm.terminalId || pinForm.terminalId || undefined;
 
     if (!submittedTenantId) {
       setStatus("Enter tenant ID");
       return;
     }
 
-    if (!submittedEmail || !submittedPassword) {
-      setStatus("Enter email and password");
+    if (!submittedIdentifier || !submittedPassword) {
+      setStatus("Enter user ID and password");
       return;
     }
 
-    setStatus(`Signing in ${submittedEmail}...`);
+    setStatus("Signing in...");
 
     try {
       const response = await loginWithPassword({
         tenantId: submittedTenantId,
-        email: submittedEmail,
+        identifier: submittedIdentifier,
         password: submittedPassword,
-        terminalId: loginForm.terminalId || pinForm.terminalId || undefined
+        terminalId: submittedTerminalId
       });
+      if (inferredContext.branchId) setBranchId(inferredContext.branchId);
+      if (inferredContext.terminals.length > 0) setTerminals(inferredContext.terminals);
+      if (submittedTerminalId) {
+        setLoginForm((current) => ({ ...current, terminalId: submittedTerminalId }));
+        setPinForm((current) => ({ ...current, terminalId: submittedTerminalId }));
+      }
       storeAuth(response, rememberDevice);
       rememberTenantId(response.staff.tenantId);
       onAuthChange(response);
       setSessions((current) => [response.session, ...current]);
       setStatus(`Signed in as ${response.staff.name}`);
     } catch (error) {
-      setStatus(error instanceof Error ? `${error.message} for ${submittedEmail} / ${submittedTenantId}` : "Unable to sign in");
+      setStatus(error instanceof Error ? error.message : "Unable to sign in");
     }
   }
 
@@ -273,15 +291,30 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
       return;
     }
 
-    if (!branchId || !pinForm.terminalId || !pinForm.staffId) {
-      setStatus("Select branch, staff, and terminal");
+    const submittedStaffId = normalizeLoginText(pinForm.staffId);
+    const inferredContext = loginContextForStaff(submittedStaffId, pinForm.terminalId);
+    const submittedBranchId = inferredContext.branchId || branchId;
+    const submittedTerminalId = inferredContext.terminalId || pinForm.terminalId;
+
+    if (!submittedBranchId || !submittedTerminalId || !submittedStaffId) {
+      setStatus("Enter branch, terminal, staff ID, and PIN");
       return;
     }
 
     setStatus("Checking PIN...");
 
     try {
-      const response = await loginWithPin({ tenantId: normalizeLoginText(tenantId), branchId: normalizeLoginText(branchId), ...pinForm, pin: normalizeLoginText(pinForm.pin) });
+      const response = await loginWithPin({
+        tenantId: normalizeLoginText(tenantId),
+        branchId: normalizeLoginText(submittedBranchId),
+        terminalId: normalizeLoginText(submittedTerminalId),
+        staffId: submittedStaffId,
+        pin: normalizeLoginText(pinForm.pin)
+      });
+      setBranchId(submittedBranchId);
+      if (inferredContext.terminals.length > 0) setTerminals(inferredContext.terminals);
+      setPinForm((current) => ({ ...current, staffId: submittedStaffId, terminalId: submittedTerminalId }));
+      setLoginForm((current) => ({ ...current, terminalId: submittedTerminalId }));
       storeAuth(response, rememberDevice);
       rememberTenantId(response.staff.tenantId);
       onAuthChange(response);
@@ -328,9 +361,6 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
   }
 
   if (!auth) {
-    const pinStaff = staff.filter((member) => member.pinEnabled && member.active);
-    const tellerStaff = pinStaff.find((member) => member.role === "cashier" || member.role === "teller");
-    const selectedPinStaff = pinStaff.find((member) => member.id === pinForm.staffId);
     const pinReady = Boolean(tenantId.trim() && branchId && pinForm.terminalId && pinForm.staffId && pinForm.pin.length >= 4);
     const keypadDigits = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
@@ -349,45 +379,22 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
           <div className="samba-login-body">
             <aside className="samba-user-pane">
               <div className="samba-pane-heading">
-                <strong>Select teller</strong>
-                <span>{pinStaff.length} terminal users</span>
+                <strong>Sign in</strong>
+                <span>ID required</span>
               </div>
 
-              {tellerStaff ? (
-                <button className="auth-teller-shortcut" type="button" onClick={() => selectPinStaff(tellerStaff)}>
-                  <span className="auth-staff-avatar">{selectedStaffInitials(tellerStaff.name)}</span>
-                  <span>
-                    <strong>Start as {tellerStaff.name}</strong>
-                    <small>Cashier/Teller PIN: 1234</small>
-                  </span>
-                </button>
-              ) : null}
-
-              <div className="auth-staff-list">
-                {pinStaff.length === 0 ? (
-                  <div className="auth-empty-staff">Load tenant to show PIN users.</div>
-                ) : pinStaff.map((member) => (
-                  <button
-                    className={`auth-staff-card${pinForm.staffId === member.id ? " is-selected" : ""}`}
-                    key={member.id}
-                    type="button"
-                    onClick={() => selectPinStaff(member)}
-                  >
-                    <span className="auth-staff-avatar">{selectedStaffInitials(member.name)}</span>
-                    <span>
-                      <strong>{member.name}</strong>
-                      <small>{displayRole(member.role)}</small>
-                    </span>
-                  </button>
-                ))}
+              <div className="auth-id-panel">
+                <Store size={28} />
+                <strong>NaijaPOS Terminal</strong>
+                <span>Enter your assigned staff ID, email, password or PIN to open your session.</span>
               </div>
 
               <details className="auth-password-panel" open>
                 <summary>Password login</summary>
                 <form className="auth-password-form" onSubmit={submitPasswordLogin}>
                   <label>
-                    Email
-                    <input type="email" value={loginForm.email} onChange={(event) => setLoginForm((current) => ({ ...current, email: event.target.value }))} required />
+                    User ID or Email
+                    <input autoComplete="username" value={loginForm.identifier} onChange={(event) => changePasswordIdentifier(event.target.value)} required />
                   </label>
                   <label>
                     Password
@@ -408,9 +415,14 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
             <main className="auth-pin-stage">
               <form className="auth-pin-terminal" onSubmit={submitPinLogin}>
                 <div className="auth-pin-heading">
-                  <h1>{selectedPinStaff ? selectedPinStaff.name : "Choose a teller"}</h1>
-                  <span>{selectedPinStaff ? `${displayRole(selectedPinStaff.role)} terminal PIN` : "Enter security PIN"}</span>
+                  <h1>PIN Login</h1>
+                  <span>Enter staff ID and security PIN</span>
                 </div>
+
+                <label className="auth-pin-id">
+                  Staff ID
+                  <input value={pinForm.staffId} onChange={(event) => changePinStaffId(event.target.value)} placeholder="staff-2" required />
+                </label>
 
                 <div className="auth-pin-dots" aria-label={`${pinForm.pin.length} PIN digits entered`}>
                   {[0, 1, 2, 3].map((index) => <span className={index < pinForm.pin.length ? "is-filled" : ""} key={index} />)}
@@ -463,6 +475,7 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
               Remember this device
             </label>
             <a className="auth-support-link" href="mailto:support@naijapos.local">Support</a>
+            <span className="auth-company-footer">Revo Space Enterprise Ltd.</span>
           </footer>
         </section>
       </div>
@@ -496,8 +509,8 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
           </div>
           <div className="settings-form">
             <label className="wide-field">
-              Email
-              <input type="email" value={loginForm.email} onChange={(event) => setLoginForm((current) => ({ ...current, email: event.target.value }))} required />
+              User ID or Email
+              <input value={loginForm.identifier} onChange={(event) => changePasswordIdentifier(event.target.value)} required />
             </label>
             <label className="wide-field">
               Password

@@ -40,7 +40,7 @@ const fallbackTenant: Pick<TenantProfile, "branchLimit" | "settings" | "plan"> =
 const blankBranch: BranchPayload = {
   name: "",
   address: "",
-  city: "Lagos",
+  city: "",
   phone: "",
   status: "" as BranchStatus
 };
@@ -50,7 +50,7 @@ const blankTerminal: TerminalPayload = {
   name: "",
   deviceCode: "",
   status: "" as TerminalStatus,
-  appVersion: "1.0.0"
+  appVersion: ""
 };
 
 function statusTone(status: BranchStatus | TerminalStatus): "success" | "warning" | "danger" | "info" {
@@ -64,6 +64,7 @@ export function BranchesView() {
   const storedAuth = useMemo(() => readStoredAuth(), []);
   const activeUserId = storedAuth?.staff.id ?? "";
   const activeBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
+  const canCreateBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
   const [branches, setBranches] = useState<BranchProfile[]>([]);
   const [terminals, setTerminals] = useState<TerminalDevice[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<BranchProfile | null>(null);
@@ -83,6 +84,7 @@ export function BranchesView() {
     [selectedBranch, terminals]
   );
   const branchPage = usePaginatedRows(branches, 10);
+  const terminalPage = usePaginatedRows(terminals, 8);
 
   async function loadBranches() {
     setStatus("Syncing branches...");
@@ -125,7 +127,7 @@ export function BranchesView() {
       deviceCode: terminal.deviceCode,
       status: terminal.status,
       appVersion: terminal.appVersion
-    } : { ...blankTerminal, branchId: branchId || activeBranchId });
+    } : { ...blankTerminal, branchId });
     setTerminalModalOpen(true);
   }
 
@@ -246,7 +248,7 @@ export function BranchesView() {
         <div className="button-group">
           <button className="secondary-button" onClick={loadBranches}><RefreshCcw size={18} /> Sync</button>
           <button className="secondary-button" onClick={() => openTerminalModal()}><MonitorCog size={18} /> Add terminal</button>
-          <button className="primary-button" onClick={() => openBranchModal()}><Plus size={18} /> Add branch</button>
+          {canCreateBranches ? <button className="primary-button" onClick={() => openBranchModal()}><Plus size={18} /> Add branch</button> : null}
         </div>
       </div>
 
@@ -316,20 +318,39 @@ export function BranchesView() {
             <h2>Terminal fleet</h2>
             <span>{onlineTerminalCount} online</span>
           </div>
-          <div className="stack">
-            {terminals.map((terminal) => (
-              <div className="list-row" key={terminal.id}>
-                <div>
-                  <strong>{terminal.name}</strong>
-                  <span>{branchName(terminal.branchId)} - {terminal.deviceCode}</span>
-                  <small>{terminal.lastSeenAt ? `Seen ${new Date(terminal.lastSeenAt).toLocaleString()}` : "Not checked in"}</small>
-                </div>
-                <StatusBadge label={terminal.status} tone={statusTone(terminal.status)} />
-                <b>{terminal.appVersion}</b>
-                <button onClick={() => openTerminalModal(terminal)} aria-label={`Edit ${terminal.name}`}><Pencil size={16} /></button>
-              </div>
-            ))}
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>Terminal</th><th>Branch</th><th>Device code</th><th>Version</th><th>Last seen</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody>
+                {terminalPage.pageRows.length === 0 ? (
+                  <tr><td colSpan={8}>No terminals provisioned.</td></tr>
+                ) : terminalPage.pageRows.map((terminal, index) => (
+                  <tr key={terminal.id}>
+                    <td className="number-cell">{terminalPage.startIndex + index + 1}</td>
+                    <td><strong>{terminal.name}</strong></td>
+                    <td>{branchName(terminal.branchId)}</td>
+                    <td>{terminal.deviceCode}</td>
+                    <td>{terminal.appVersion}</td>
+                    <td>{terminal.lastSeenAt ? new Date(terminal.lastSeenAt).toLocaleString() : "Not checked in"}</td>
+                    <td><StatusBadge label={terminal.status} tone={statusTone(terminal.status)} /></td>
+                    <td className="row-actions">
+                      <button onClick={() => openTerminalModal(terminal)} aria-label={`Edit ${terminal.name}`}><Pencil size={16} /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+          <TablePagination
+            page={terminalPage.page}
+            pageCount={terminalPage.pageCount}
+            pageSize={terminalPage.pageSize}
+            totalRows={terminalPage.totalRows}
+            startIndex={terminalPage.startIndex}
+            visibleCount={terminalPage.pageRows.length}
+            onPageChange={terminalPage.setPage}
+            onPageSizeChange={terminalPage.setPageSize}
+          />
         </section>
       </div>
 

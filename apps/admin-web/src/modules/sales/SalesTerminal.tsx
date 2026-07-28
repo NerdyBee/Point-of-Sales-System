@@ -11,6 +11,10 @@ import type { CartItem, SaleSyncState } from "./types";
 const defaultBranchId = "";
 const defaultTerminalId = "";
 const fallbackBranches: BranchOption[] = [];
+
+function isServiceCategory(category: string) {
+  return category.trim().toLowerCase() === "services";
+}
 const defaultPaymentSettings: TenantSettings["paymentMethods"] = { cash: true, card: true, bankTransfer: true, mobileMoney: false };
 const paymentSettingKey: Partial<Record<PaymentMethodCode, keyof TenantSettings["paymentMethods"]>> = {
   cash: "cash",
@@ -32,6 +36,7 @@ interface HeldOrder {
   label: string;
   items: CartItem[];
   total: number;
+  discountApprovalId?: string;
   createdAt: string;
 }
 
@@ -90,6 +95,7 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
   const [discountAmount, setDiscountAmount] = useState(0);
   const [discountReason, setDiscountReason] = useState("");
   const [discountApprovalId, setDiscountApprovalId] = useState("");
+  const [saleDiscountApprovalId, setSaleDiscountApprovalId] = useState("");
   const [voidModalOpen, setVoidModalOpen] = useState(false);
   const [voidReason, setVoidReason] = useState("");
   const [voidApprovalId, setVoidApprovalId] = useState("");
@@ -213,6 +219,7 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
   useEffect(() => {
     if (tableContext?.items) {
       setCart(tableContext.items.map((item) => ({ ...item })));
+      setSaleDiscountApprovalId("");
       setLastSettledReceipt(null);
     }
   }, [tableContext]);
@@ -355,6 +362,7 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
     setRegisterMessage("Select a terminal");
     setCart([]);
     setPaymentReference("");
+    setSaleDiscountApprovalId("");
     setLastSaleReceipt(null);
     setLastSettledReceipt(null);
     setSyncState({ status: "success", message: "Branch changed. Select a terminal to continue.", saleId: nextBranchId });
@@ -428,12 +436,14 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
       label: `Table #08 - ${cart.length} lines`,
       items: cart.map((item) => ({ ...item })),
       total: summary.total,
+      discountApprovalId: saleDiscountApprovalId,
       createdAt: new Date().toISOString()
     };
 
     setHeldOrders((current) => [heldOrder, ...current]);
     setCart([]);
     setPaymentReference("");
+    setSaleDiscountApprovalId("");
     setSyncState({ status: "success", message: `Order held: ${heldOrder.label}`, saleId: heldOrder.id });
   }
 
@@ -450,6 +460,7 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
     }
 
     setCart(heldOrder.items.map((item) => ({ ...item })));
+    setSaleDiscountApprovalId(heldOrder.discountApprovalId ?? "");
     setHeldOrders((current) => current.filter((order) => order.id !== orderId));
     setSyncState({ status: "success", message: `Resumed ${heldOrder.label}`, saleId: heldOrder.id });
   }
@@ -567,6 +578,7 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
               : item
           ))
         );
+        setSaleDiscountApprovalId(response.approval.id);
         setSyncState({ status: "success", message: `Approved discount applied: ${response.approval.id}`, saleId: "discount" });
         closeDiscountModal();
       } catch (error) {
@@ -578,6 +590,7 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
     setCart((items) =>
       items.map((item) => (item.product.id === selectedDiscountItem.product.id ? { ...item, discount: discountAmount, note: discountReason } : item))
     );
+    setSaleDiscountApprovalId("");
     setSyncState({ status: "success", message: `Discount applied to ${selectedDiscountItem.product.name}`, saleId: "discount" });
     closeDiscountModal();
   }
@@ -683,6 +696,7 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
         tableId: tableContext?.tableId,
         tableOrderId: tableContext?.tableOrderId,
         idempotencyKey: `${terminalId}-${Date.now()}`,
+        discountApprovalId: summary.discount >= 50000 ? saleDiscountApprovalId : undefined,
         lines: cart.map((item) => ({
           productId: item.product.id,
           quantity: item.quantity,
@@ -707,6 +721,7 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
       setCart([]);
       setPaymentReference("");
       setSelectedCustomerId("");
+      setSaleDiscountApprovalId("");
       setLastSaleReceipt({
         saleId: response.saleId,
         terminalId,
@@ -790,6 +805,7 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
         customerId: selectedCustomerId || undefined,
         tableId: tableContext?.tableId,
         idempotencyKey: `${terminalId}-split-${Date.now()}`,
+        discountApprovalId: splitSummary.discount >= 50000 ? saleDiscountApprovalId : undefined,
         lines: splitItems.map((item) => ({
           productId: item.product.id,
           quantity: item.quantity,
@@ -906,7 +922,7 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
               <small>{product.station}</small>
               <footer>
                 <b>{displayMoney(product.price)}</b>
-                <em>{product.stock} left</em>
+                <em>{isServiceCategory(product.category) ? "Service" : `${product.stock} left`}</em>
               </footer>
             </div>
           </button>

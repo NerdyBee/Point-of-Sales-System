@@ -21,6 +21,19 @@ const emptySettings: TenantSettings = {
 
 const emptyBranches: BranchOption[] = [];
 
+function decimalToPercent(rate: number) {
+  return Math.round(rate * 10000) / 100;
+}
+
+function percentToDecimal(percent: string) {
+  const numericPercent = Number(percent);
+  return Number.isFinite(numericPercent) ? Math.max(0, Math.min(100, numericPercent)) / 100 : 0;
+}
+
+function normalizeCategoryName(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
 export function SettingsView() {
   const storedAuth = useMemo(() => readStoredAuth(), []);
   const activeUserId = storedAuth?.staff.id ?? "";
@@ -87,8 +100,12 @@ export function SettingsView() {
     }));
   }
 
+  function updateRateFromPercent(key: "defaultTaxRate" | "serviceChargeRate", value: string) {
+    updateSetting(key, percentToDecimal(value));
+  }
+
   function addProductCategory() {
-    const nextCategory = newCategory.trim();
+    const nextCategory = normalizeCategoryName(newCategory);
 
     if (!nextCategory) {
       setStatus("Enter a category name");
@@ -151,12 +168,13 @@ export function SettingsView() {
     setStatus("Renaming category...");
 
     try {
-      const response = await renameProductCategory(renameCategory, renameValue.trim(), activeUserId, branchId);
+      const nextCategory = normalizeCategoryName(renameValue);
+      const response = await renameProductCategory(renameCategory, nextCategory, activeUserId, branchId);
       setTenant(response.tenant);
       setSettings(response.tenant.settings);
       setCategoryUsage((current) => {
         const nextUsage = { ...current };
-        nextUsage[response.tenant.settings.productCategories.find((category) => category.toLowerCase() === renameValue.trim().toLowerCase()) ?? renameValue.trim()] = nextUsage[renameCategory] ?? 0;
+        nextUsage[response.tenant.settings.productCategories.find((category) => category.toLowerCase() === nextCategory.toLowerCase()) ?? nextCategory] = nextUsage[renameCategory] ?? 0;
         delete nextUsage[renameCategory];
         return nextUsage;
       });
@@ -263,25 +281,25 @@ export function SettingsView() {
               </select>
             </label>
             <label>
-              Tax rate
+              VAT rate (%)
               <input
-                max={1}
+                max={100}
                 min={0}
-                step={0.001}
+                step={0.1}
                 type="number"
-                value={settings.defaultTaxRate}
-                onChange={(event) => updateSetting("defaultTaxRate", Number(event.target.value))}
+                value={decimalToPercent(settings.defaultTaxRate)}
+                onChange={(event) => updateRateFromPercent("defaultTaxRate", event.target.value)}
               />
             </label>
             <label>
-              Service charge rate
+              Service charge (%)
               <input
-                max={1}
+                max={100}
                 min={0}
-                step={0.001}
+                step={0.1}
                 type="number"
-                value={settings.serviceChargeRate}
-                onChange={(event) => updateSetting("serviceChargeRate", Number(event.target.value))}
+                value={decimalToPercent(settings.serviceChargeRate)}
+                onChange={(event) => updateRateFromPercent("serviceChargeRate", event.target.value)}
               />
             </label>
             <label className="toggle-line">

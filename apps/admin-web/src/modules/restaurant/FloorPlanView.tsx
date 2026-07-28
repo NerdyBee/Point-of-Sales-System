@@ -1,7 +1,8 @@
-import { Armchair, CalendarDays, Check, RefreshCcw, Users, X } from "lucide-react";
+import { Armchair, CalendarDays, Check, Plus, RefreshCcw, Users, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   addTableOrderItem,
+  createRestaurantTable,
   createTableReservation,
   fetchBranchOptions,
   fetchCatalogProducts,
@@ -11,13 +12,16 @@ import {
   readStoredAuth,
   removeTableOrderItem,
   requestTableBill,
+  transferTableOrder,
   updateTableLayout,
+  updateTableReservationStatus,
   updateTableState,
   type BranchOption,
   type OpenTableOrderPayload,
   type RestaurantTable,
   type RestaurantTableState,
   type StaffMember,
+  type TableCreatePayload,
   type TableLayoutPayload,
   type TableOrderItemPayload,
   type TableReservation,
@@ -25,6 +29,7 @@ import {
   type TableOrder
 } from "../../shared/api/client";
 import { StatusBadge } from "../../shared/components/StatusBadge";
+import { TablePagination, usePaginatedRows } from "../../shared/components/TablePagination";
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 import type { Product } from "../catalog/types";
 import type { SettledTableReceipt, TerminalTableContext } from "../sales/SalesTerminal";
@@ -107,6 +112,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
     x: 50,
     y: 50
   });
+  const [layoutMode, setLayoutMode] = useState<"create" | "edit">("edit");
   const [layoutModalOpen, setLayoutModalOpen] = useState(false);
   const [itemForm, setItemForm] = useState<TableOrderItemPayload>({
     productId: "",
@@ -114,6 +120,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
     modifiers: [],
     note: ""
   });
+  const [transferTargetTableId, setTransferTargetTableId] = useState("");
   const [status, setStatus] = useState("Ready");
   const { displayMoney } = useTenantSettings();
 
@@ -139,6 +146,12 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
   );
   const waiterOptions = useMemo(() => staff.filter((member) => member.active), [staff]);
   const actingWaiterId = selectedOrder?.waiterId ?? form.waiterId ?? storedAuth?.staff.id ?? "";
+  const transferTableOptions = useMemo(
+    () => tables.filter((table) => table.id !== selectedTable?.id && !table.orderId && (table.state === "available" || table.state === "reserved")),
+    [selectedTable?.id, tables]
+  );
+  const reservationPage = usePaginatedRows(reservations, 4);
+  const tableSummaryPage = usePaginatedRows(tables, 8);
 
   const counts = useMemo(() => {
     return tables.reduce<Record<RestaurantTableState, number>>(
@@ -214,6 +227,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
 
   function selectTable(table: RestaurantTable) {
     setSelectedTableId(table.id);
+    setTransferTargetTableId("");
     setForm((current) => ({ ...current, tableId: table.id, guests: Math.max(1, table.guests || Math.min(table.seats, 2)) }));
     setReservationForm((current) => ({ ...current, branchId, tableId: table.id, guests: Math.max(1, Math.min(table.seats, current.guests)) }));
   }
@@ -236,14 +250,36 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
   }
 
   function openLayoutModal() {
-    if (!selectedTable) return;
+    if (!selectedTable) {
+      setStatus("Select a table to edit");
+      return;
+    }
 
+    setLayoutMode("edit");
     setLayoutForm({
       area: selectedTable.area,
       label: selectedTable.label,
       seats: selectedTable.seats,
       x: selectedTable.x,
       y: selectedTable.y
+    });
+    setLayoutModalOpen(true);
+  }
+
+  function openCreateTableModal() {
+    if (!branchId) {
+      setStatus("Select a branch before adding tables");
+      return;
+    }
+
+    const nextNumber = tables.length + 1;
+    setLayoutMode("create");
+    setLayoutForm({
+      area: selectedTable?.area ?? "Main Dining",
+      label: `T${String(nextNumber).padStart(2, "0")}`,
+      seats: 4,
+      x: 50,
+      y: 50
     });
     setLayoutModalOpen(true);
   }
@@ -321,16 +357,59 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
     }
   }
 
+  async function changeReservationStatus(reservation: TableReservation, status: "seated" | "cancelled" | "no_show") {
+    const statusCopy = status === "no_show" ? "Marking no-show..." : status === "seated" ? "Seating reservation..." : "Cancelling reservation...";
+    setStatus(statusCopy);
+
+    try {
+      const response = await updateTableReservationStatus(reservation.id, { status, note: status === "seated" ? "Guest arrived" : "Floor action" }, branchId, activeUserId);
+      setReservations((current) => current.filter((item) => item.id !== response.reservation.id));
+      if (response.table) {
+        setTables((current) => current.map((table) => (table.id === response.table?.id ? response.table : table)));
+      }
+      if (status === "seated") {
+        setSelectedTableId(reservation.tableId);
+        setForm((current) => ({
+          ...current,
+          tableId: reservation.tableId,
+          guests: reservation.guests,
+          waiterId: current.waiterId || waiterOptions[0]?.id || "",
+          customerName: reservation.customerName,
+          specialInstructions: reservation.note ?? ""
+        }));
+      }
+      setStatus(status === "seated" ? `${reservation.customerName} ready to open order` : `${reservation.customerName} ${status === "no_show" ? "marked no-show" : "cancelled"}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to update reservation");
+    }
+  }
+
   async function submitLayout(event: FormEvent) {
     event.preventDefault();
 
-    if (!selectedTable) {
+    if (layoutMode === "edit" && !selectedTable) {
       return;
     }
 
-    setStatus("Saving table layout...");
+    if (layoutMode === "create" && !branchId) {
+      setStatus("Select a branch before adding tables");
+      return;
+    }
+
+    setStatus(layoutMode === "create" ? "Creating table..." : "Saving table layout...");
 
     try {
+      if (layoutMode === "create") {
+        const payload: TableCreatePayload = { ...layoutForm, branchId };
+        const response = await createRestaurantTable(payload, activeUserId);
+        setTables((current) => [...current, response.table]);
+        setSelectedTableId(response.table.id);
+        setForm((current) => ({ ...current, tableId: response.table.id, guests: Math.min(response.table.seats, current.guests || 2) }));
+        setLayoutModalOpen(false);
+        setStatus(`Added ${response.table.label}`);
+        return;
+      }
+
       const response = await updateTableLayout(selectedTable.id, layoutForm, branchId, activeUserId);
       setTables((current) => current.map((table) => (table.id === response.table.id ? response.table : table)));
       setLayoutModalOpen(false);
@@ -408,6 +487,38 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
     }
   }
 
+  async function transferSelectedOrder() {
+    if (!selectedOrder) {
+      setStatus("Open a table order before transferring");
+      return;
+    }
+
+    if (!transferTargetTableId) {
+      setStatus("Select a target table");
+      return;
+    }
+
+    setStatus("Transferring table order...");
+
+    try {
+      const response = await transferTableOrder(selectedOrder.id, { targetTableId: transferTargetTableId, reason: "Guest moved table" }, branchId, actingWaiterId);
+      setTables((current) =>
+        current.map((table) => {
+          if (response.sourceTable && table.id === response.sourceTable.id) return response.sourceTable;
+          if (table.id === response.targetTable.id) return response.targetTable;
+          return table;
+        })
+      );
+      setOrders((current) => current.map((order) => (order.id === response.order.id ? response.order : order)));
+      setSelectedTableId(response.targetTable.id);
+      setForm((current) => ({ ...current, tableId: response.targetTable.id, guests: response.order.guests, waiterId: response.order.waiterId }));
+      setTransferTargetTableId("");
+      setStatus(`Transferred order to ${response.targetTable.label}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to transfer table order");
+    }
+  }
+
   function tableItemsForPos(order: TableOrder | null) {
     if (!order) return [];
 
@@ -453,7 +564,8 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
           </label>
           <button className="secondary-button" onClick={() => void loadTables()}><RefreshCcw size={18} /> Sync</button>
           <button className="secondary-button" onClick={openReservationModal}><CalendarDays size={18} /> Reservations</button>
-          <button className="primary-button" onClick={openLayoutModal}><Armchair size={18} /> Edit floor</button>
+          <button className="secondary-button" onClick={openCreateTableModal}><Plus size={18} /> Add table</button>
+          <button className="primary-button" onClick={openLayoutModal}><Armchair size={18} /> Edit table</button>
         </div>
       </div>
       <section className="stats-grid">
@@ -491,7 +603,10 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
       <section className="floor-wrap">
         <div className="floor-map">
           {tables.length === 0 ? (
-            <div className="empty-state">No floor tables found for this branch.</div>
+            <div className="empty-state">
+              <span>No floor tables found for this branch.</span>
+              <button className="secondary-button" onClick={openCreateTableModal}><Plus size={18} /> Add table</button>
+            </div>
           ) : tables.map((table) => (
             <button
               className={`table-node table-${stateTone[table.state]} ${selectedTableId === table.id ? "table-selected" : ""}`}
@@ -614,22 +729,50 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
             <button onClick={() => changeState("available", "Bill paid")}>Release</button>
             <button onClick={() => changeState("delayed", "Kitchen delay")}>Delay</button>
           </div>
+          <div className="table-transfer-control">
+            <select value={transferTargetTableId} onChange={(event) => setTransferTargetTableId(event.target.value)} disabled={!selectedOrder}>
+              <option value="">Transfer to table</option>
+              {transferTableOptions.map((table) => (
+                <option key={table.id} value={table.id}>{table.label} - {stateLabels[table.state]} - {table.seats} seats</option>
+              ))}
+            </select>
+            <button className="secondary-button" onClick={transferSelectedOrder} disabled={!selectedOrder || !transferTargetTableId}>
+              Transfer
+            </button>
+          </div>
           <div className="stack">
-            {reservations.slice(0, 3).map((reservation) => (
+            {reservationPage.pageRows.map((reservation, index) => (
               <div className="list-row reservation-row" key={reservation.id}>
                 <div>
-                  <strong>{reservation.customerName}</strong>
+                  <strong><span className="number-cell">{reservationPage.startIndex + index + 1}</span>{reservation.customerName}</strong>
                   <span>{reservation.tableLabel} - {reservation.guests} guests - {new Date(reservation.reservedAt).toLocaleTimeString()}</span>
                 </div>
-                <StatusBadge label={reservation.status} tone="info" />
+                <div className="row-action-stack">
+                  <StatusBadge label={reservation.status} tone="info" />
+                  <button type="button" onClick={() => changeReservationStatus(reservation, "seated")}>Seat</button>
+                  <button type="button" onClick={() => changeReservationStatus(reservation, "no_show")}>No-show</button>
+                  <button type="button" onClick={() => changeReservationStatus(reservation, "cancelled")}>Cancel</button>
+                </div>
               </div>
             ))}
-            {tables.map((table) => {
+            {reservations.length > 0 ? (
+              <TablePagination
+                page={reservationPage.page}
+                pageCount={reservationPage.pageCount}
+                pageSize={reservationPage.pageSize}
+                totalRows={reservationPage.totalRows}
+                startIndex={reservationPage.startIndex}
+                visibleCount={reservationPage.pageRows.length}
+                onPageChange={reservationPage.setPage}
+                onPageSizeChange={reservationPage.setPageSize}
+              />
+            ) : null}
+            {tableSummaryPage.pageRows.map((table, index) => {
               const tableOrder = orders.find((order) => order.tableId === table.id);
               return (
                 <div className="list-row" key={table.id}>
                   <div>
-                    <strong>{table.label}</strong>
+                    <strong><span className="number-cell">{tableSummaryPage.startIndex + index + 1}</span>{table.label}</strong>
                     <span>{table.area} - {table.guests}/{table.seats} guests</span>
                   </div>
                   {tableOrder?.prepStatus ? (
@@ -643,6 +786,18 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
                 </div>
               );
             })}
+            {tables.length > 0 ? (
+              <TablePagination
+                page={tableSummaryPage.page}
+                pageCount={tableSummaryPage.pageCount}
+                pageSize={tableSummaryPage.pageSize}
+                totalRows={tableSummaryPage.totalRows}
+                startIndex={tableSummaryPage.startIndex}
+                visibleCount={tableSummaryPage.pageRows.length}
+                onPageChange={tableSummaryPage.setPage}
+                onPageSizeChange={tableSummaryPage.setPageSize}
+              />
+            ) : null}
           </div>
         </aside>
       </section>
@@ -709,7 +864,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
             <div className="modal-header">
               <div>
                 <p className="eyebrow">Floor setup</p>
-                <h2 id="layout-modal-title">Edit table</h2>
+                <h2 id="layout-modal-title">{layoutMode === "create" ? "Add table" : "Edit table"}</h2>
               </div>
               <button className="icon-button" onClick={() => setLayoutModalOpen(false)} aria-label="Close floor edit modal"><X size={18} /></button>
             </div>
@@ -735,9 +890,9 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
                 <input min="0" max="100" type="number" value={layoutForm.y} onChange={(event) => updateLayoutForm("y", Number(event.target.value))} required />
               </label>
               <div className="form-summary">
-                <span>{selectedTable?.label ?? "Table"}</span>
+                <span>{layoutMode === "create" ? branches.find((branch) => branch.id === branchId)?.name ?? "New table" : selectedTable?.label ?? "Table"}</span>
                 <span>{status}</span>
-                <button className="primary-button" type="submit"><Check size={18} /> Save table</button>
+                <button className="primary-button" type="submit"><Check size={18} /> {layoutMode === "create" ? "Create table" : "Save table"}</button>
               </div>
             </form>
           </section>

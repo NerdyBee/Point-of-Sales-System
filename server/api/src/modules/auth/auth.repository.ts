@@ -1,18 +1,32 @@
 import type { AuthSession as DbAuthSession, Prisma, StaffMember as DbStaffMember } from "@prisma/client";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { appendAudit, authSessions, demoSecretHash, staffMembers, type AuthSession, type StaffMember } from "../../shared/data/demoStore";
+import { appendAudit, authSessions, demoSecretHash, staffMembers, terminals, type AuthSession, type StaffMember } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
-import { permissionsForRole } from "../../shared/http/tenantContext";
+import { getRolePermissions } from "../roles/roles.repository";
 
 const useDemoStore = process.env.NODE_ENV === "test";
 const accessTokenTtlSeconds = 15 * 60;
 const refreshTokenTtlDays = 14;
 const authSecret = process.env.AUTH_SECRET ?? "naijapos-dev-auth-secret";
+const authFailureWindowMs = 15 * 60 * 1000;
+const authLockoutMs = 10 * 60 * 1000;
+const maxAuthFailures = 5;
 
-type LoginInput = { tenantId: string; email: string; password: string; terminalId?: string };
+type LoginInput = { tenantId: string; identifier: string; email?: string; password: string; terminalId?: string };
 type PinLoginInput = { tenantId: string; branchId: string; terminalId: string; staffId: string; pin: string };
 type StaffShape = StaffMember & { passwordHash?: string; pinHash?: string };
-type InvalidCredentialReason = "staff_not_found" | "staff_inactive_or_pending" | "password_mismatch" | "branch_mismatch" | "pin_disabled" | "pin_mismatch";
+type InvalidCredentialReason =
+  | "staff_not_found"
+  | "staff_inactive_or_pending"
+  | "password_mismatch"
+  | "branch_mismatch"
+  | "terminal_mismatch"
+  | "pin_disabled"
+  | "pin_mismatch"
+  | "account_locked";
+type AuthAttempt = { failures: number; firstFailedAt: number; lockedUntil?: number };
+
+const authAttempts = new Map<string, AuthAttempt>();
 
 function nextSessionId() {
   return `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -20,6 +34,10 @@ function nextSessionId() {
 
 function nextAuditId() {
   return `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function nextAuthAttemptId() {
+  return `auth-attempt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function hashSecret(secret: string) {
@@ -36,9 +54,49 @@ function safeCompare(a: string, b: string) {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
-function verifySecret(secret: string, storedHash?: string | null, fallbackSecret?: string) {
-  const expectedHash = storedHash || (fallbackSecret ? hashSecret(fallbackSecret) : "");
-  return Boolean(expectedHash) && safeCompare(hashSecret(secret), expectedHash);
+function verifySecret(secret: string, storedHash?: string | null) {
+  if (!storedHash) return false;
+  return safeCompare(hashSecret(secret), storedHash);
+}
+
+function normalizeLoginText(value: string) {
+  return value.normalize("NFKC").replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
+}
+
+function authAttemptKey(kind: "password" | "pin", tenantId: string, identifier: string, ipAddress?: string) {
+  return [kind, tenantId.toLowerCase(), normalizeLoginText(identifier).toLowerCase(), ipAddress ?? "unknown-ip"].join(":");
+}
+
+function lockedUntilForAttempt(key: string) {
+  const attempt = authAttempts.get(key);
+  if (!attempt) return null;
+
+  const now = Date.now();
+  if (attempt.lockedUntil && attempt.lockedUntil > now) return attempt.lockedUntil;
+  if (attempt.lockedUntil || now - attempt.firstFailedAt > authFailureWindowMs) {
+    authAttempts.delete(key);
+    return null;
+  }
+
+  return null;
+}
+
+function recordFailedAttempt(key: string) {
+  const now = Date.now();
+  const current = authAttempts.get(key);
+  const attempt = current && now - current.firstFailedAt <= authFailureWindowMs
+    ? current
+    : { failures: 0, firstFailedAt: now };
+  attempt.failures += 1;
+  if (attempt.failures >= maxAuthFailures) {
+    attempt.lockedUntil = now + authLockoutMs;
+  }
+  authAttempts.set(key, attempt);
+  return attempt.lockedUntil && attempt.lockedUntil > now ? attempt.lockedUntil : null;
+}
+
+function clearFailedAttempt(key: string) {
+  authAttempts.delete(key);
 }
 
 function signAccessToken(payload: Record<string, unknown>) {
@@ -93,8 +151,9 @@ function dateOrNull(value?: string) {
   return value ? new Date(value) : null;
 }
 
-async function findOrCreateSeededStaff(tenantId: string, email: string) {
-  const demoStaff = staffMembers.find((member) => member.tenantId === tenantId && member.email.toLowerCase() === email.toLowerCase()) as StaffShape | undefined;
+async function findOrCreateSeededStaff(tenantId: string, identifier: string) {
+  const identifierKey = identifier.toLowerCase();
+  const demoStaff = staffMembers.find((member) => member.tenantId === tenantId && (member.email.toLowerCase() === identifierKey || member.id.toLowerCase() === identifierKey)) as StaffShape | undefined;
   if (!demoStaff) return null;
 
   try {
@@ -126,21 +185,37 @@ async function findOrCreateSeededStaff(tenantId: string, email: string) {
   }
 }
 
-function serializeAuthStaff(member: StaffShape) {
+async function permissionsForStaff(member: StaffShape) {
+  return await getRolePermissions(member.tenantId, member.role);
+}
+
+async function terminalBelongsToBranch(tenantId: string, branchId: string, terminalId?: string) {
+  if (!terminalId) return true;
+
+  if (useDemoStore) {
+    return terminals.some((terminal) => terminal.tenantId === tenantId && terminal.branchId === branchId && terminal.id === terminalId);
+  }
+
+  const terminal = await prisma.terminal.findFirst({ where: { tenantId, branchId, id: terminalId } });
+  return Boolean(terminal);
+}
+
+async function serializeAuthStaff(member: StaffShape) {
   return {
     id: member.id,
     tenantId: member.tenantId,
     branchId: member.branchId,
     name: member.name,
     email: member.email,
+    phone: member.phone,
     role: member.role,
-    permissions: permissionsForRole(member.role)
+    permissions: await permissionsForStaff(member)
   };
 }
 
-function buildAuthResponse(staff: StaffShape, session: AuthSession, refreshToken: string) {
+async function buildAuthResponse(staff: StaffShape, session: AuthSession, refreshToken: string) {
   return {
-    staff: serializeAuthStaff(staff),
+    staff: await serializeAuthStaff(staff),
     session: { ...session, refreshTokenHash: undefined },
     accessToken: signAccessToken({
       tenantId: staff.tenantId,
@@ -171,6 +246,25 @@ async function appendAuthAudit(event: Parameters<typeof appendAudit>[0]) {
       entityId: event.entityId,
       metadata: event.metadata as Prisma.InputJsonValue
     }
+  });
+}
+
+async function recordFailedAuthAttempt(input: {
+  tenantId: string;
+  branchId?: string;
+  userId?: string;
+  action: "auth.login_failed" | "auth.pin_login_failed";
+  reason: InvalidCredentialReason;
+  metadata: Record<string, unknown>;
+}) {
+  await appendAuthAudit({
+    tenantId: input.tenantId,
+    branchId: input.branchId,
+    userId: input.userId ?? "unknown",
+    action: input.action,
+    entityType: "auth_attempt",
+    entityId: nextAuthAttemptId(),
+    metadata: input.metadata
   });
 }
 
@@ -205,7 +299,7 @@ async function createSession(staff: StaffShape, input: { branchId?: string; term
       entityId: session.id,
       metadata: { role: staff.role, terminalId: session.terminalId }
     });
-    return buildAuthResponse(staff, session, refreshToken);
+    return await buildAuthResponse(staff, session, refreshToken);
   }
 
   const session = await prisma.authSession.create({
@@ -235,46 +329,105 @@ async function createSession(staff: StaffShape, input: { branchId?: string; term
     metadata: { role: staff.role, terminalId: session.terminalId }
   });
 
-  return buildAuthResponse(staff, toApiSession(session), refreshToken);
+  return await buildAuthResponse(staff, toApiSession(session), refreshToken);
 }
 
 export async function loginWithPassword(input: LoginInput, meta: { userAgent?: string; ipAddress?: string }) {
-  const email = input.email.toLowerCase();
+  const identifier = normalizeLoginText(input.identifier || input.email || "");
+  const identifierKey = identifier.toLowerCase();
+  const attemptKey = authAttemptKey("password", input.tenantId, identifierKey, meta.ipAddress);
+  const fail = async (reason: InvalidCredentialReason, staff?: StaffShape) => {
+    const lockedUntil = reason === "account_locked" ? lockedUntilForAttempt(attemptKey) : recordFailedAttempt(attemptKey);
+    await recordFailedAuthAttempt({
+      tenantId: input.tenantId,
+      branchId: staff?.branchId,
+      userId: staff?.id,
+      action: "auth.login_failed",
+      reason,
+      metadata: {
+        identifier: identifierKey,
+        terminalId: input.terminalId,
+        reason,
+        lockedUntil: lockedUntil ? new Date(lockedUntil).toISOString() : undefined,
+        userAgent: meta.userAgent,
+        ipAddress: meta.ipAddress
+      }
+    });
+    return { status: "invalid_credentials" as const, reason, lockedUntil: lockedUntil ? new Date(lockedUntil).toISOString() : undefined };
+  };
+
+  if (lockedUntilForAttempt(attemptKey)) return await fail("account_locked");
 
   if (useDemoStore) {
-    const staff = staffMembers.find((member) => member.tenantId === input.tenantId && member.email.toLowerCase() === email) as StaffShape | undefined;
-    if (!staff) return { status: "invalid_credentials" as const, reason: "staff_not_found" satisfies InvalidCredentialReason };
-    if (!staff.active || staff.inviteStatus !== "accepted") return { status: "invalid_credentials" as const, reason: "staff_inactive_or_pending" satisfies InvalidCredentialReason };
-    if (!verifySecret(input.password, staff.passwordHash, "Password123!")) return { status: "invalid_credentials" as const, reason: "password_mismatch" satisfies InvalidCredentialReason };
+    const staff = staffMembers.find((member) => member.tenantId === input.tenantId && (member.email.toLowerCase() === identifierKey || member.id.toLowerCase() === identifierKey)) as StaffShape | undefined;
+    if (!staff) return await fail("staff_not_found");
+    if (!staff.active || staff.inviteStatus !== "accepted") return await fail("staff_inactive_or_pending", staff);
+    if (!verifySecret(input.password, staff.passwordHash)) return await fail("password_mismatch", staff);
+    if (!(await terminalBelongsToBranch(input.tenantId, staff.branchId, input.terminalId))) return await fail("terminal_mismatch", staff);
+    clearFailedAttempt(attemptKey);
     return { status: "authenticated" as const, auth: await createSession(staff, { terminalId: input.terminalId, userAgent: meta.userAgent, ipAddress: meta.ipAddress, action: "auth.login" }) };
   }
 
-  const record = await prisma.staffMember.findFirst({ where: { tenantId: input.tenantId, email } });
-  const staff = record ? toApiStaff(record) : await findOrCreateSeededStaff(input.tenantId, email);
-  if (!staff) return { status: "invalid_credentials" as const, reason: "staff_not_found" satisfies InvalidCredentialReason };
-  if (!staff.active || staff.inviteStatus !== "accepted") return { status: "invalid_credentials" as const, reason: "staff_inactive_or_pending" satisfies InvalidCredentialReason };
-  if (!verifySecret(input.password, staff.passwordHash, "Password123!")) return { status: "invalid_credentials" as const, reason: "password_mismatch" satisfies InvalidCredentialReason };
+  const record = await prisma.staffMember.findFirst({
+    where: {
+      tenantId: input.tenantId,
+      OR: [{ email: identifierKey }, { id: identifier }]
+    }
+  });
+  const staff = record ? toApiStaff(record) : await findOrCreateSeededStaff(input.tenantId, identifierKey);
+  if (!staff) return await fail("staff_not_found");
+  if (!staff.active || staff.inviteStatus !== "accepted") return await fail("staff_inactive_or_pending", staff);
+  if (!verifySecret(input.password, staff.passwordHash)) return await fail("password_mismatch", staff);
+  if (!(await terminalBelongsToBranch(input.tenantId, staff.branchId, input.terminalId))) return await fail("terminal_mismatch", staff);
+  clearFailedAttempt(attemptKey);
   return { status: "authenticated" as const, auth: await createSession(staff, { terminalId: input.terminalId, userAgent: meta.userAgent, ipAddress: meta.ipAddress, action: "auth.login" }) };
 }
 
 export async function loginWithPin(input: PinLoginInput, meta: { userAgent?: string; ipAddress?: string }) {
+  const attemptKey = authAttemptKey("pin", input.tenantId, input.staffId, meta.ipAddress);
+  const fail = async (reason: InvalidCredentialReason, staff?: StaffShape) => {
+    const lockedUntil = reason === "account_locked" ? lockedUntilForAttempt(attemptKey) : recordFailedAttempt(attemptKey);
+    await recordFailedAuthAttempt({
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      userId: staff?.id ?? input.staffId,
+      action: "auth.pin_login_failed",
+      reason,
+      metadata: {
+        staffId: input.staffId,
+        terminalId: input.terminalId,
+        reason,
+        lockedUntil: lockedUntil ? new Date(lockedUntil).toISOString() : undefined,
+        userAgent: meta.userAgent,
+        ipAddress: meta.ipAddress
+      }
+    });
+    return { status: "invalid_credentials" as const, reason, lockedUntil: lockedUntil ? new Date(lockedUntil).toISOString() : undefined };
+  };
+
+  if (lockedUntilForAttempt(attemptKey)) return await fail("account_locked");
+
   if (useDemoStore) {
     const staff = staffMembers.find((member) => member.tenantId === input.tenantId && member.id === input.staffId) as StaffShape | undefined;
-    if (!staff) return { status: "invalid_credentials" as const, reason: "staff_not_found" satisfies InvalidCredentialReason };
-    if (staff.branchId !== input.branchId) return { status: "invalid_credentials" as const, reason: "branch_mismatch" satisfies InvalidCredentialReason };
-    if (!staff.active || staff.inviteStatus !== "accepted") return { status: "invalid_credentials" as const, reason: "staff_inactive_or_pending" satisfies InvalidCredentialReason };
-    if (!staff.pinEnabled) return { status: "invalid_credentials" as const, reason: "pin_disabled" satisfies InvalidCredentialReason };
-    if (!verifySecret(input.pin, staff.pinHash, "1234")) return { status: "invalid_credentials" as const, reason: "pin_mismatch" satisfies InvalidCredentialReason };
+    if (!staff) return await fail("staff_not_found");
+    if (staff.branchId !== input.branchId) return await fail("branch_mismatch", staff);
+    if (!(await terminalBelongsToBranch(input.tenantId, input.branchId, input.terminalId))) return await fail("terminal_mismatch", staff);
+    if (!staff.active || staff.inviteStatus !== "accepted") return await fail("staff_inactive_or_pending", staff);
+    if (!staff.pinEnabled) return await fail("pin_disabled", staff);
+    if (!verifySecret(input.pin, staff.pinHash)) return await fail("pin_mismatch", staff);
+    clearFailedAttempt(attemptKey);
     return { status: "authenticated" as const, auth: await createSession(staff, { branchId: input.branchId, terminalId: input.terminalId, userAgent: meta.userAgent, ipAddress: meta.ipAddress, action: "auth.pin_login" }) };
   }
 
   const record = await prisma.staffMember.findFirst({ where: { tenantId: input.tenantId, id: input.staffId } });
   const staff = record ? toApiStaff(record) : null;
-  if (!staff) return { status: "invalid_credentials" as const, reason: "staff_not_found" satisfies InvalidCredentialReason };
-  if (staff.branchId !== input.branchId) return { status: "invalid_credentials" as const, reason: "branch_mismatch" satisfies InvalidCredentialReason };
-  if (!staff.active || staff.inviteStatus !== "accepted") return { status: "invalid_credentials" as const, reason: "staff_inactive_or_pending" satisfies InvalidCredentialReason };
-  if (!staff.pinEnabled) return { status: "invalid_credentials" as const, reason: "pin_disabled" satisfies InvalidCredentialReason };
-  if (!verifySecret(input.pin, staff.pinHash, "1234")) return { status: "invalid_credentials" as const, reason: "pin_mismatch" satisfies InvalidCredentialReason };
+  if (!staff) return await fail("staff_not_found");
+  if (staff.branchId !== input.branchId) return await fail("branch_mismatch", staff);
+  if (!(await terminalBelongsToBranch(input.tenantId, input.branchId, input.terminalId))) return await fail("terminal_mismatch", staff);
+  if (!staff.active || staff.inviteStatus !== "accepted") return await fail("staff_inactive_or_pending", staff);
+  if (!staff.pinEnabled) return await fail("pin_disabled", staff);
+  if (!verifySecret(input.pin, staff.pinHash)) return await fail("pin_mismatch", staff);
+  clearFailedAttempt(attemptKey);
   return { status: "authenticated" as const, auth: await createSession(staff, { branchId: input.branchId, terminalId: input.terminalId, userAgent: meta.userAgent, ipAddress: meta.ipAddress, action: "auth.pin_login" }) };
 }
 
@@ -297,7 +450,7 @@ export async function refreshAuthSession(refreshToken: string, meta: { userAgent
       entityId: session.id,
       metadata: { userAgent: meta.userAgent, ipAddress: meta.ipAddress }
     });
-    return { status: "refreshed" as const, auth: buildAuthResponse(staff, session, refreshToken) };
+    return { status: "refreshed" as const, auth: await buildAuthResponse(staff, session, refreshToken) };
   }
 
   const session = await prisma.authSession.findFirst({ where: { refreshTokenHash, revokedAt: null, expiresAt: { gt: now } } });
@@ -315,23 +468,26 @@ export async function refreshAuthSession(refreshToken: string, meta: { userAgent
     entityId: session.id,
     metadata: { userAgent: meta.userAgent, ipAddress: meta.ipAddress }
   });
-  return { status: "refreshed" as const, auth: buildAuthResponse(staff, toApiSession(updatedSession), refreshToken) };
+  return { status: "refreshed" as const, auth: await buildAuthResponse(staff, toApiSession(updatedSession), refreshToken) };
 }
 
-export async function listAuthSessions(tenantId: string) {
+export async function listAuthSessions(tenantId: string, branchId?: string) {
   if (useDemoStore) {
-    return authSessions.filter((session) => session.tenantId === tenantId).map((session) => ({ ...session, refreshTokenHash: undefined }));
+    return authSessions
+      .filter((session) => session.tenantId === tenantId)
+      .filter((session) => !branchId || session.branchId === branchId)
+      .map((session) => ({ ...session, refreshTokenHash: undefined }));
   }
 
-  const sessions = await prisma.authSession.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" } });
+  const sessions = await prisma.authSession.findMany({ where: { tenantId, branchId: branchId ? branchId : undefined }, orderBy: { createdAt: "desc" } });
   return sessions.map((session) => ({ ...toApiSession(session), refreshTokenHash: undefined }));
 }
 
-export async function revokeAuthSession(tenantId: string, userId: string, sessionId: string) {
+export async function revokeAuthSession(tenantId: string, userId: string, sessionId: string, branchId?: string) {
   const now = new Date().toISOString();
 
   if (useDemoStore) {
-    const session = authSessions.find((item) => item.tenantId === tenantId && item.id === sessionId);
+    const session = authSessions.find((item) => item.tenantId === tenantId && item.id === sessionId && (!branchId || item.branchId === branchId));
     if (!session) return { status: "not_found" as const };
     session.revokedAt = now;
     await appendAuthAudit({
@@ -346,7 +502,7 @@ export async function revokeAuthSession(tenantId: string, userId: string, sessio
     return { status: "revoked" as const, session: { ...session, refreshTokenHash: undefined } };
   }
 
-  const existing = await prisma.authSession.findFirst({ where: { tenantId, id: sessionId } });
+  const existing = await prisma.authSession.findFirst({ where: { tenantId, id: sessionId, branchId: branchId ? branchId : undefined } });
   if (!existing) return { status: "not_found" as const };
   const session = await prisma.authSession.update({ where: { id: existing.id }, data: { revokedAt: new Date(now) } });
   await appendAuthAudit({

@@ -11,6 +11,7 @@ export const createSaleSchema = z.object({
   tableId: z.string().optional(),
   tableOrderId: z.string().optional(),
   idempotencyKey: z.string().min(12),
+  discountApprovalId: z.string().min(1).max(80).optional().or(z.literal("")),
   lines: z.array(saleLineSchema).min(1),
   payments: z.array(z.object({
     method: paymentMethodSchema,

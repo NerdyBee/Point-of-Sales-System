@@ -1,11 +1,22 @@
 import { branchInputSchema, terminalInputSchema } from "@pos/validation";
-import { Router } from "express";
-import { resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { Router, type Request, type Response } from "express";
+import { canAccessAllBranches, resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import { createBranch, createTerminal, listBranchOptions, listBranches, updateBranch, updateTerminal } from "./branches.repository";
 
 export const branchesRouter = Router();
 
+function requireBranchContext(req: Request, res: Response) {
+  if (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId) {
+    res.status(403).json({ error: "Branch access denied" });
+    return false;
+  }
+
+  return true;
+}
+
 branchesRouter.get("/", requireTenant, requireAuthenticatedUser, async (req, res) => {
+  if (!requireBranchContext(req, res)) return;
+
   const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
@@ -20,6 +31,8 @@ branchesRouter.get("/", requireTenant, requireAuthenticatedUser, async (req, res
 });
 
 branchesRouter.get("/options", requireTenant, requireAuthenticatedUser, async (req, res) => {
+  if (!requireBranchContext(req, res)) return;
+
   const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
@@ -34,6 +47,11 @@ branchesRouter.get("/options", requireTenant, requireAuthenticatedUser, async (r
 });
 
 branchesRouter.post("/", requireTenant, requirePermission("branch.manage"), async (req, res) => {
+  if (!canAccessAllBranches(req.tenantContext!)) {
+    res.status(403).json({ error: "Only all-branch administrators can create branches" });
+    return;
+  }
+
   const parsed = branchInputSchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -57,6 +75,8 @@ branchesRouter.post("/", requireTenant, requirePermission("branch.manage"), asyn
 });
 
 branchesRouter.patch("/:branchId", requireTenant, requirePermission("branch.manage"), async (req, res) => {
+  if (!requireBranchContext(req, res)) return;
+
   const scope = resolveBranchScope(req.tenantContext!, req.params.branchId.toString());
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
@@ -108,6 +128,8 @@ branchesRouter.post("/terminals", requireTenant, requirePermission("branch.manag
     return;
   }
 
+  if (!requireBranchContext(req, res)) return;
+
   const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
@@ -142,7 +164,16 @@ branchesRouter.patch("/terminals/:terminalId", requireTenant, requirePermission(
     return;
   }
 
-  const result = await updateTerminal(req.tenantContext!.tenantId, req.tenantContext!.userId, req.params.terminalId.toString(), parsed.data);
+  if (!requireBranchContext(req, res)) return;
+
+  const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
+  if (scope.forbidden) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
+  const scopedBranchId = canAccessAllBranches(req.tenantContext!) ? undefined : scope.branchId;
+  const result = await updateTerminal(req.tenantContext!.tenantId, req.tenantContext!.userId, req.params.terminalId.toString(), parsed.data, scopedBranchId);
 
   if (result.status === "not_found") {
     res.status(404).json({ error: "Terminal not found" });

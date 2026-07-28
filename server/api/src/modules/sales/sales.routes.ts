@@ -1,14 +1,24 @@
 import { saleActionSchema, saleReceiptActionSchema, saleRefundSchema } from "@pos/validation";
-import { Router } from "express";
-import { resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant, selfScopedUserId } from "../../shared/http/tenantContext";
+import { Router, type Request, type Response } from "express";
+import { canAccessAllBranches, resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant, selfScopedUserId } from "../../shared/http/tenantContext";
 import { createSale, listSales, queueReceiptAction, refundSale, voidSale } from "./sales.repository";
 import { createSaleSchema } from "./sales.service";
 
 export const salesRouter = Router();
 
+function requireBranchContext(req: Request, res: Response) {
+  const scope = resolveBranchScope(req.tenantContext!, req.tenantContext!.branchId);
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
+    res.status(403).json({ error: "Branch access denied" });
+    return null;
+  }
+
+  return scope;
+}
+
 salesRouter.get("/", requireTenant, requireAuthenticatedUser, async (req, res) => {
   const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
-  if (scope.forbidden) {
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
@@ -32,7 +42,7 @@ salesRouter.post("/", requireTenant, requirePermission("sale.create"), async (re
   }
 
   const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
-  if (scope.forbidden) {
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
@@ -85,6 +95,26 @@ salesRouter.post("/", requireTenant, requirePermission("sale.create"), async (re
       return;
     }
 
+    if (result.status === "approval_required") {
+      res.status(409).json({ error: "Applied discount approval is required" });
+      return;
+    }
+
+    if (result.status === "approval_not_found") {
+      res.status(404).json({ error: "Applied discount approval not found" });
+      return;
+    }
+
+    if (result.status === "approval_not_applied") {
+      res.status(409).json({ error: "Discount approval must be applied before posting sale" });
+      return;
+    }
+
+    if (result.status === "approval_mismatch") {
+      res.status(409).json({ error: "Discount approval does not match this terminal or amount" });
+      return;
+    }
+
     if (result.status === "customer_not_found") {
       res.status(404).json({ error: "Customer not found" });
       return;
@@ -124,9 +154,12 @@ salesRouter.post("/:saleId/receipt-actions", requireTenant, requirePermission("s
     return;
   }
 
+  const scope = requireBranchContext(req, res);
+  if (!scope) return;
+
   const result = await queueReceiptAction(
     req.tenantContext!.tenantId,
-    req.tenantContext!.branchId,
+    scope.branchId,
     req.tenantContext!.userId,
     req.params.saleId.toString(),
     parsed.data.channel
@@ -158,12 +191,16 @@ salesRouter.post("/:saleId/void", requireTenant, requirePermission("sale.void"),
     return;
   }
 
+  const scope = requireBranchContext(req, res);
+  if (!scope) return;
+
   const result = await voidSale(
     req.tenantContext!.tenantId,
-    req.tenantContext!.branchId,
+    scope.branchId,
     req.tenantContext!.userId,
     req.params.saleId.toString(),
-    parsed.data.reason
+    parsed.data.reason,
+    parsed.data.approvalId
   );
 
   if (result.status === "sale_not_found") {
@@ -173,6 +210,26 @@ salesRouter.post("/:saleId/void", requireTenant, requirePermission("sale.void"),
 
   if (result.status === "not_completed") {
     res.status(409).json({ error: "Only completed sales can be voided" });
+    return;
+  }
+
+  if (result.status === "approval_required") {
+    res.status(409).json({ error: "Applied void approval is required" });
+    return;
+  }
+
+  if (result.status === "approval_not_found") {
+    res.status(404).json({ error: "Applied void approval not found" });
+    return;
+  }
+
+  if (result.status === "approval_not_applied") {
+    res.status(409).json({ error: "Void approval must be applied before voiding sale" });
+    return;
+  }
+
+  if (result.status === "approval_mismatch") {
+    res.status(409).json({ error: "Void approval does not match this sale or amount" });
     return;
   }
 
@@ -187,13 +244,17 @@ salesRouter.post("/:saleId/refund", requireTenant, requirePermission("sale.refun
     return;
   }
 
+  const scope = requireBranchContext(req, res);
+  if (!scope) return;
+
   const result = await refundSale(
     req.tenantContext!.tenantId,
-    req.tenantContext!.branchId,
+    scope.branchId,
     req.tenantContext!.userId,
     req.params.saleId.toString(),
     parsed.data.amount,
-    parsed.data.reason
+    parsed.data.reason,
+    parsed.data.approvalId
   );
 
   if (result.status === "sale_not_found") {
@@ -208,6 +269,26 @@ salesRouter.post("/:saleId/refund", requireTenant, requirePermission("sale.refun
 
   if (result.status === "refund_exceeds_total") {
     res.status(409).json({ error: "Refund exceeds sale total" });
+    return;
+  }
+
+  if (result.status === "approval_required") {
+    res.status(409).json({ error: "Applied refund approval is required" });
+    return;
+  }
+
+  if (result.status === "approval_not_found") {
+    res.status(404).json({ error: "Applied refund approval not found" });
+    return;
+  }
+
+  if (result.status === "approval_not_applied") {
+    res.status(409).json({ error: "Refund approval must be applied before refunding sale" });
+    return;
+  }
+
+  if (result.status === "approval_mismatch") {
+    res.status(409).json({ error: "Refund approval does not match this sale or amount" });
     return;
   }
 

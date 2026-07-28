@@ -1,9 +1,18 @@
 import { roleInputSchema, rolePermissionUpdateSchema, staffRoleAssignmentSchema } from "@pos/validation";
-import { Router } from "express";
-import { requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { Router, type Request, type Response } from "express";
+import { canAccessAllBranches, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import { assignStaffRole, createRole, listPermissionCatalog, listRoleOptions, listRoles, updateRole, updateRolePermissions } from "./roles.repository";
 
 export const rolesRouter = Router();
+
+function requireBranchContext(req: Request, res: Response) {
+  if (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId) {
+    res.status(403).json({ error: "Branch access denied" });
+    return false;
+  }
+
+  return true;
+}
 
 rolesRouter.get("/", requireTenant, requirePermission("roles.manage"), async (req, res) => {
   const roles = await listRoles(req.tenantContext!.tenantId);
@@ -65,6 +74,7 @@ rolesRouter.post("/assign-staff", requireTenant, requirePermission("roles.manage
     res.status(400).json({ error: "Invalid staff role payload", issues: parsed.error.flatten() });
     return;
   }
+  if (!requireBranchContext(req, res)) return;
   const result = await assignStaffRole(
     req.tenantContext!.tenantId,
     req.tenantContext!.branchId,

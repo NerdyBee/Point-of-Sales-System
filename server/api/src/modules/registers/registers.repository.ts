@@ -3,9 +3,10 @@ import type {
   PaymentRecord as DbPaymentRecord,
   RegisterShift as DbRegisterShift
 } from "@prisma/client";
-import { appendAudit, appendCashMovement, branches, cashMovements, paymentRecords, registerShifts, terminals } from "../../shared/data/demoStore";
+import { appendAudit, appendCashMovement, auditEvents, branches, cashMovements, paymentRecords, registerShifts, terminals } from "../../shared/data/demoStore";
 import type { CashMovement, PaymentRecord, RegisterShift } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
+import { validateAppliedApproval } from "../approvals/approvals.repository";
 
 const useDemoStore = process.env.NODE_ENV === "test";
 
@@ -54,7 +55,7 @@ function toApiPayment(payment: DbPaymentRecord): PaymentRecord {
   };
 }
 
-function toApiMovement(movement: DbCashMovement): CashMovement {
+function toApiMovement(movement: DbCashMovement, expectedCashAfter?: number): CashMovement & { expectedCashAfter?: number } {
   return {
     id: movement.id,
     tenantId: movement.tenantId,
@@ -64,8 +65,18 @@ function toApiMovement(movement: DbCashMovement): CashMovement {
     amount: movement.amount,
     reason: movement.reason,
     createdBy: movement.createdBy,
-    createdAt: movement.createdAt.toISOString()
+    createdAt: movement.createdAt.toISOString(),
+    expectedCashAfter
   };
+}
+
+function expectedCashAfterFromAudit(metadata: unknown) {
+  if (metadata && typeof metadata === "object" && "expectedCash" in metadata) {
+    const value = (metadata as { expectedCash?: unknown }).expectedCash;
+    return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  }
+
+  return undefined;
 }
 
 async function validateOpenRegisterTerminal(tenantId: string, branchId: string, terminalId: string) {
@@ -110,7 +121,14 @@ export async function getCurrentRegister(tenantId: string, branchId: string | un
     return {
       shift: shift ?? null,
       payments: shift ? paymentRecords.filter((payment) => payment.shiftId === shift.id) : [],
-      movements: shift ? cashMovements.filter((movement) => movement.shiftId === shift.id) : []
+      movements: shift ? cashMovements
+        .filter((movement) => movement.shiftId === shift.id)
+        .map((movement) => ({
+          ...movement,
+          expectedCashAfter: expectedCashAfterFromAudit(
+            auditEvents.find((event) => event.entityType === "cashMovement" && event.entityId === movement.id)?.metadata
+          )
+        })) : []
     };
   }
 
@@ -133,11 +151,19 @@ export async function getCurrentRegister(tenantId: string, branchId: string | un
     prisma.paymentRecord.findMany({ where: { shiftId: shift.id }, orderBy: { createdAt: "desc" } }),
     prisma.cashMovement.findMany({ where: { shiftId: shift.id }, orderBy: { createdAt: "desc" } })
   ]);
+  const movementAuditEvents = movements.length
+    ? await prisma.auditEvent.findMany({
+      where: { tenantId, entityType: "cashMovement", entityId: { in: movements.map((movement) => movement.id) } }
+    })
+    : [];
+  const expectedCashByMovementId = new Map(
+    movementAuditEvents.map((event) => [event.entityId, expectedCashAfterFromAudit(event.metadata)])
+  );
 
   return {
     shift: toApiShift(shift),
     payments: payments.map(toApiPayment),
-    movements: movements.map(toApiMovement)
+    movements: movements.map((movement) => toApiMovement(movement, expectedCashByMovementId.get(movement.id)))
   };
 }
 
@@ -230,12 +256,21 @@ export async function createCashMovement(
   tenantId: string,
   branchId: string | undefined,
   userId: string,
-  input: { shiftId: string; type: CashMovement["type"]; amount: number; reason: string }
+  input: { shiftId: string; type: CashMovement["type"]; amount: number; reason: string; approvalId?: string }
 ) {
   if (useDemoStore) {
     const shift = registerShifts.find((item) => item.tenantId === tenantId && (!branchId || item.branchId === branchId) && item.id === input.shiftId);
 
     if (!shift || shift.status !== "open") return { status: "shift_not_found" as const };
+
+    const approvalValidation = await validateAppliedApproval(tenantId, input.approvalId, {
+      branchId: shift.branchId,
+      entityType: "registerShift",
+      entityId: shift.id,
+      type: "cash_movement",
+      amount: input.amount
+    });
+    if (approvalValidation.status !== "valid") return approvalValidation;
 
     const signedAmount = input.type === "cash_in" || input.type === "paid_in" ? input.amount : -input.amount;
     const nextExpectedCash = shift.expectedCash + signedAmount;
@@ -260,16 +295,25 @@ export async function createCashMovement(
       action: "register.cash_movement",
       entityType: "cashMovement",
       entityId: movement.id,
-      metadata: { type: movement.type, amount: movement.amount, expectedCash: shift.expectedCash }
+      metadata: { type: movement.type, amount: movement.amount, expectedCash: shift.expectedCash, approvalId: input.approvalId?.trim() }
     });
 
-    return { status: "created" as const, shift, movement };
+    return { status: "created" as const, shift, movement: { ...movement, expectedCashAfter: nextExpectedCash } };
   }
 
   return prisma.$transaction(async (tx) => {
     const shift = await tx.registerShift.findFirst({ where: { tenantId, branchId: branchId ? branchId : undefined, id: input.shiftId } });
 
     if (!shift || shift.status !== "open") return { status: "shift_not_found" as const };
+
+    const approvalValidation = await validateAppliedApproval(tenantId, input.approvalId, {
+      branchId: shift.branchId,
+      entityType: "registerShift",
+      entityId: shift.id,
+      type: "cash_movement",
+      amount: input.amount
+    });
+    if (approvalValidation.status !== "valid") return approvalValidation;
 
     const signedAmount = input.type === "cash_in" || input.type === "paid_in" ? input.amount : -input.amount;
     const nextExpectedCash = shift.expectedCash + signedAmount;
@@ -301,11 +345,11 @@ export async function createCashMovement(
         action: "register.cash_movement",
         entityType: "cashMovement",
         entityId: movement.id,
-        metadata: { type: movement.type, amount: movement.amount, expectedCash: nextExpectedCash }
+        metadata: { type: movement.type, amount: movement.amount, expectedCash: nextExpectedCash, approvalId: input.approvalId?.trim() }
       }
     });
 
-    return { status: "created" as const, shift: toApiShift(updatedShift), movement: toApiMovement(movement) };
+    return { status: "created" as const, shift: toApiShift(updatedShift), movement: toApiMovement(movement, nextExpectedCash) };
   });
 }
 
@@ -370,7 +414,7 @@ export async function closeRegisterShift(
   tenantId: string,
   branchId: string | undefined,
   userId: string,
-  input: { shiftId: string; countedCash: number; managerNote?: string }
+  input: { shiftId: string; countedCash: number; managerNote?: string; approvalId?: string }
 ) {
   if (useDemoStore) {
     const shift = registerShifts.find((item) => item.tenantId === tenantId && (!branchId || item.branchId === branchId) && item.id === input.shiftId);
@@ -379,9 +423,19 @@ export async function closeRegisterShift(
     const hasPendingPayments = paymentRecords.some((payment) => payment.tenantId === tenantId && payment.shiftId === shift.id && payment.method !== "cash" && payment.reconciliationStatus === "pending");
     if (hasPendingPayments) return { status: "pending_payments" as const };
 
+    const variance = input.countedCash - shift.expectedCash;
+    const approvalValidation = await validateAppliedApproval(tenantId, input.approvalId, {
+      branchId: shift.branchId,
+      entityType: "registerShift",
+      entityId: shift.id,
+      type: "register_close",
+      amount: Math.abs(variance)
+    });
+    if (approvalValidation.status !== "valid") return approvalValidation;
+
     shift.status = "closed";
     shift.countedCash = input.countedCash;
-    shift.variance = input.countedCash - shift.expectedCash;
+    shift.variance = variance;
     shift.closedAt = new Date().toISOString();
     shift.managerNote = input.managerNote;
 
@@ -392,7 +446,7 @@ export async function closeRegisterShift(
       action: "register.closed",
       entityType: "registerShift",
       entityId: shift.id,
-      metadata: { expectedCash: shift.expectedCash, countedCash: shift.countedCash, variance: shift.variance }
+      metadata: { expectedCash: shift.expectedCash, countedCash: shift.countedCash, variance: shift.variance, approvalId: input.approvalId?.trim() }
     });
 
     return { status: "closed" as const, shift };
@@ -413,6 +467,15 @@ export async function closeRegisterShift(
     if (pendingPayments > 0) return { status: "pending_payments" as const };
 
     const variance = input.countedCash - shift.expectedCash;
+    const approvalValidation = await validateAppliedApproval(tenantId, input.approvalId, {
+      branchId: shift.branchId,
+      entityType: "registerShift",
+      entityId: shift.id,
+      type: "register_close",
+      amount: Math.abs(variance)
+    });
+    if (approvalValidation.status !== "valid") return approvalValidation;
+
     const updatedShift = await tx.registerShift.update({
       where: { id: shift.id },
       data: {
@@ -433,7 +496,7 @@ export async function closeRegisterShift(
         action: "register.closed",
         entityType: "registerShift",
         entityId: shift.id,
-        metadata: { expectedCash: shift.expectedCash, countedCash: input.countedCash, variance }
+        metadata: { expectedCash: shift.expectedCash, countedCash: input.countedCash, variance, approvalId: input.approvalId?.trim() }
       }
     });
 

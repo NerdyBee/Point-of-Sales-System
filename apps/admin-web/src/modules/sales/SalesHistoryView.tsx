@@ -48,6 +48,9 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
   const storedAuth = useMemo(() => readStoredAuth(), []);
   const initialBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
   const activeUserId = storedAuth?.staff.id ?? "";
+  const activePermissions = storedAuth?.staff.permissions ?? [];
+  const canRefundSale = activePermissions.includes("sale.refund");
+  const canVoidSale = activePermissions.includes("sale.void");
   const [sales, setSales] = useState<CompletedSale[]>([]);
   const [selectedSale, setSelectedSale] = useState<CompletedSale | null>(null);
   const [branchId, setBranchId] = useState(initialBranchId);
@@ -177,11 +180,16 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
       return;
     }
 
+    if (!canRefundSale) {
+      setStatus("Your role can request refund approval, but cannot apply approved refunds");
+      return;
+    }
+
     setStatus("Applying approved refund...");
 
     try {
-      await applyApproval(actionApprovalId.trim(), "sale", selectedSale.id, "refund", refundAmount, actionReason, activeUserId, selectedSale.branchId);
-      const response = await refundSale(selectedSale.id, refundAmount, actionReason, selectedSale.branchId, activeUserId);
+      const approvalResponse = await applyApproval(actionApprovalId.trim(), "sale", selectedSale.id, "refund", refundAmount, actionReason, activeUserId, selectedSale.branchId);
+      const response = await refundSale(selectedSale.id, refundAmount, actionReason, selectedSale.branchId, activeUserId, approvalResponse.approval.id);
       setSales((current) => current.map((sale) => (sale.id === response.sale.id ? response.sale : sale)));
       setSelectedSale((current) => (current?.id === response.sale.id ? response.sale : current));
       setActionApprovalId("");
@@ -218,11 +226,16 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
       return;
     }
 
+    if (!canVoidSale) {
+      setStatus("Your role can request void approval, but cannot apply approved voids");
+      return;
+    }
+
     setStatus("Applying approved void...");
 
     try {
-      await applyApproval(actionApprovalId.trim(), "sale", selectedSale.id, "void", selectedSale.summary.total, actionReason, activeUserId, selectedSale.branchId);
-      const response = await voidSale(selectedSale.id, actionReason, selectedSale.branchId, activeUserId);
+      const approvalResponse = await applyApproval(actionApprovalId.trim(), "sale", selectedSale.id, "void", selectedSale.summary.total, actionReason, activeUserId, selectedSale.branchId);
+      const response = await voidSale(selectedSale.id, actionReason, selectedSale.branchId, activeUserId, approvalResponse.approval.id);
       setSales((current) => current.map((sale) => (sale.id === response.sale.id ? response.sale : sale)));
       setSelectedSale((current) => (current?.id === response.sale.id ? response.sale : current));
       setActionApprovalId("");
@@ -439,17 +452,23 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
                   Refund amount
                   <input type="number" min={1} max={selectedSale.summary.total - selectedSale.refundTotal} value={refundAmount} onChange={(event) => setRefundAmount(Number(event.target.value))} required />
                 </label>
-                <label>
-                  Approved request ID
-                  <input value={actionApprovalId} onChange={(event) => setActionApprovalId(event.target.value)} placeholder="Blank requests approval" />
-                </label>
+                {canRefundSale || canVoidSale ? (
+                  <label>
+                    Approved request ID
+                    <input value={actionApprovalId} onChange={(event) => setActionApprovalId(event.target.value)} placeholder="Blank requests approval" />
+                  </label>
+                ) : null}
                 <div className="approval-warning wide-field">
                   <span>Receipt action requires approval</span>
                   <strong>{receiptMoney(selectedSale, actionApprovalId.trim() ? refundAmount : Math.max(refundAmount, selectedSale.summary.total))}</strong>
-                  <small>{actionApprovalId.trim() ? "Approved action will be posted" : "Manager approval request will be created"}</small>
+                  <small>{actionApprovalId.trim() && (canRefundSale || canVoidSale) ? "Approved action will be posted" : "Manager approval request will be created"}</small>
                 </div>
-                <button className="secondary-button" disabled={selectedSale.status === "voided" || selectedSale.status === "refunded"} type="submit"><RotateCcw size={18} /> {actionApprovalId.trim() ? "Apply refund" : "Request refund"}</button>
-                <button className="danger-button" disabled={selectedSale.status !== "completed"} type="button" onClick={submitVoid}><Ban size={18} /> {actionApprovalId.trim() ? "Apply void" : "Request void"}</button>
+                <button className="secondary-button" disabled={selectedSale.status === "voided" || selectedSale.status === "refunded" || (actionApprovalId.trim().length > 0 && !canRefundSale)} type="submit">
+                  <RotateCcw size={18} /> {actionApprovalId.trim() && canRefundSale ? "Apply refund" : "Request refund"}
+                </button>
+                <button className="danger-button" disabled={selectedSale.status !== "completed" || (actionApprovalId.trim().length > 0 && !canVoidSale)} type="button" onClick={submitVoid}>
+                  <Ban size={18} /> {actionApprovalId.trim() && canVoidSale ? "Apply void" : "Request void"}
+                </button>
               </form>
             </>
           ) : (

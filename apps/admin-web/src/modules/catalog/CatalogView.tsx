@@ -1,4 +1,4 @@
-import { Check, Pencil, Plus, RefreshCcw, X } from "lucide-react";
+import { Check, Pencil, Plus, RefreshCcw, Search, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createCatalogProduct, fetchBranchOptions, fetchCatalogProducts, readStoredAuth, resolveMediaUrl, updateCatalogProduct, uploadProductImage, type BranchOption, type ProductPayload } from "../../shared/api/client";
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
@@ -6,6 +6,11 @@ import type { Product, ProductCategory } from "./types";
 
 const defaultTaxRate = 0.075;
 const fallbackBranches: BranchOption[] = [];
+type StockFilter = "all" | "stocked" | "low" | "services";
+
+function isServiceCategory(category: string) {
+  return category.trim().toLowerCase() === "services";
+}
 
 function blankProduct(taxRate = defaultTaxRate, branchId = ""): ProductPayload {
   return {
@@ -37,6 +42,10 @@ export function CatalogView() {
   const categories = settings?.productCategories.length ? settings.productCategories : [];
   const [form, setForm] = useState<ProductPayload>(blankProduct(defaultTaxRate, activeBranchId));
   const [modalOpen, setModalOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [branchFilter, setBranchFilter] = useState(activeBranchId);
+  const [stockFilter, setStockFilter] = useState<StockFilter>("all");
   const [status, setStatus] = useState("Ready");
   const categoryUsage = useMemo(
     () =>
@@ -54,6 +63,26 @@ export function CatalogView() {
 
     return Math.round(((form.price - form.cost) / form.price) * 100);
   }, [form.cost, form.price]);
+
+  const filteredProducts = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    return products.filter((product) => {
+      const queryMatch = normalizedQuery
+        ? [product.name, product.sku, product.barcode, product.category, product.station].some((value) => value.toLowerCase().includes(normalizedQuery))
+        : true;
+      const categoryMatch = categoryFilter ? product.category === categoryFilter : true;
+      const branchMatch = branchFilter ? product.branchId === branchFilter : true;
+      const service = isServiceCategory(product.category);
+      const stockMatch =
+        stockFilter === "all" ||
+        (stockFilter === "services" && service) ||
+        (stockFilter === "stocked" && !service && product.stock > product.reorderPoint) ||
+        (stockFilter === "low" && !service && product.stock <= product.reorderPoint);
+
+      return queryMatch && categoryMatch && branchMatch && stockMatch;
+    });
+  }, [branchFilter, categoryFilter, products, query, stockFilter]);
 
   async function loadProducts() {
     try {
@@ -97,7 +126,10 @@ export function CatalogView() {
   }
 
   function updateForm<K extends keyof ProductPayload>(key: K, value: ProductPayload[K]) {
-    setForm((current) => ({ ...current, [key]: value }));
+    setForm((current) => {
+      const next = { ...current, [key]: value };
+      return key === "category" && isServiceCategory(String(value)) ? { ...next, stock: 0, reorderPoint: 0 } : next;
+    });
   }
 
   async function saveProduct(event: FormEvent) {
@@ -179,11 +211,33 @@ export function CatalogView() {
         ))}
       </section>
 
+      <section className="catalog-filter-bar">
+        <label className="search-field">
+          <Search size={18} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search product, SKU or barcode" />
+        </label>
+        <select className="compact-select" value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
+          <option value="">Branch</option>
+          {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+        </select>
+        <select className="compact-select" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+          <option value="">Category</option>
+          {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+        </select>
+        <select className="compact-select" value={stockFilter} onChange={(event) => setStockFilter(event.target.value as StockFilter)}>
+          <option value="all">Stock status</option>
+          <option value="stocked">In stock</option>
+          <option value="low">Low stock</option>
+          <option value="services">Services</option>
+        </select>
+        <span>{filteredProducts.length} products</span>
+      </section>
+
       <div className="catalog-workflow catalog-workflow-full">
         <section className="catalog-grid">
-          {products.length === 0 ? (
+          {filteredProducts.length === 0 ? (
             <div className="empty-state">No catalog products found.</div>
-          ) : products.map((product) => (
+          ) : filteredProducts.map((product) => (
             <article className="catalog-card" key={product.id}>
               <img src={resolveMediaUrl(product.image)} alt="" />
               <div>
@@ -258,11 +312,11 @@ export function CatalogView() {
               </label>
               <label>
                 Stock
-                <input min="0" type="number" value={form.stock} onChange={(event) => updateForm("stock", Number(event.target.value))} required />
+                <input disabled={isServiceCategory(form.category)} min="0" type="number" value={form.stock} onChange={(event) => updateForm("stock", Number(event.target.value))} required />
               </label>
               <label>
                 Reorder point
-                <input min="0" type="number" value={form.reorderPoint} onChange={(event) => updateForm("reorderPoint", Number(event.target.value))} required />
+                <input disabled={isServiceCategory(form.category)} min="0" type="number" value={form.reorderPoint} onChange={(event) => updateForm("reorderPoint", Number(event.target.value))} required />
               </label>
               <label>
                 Station

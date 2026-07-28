@@ -22,10 +22,12 @@ import {
   type PaymentRecord
 } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
+import { validateAppliedApproval } from "../approvals/approvals.repository";
 import { createSaleSchema, previewSaleTotal } from "./sales.service";
 import type { z } from "zod";
 
 const useDemoStore = process.env.NODE_ENV === "test";
+const discountApprovalThreshold = 50000;
 
 type SaleInput = z.infer<typeof createSaleSchema>;
 type SaleAction = "refund" | "void";
@@ -33,6 +35,22 @@ type SerializedSale = CompletedSale & {
   customer?: Pick<DbCustomer, "id" | "name" | "phone" | "group" | "loyaltyPoints" | "outstandingBalance">;
   payments: PaymentRecord[];
 };
+
+function isServiceProduct(product: { category: string }) {
+  return product.category.trim().toLowerCase() === "services";
+}
+
+async function validateDiscountApprovalForSale(tenantId: string, input: SaleInput, discountTotal: number) {
+  if (discountTotal < discountApprovalThreshold) return { status: "valid" as const };
+
+  return validateAppliedApproval(tenantId, input.discountApprovalId, {
+    branchId: input.branchId,
+    entityType: "saleDraft",
+    entityId: input.terminalId,
+    type: "discount",
+    amount: discountTotal
+  });
+}
 
 const paymentSettingKey = {
   cash: "cash",
@@ -269,7 +287,8 @@ function returnDemoSaleStock(sale: CompletedSale, returnedQuantities: Record<str
     .map(([productId, quantity]) => {
       const product = demoProducts.find((item) => item.tenantId === sale.tenantId && item.branchId === sale.branchId && item.id === productId);
       return { productId, quantity, product };
-    });
+    })
+    .filter(({ product }) => product && !isServiceProduct(product));
 
   returns.forEach(({ product, quantity }) => {
     if (!product) return;
@@ -316,6 +335,7 @@ async function returnDbSaleStock(
   for (const [productId, quantity] of returns) {
     const product = await tx.product.findFirst({ where: { tenantId: sale.tenantId, branchId: sale.branchId, id: productId } });
     if (!product) continue;
+    if (isServiceProduct(product)) continue;
 
     const balanceAfter = product.stock + quantity;
     await tx.product.update({ where: { id: product.id }, data: { stock: balanceAfter } });
@@ -456,6 +476,8 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
 
     if (disabledPayment) return { status: "payment_disabled" as const, method: disabledPayment.method };
     if (summary.paid !== summary.total) return { status: "payment_total_mismatch" as const, total: summary.total, paid: summary.paid };
+    const discountApprovalValidation = await validateDiscountApprovalForSale(tenantId, input, summary.discount);
+    if (discountApprovalValidation.status !== "valid") return discountApprovalValidation;
 
     const customer = input.customerId ? customers.find((item) => item.tenantId === tenantId && item.id === input.customerId) : undefined;
     if (input.customerId && !customer) return { status: "customer_not_found" as const };
@@ -486,7 +508,8 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
     });
     const missingStockProduct = stockIssues.find((issue) => !issue.product);
     if (missingStockProduct) return { status: "stock_not_found" as const, productId: missingStockProduct.productId };
-    const insufficientStock = stockIssues.find((issue) => issue.product!.stock < issue.quantity);
+    const stockTrackedIssues = stockIssues.filter((issue) => !isServiceProduct(issue.product!));
+    const insufficientStock = stockTrackedIssues.find((issue) => issue.product!.stock < issue.quantity);
     if (insufficientStock) return { status: "insufficient_stock" as const, productName: insufficientStock.product!.name };
 
     const saleId = nextSaleIdFromCount(saleLedger.length);
@@ -500,7 +523,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
       metadata: { terminalId: input.terminalId, tableId: input.tableId, tableOrderId: input.tableOrderId, idempotencyKey: input.idempotencyKey, total: summary.total }
     });
 
-    stockIssues.forEach(({ product, quantity }) => {
+    stockTrackedIssues.forEach(({ product, quantity }) => {
       const balanceAfter = product!.stock - quantity;
       product!.stock = balanceAfter;
       appendStockMovement({
@@ -517,7 +540,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
       });
     });
 
-    if (stockIssues.length > 0) {
+    if (stockTrackedIssues.length > 0) {
       appendAudit({
         tenantId,
         branchId: input.branchId,
@@ -525,7 +548,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
         action: "inventory.sale_stock_issued",
         entityType: "sale",
         entityId: saleId,
-        metadata: { lines: stockIssues.map(({ product, quantity }) => ({ productId: product!.id, quantity })) }
+        metadata: { lines: stockTrackedIssues.map(({ product, quantity }) => ({ productId: product!.id, quantity })) }
       });
     }
 
@@ -675,6 +698,8 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
 
   if (disabledPayment) return { status: "payment_disabled" as const, method: disabledPayment.method };
   if (summary.paid !== summary.total) return { status: "payment_total_mismatch" as const, total: summary.total, paid: summary.paid };
+  const discountApprovalValidation = await validateDiscountApprovalForSale(tenantId, input, summary.discount);
+  if (discountApprovalValidation.status !== "valid") return discountApprovalValidation;
 
   const customer = input.customerId ? await prisma.customer.findFirst({ where: { tenantId, id: input.customerId } }) : null;
   if (input.customerId && !customer) return { status: "customer_not_found" as const };
@@ -699,6 +724,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
     for (const [productId, quantity] of Object.entries(aggregateSaleQuantities(input.lines))) {
       const product = await tx.product.findFirst({ where: { tenantId, branchId: input.branchId, id: productId } });
       if (!product) return { status: "stock_not_found" as const, productId };
+      if (isServiceProduct(product)) continue;
       if (product.stock < quantity) return { status: "insufficient_stock" as const, productName: product.name };
       stockIssues.push({ product, quantity });
     }
@@ -933,11 +959,19 @@ export async function queueReceiptAction(tenantId: string, branchId: string | un
   return { status: "queued" as const, delivery: { saleId: sale.id, channel, status: "queued", queuedAt } };
 }
 
-export async function voidSale(tenantId: string, branchId: string | undefined, userId: string, saleId: string, reason: string) {
+export async function voidSale(tenantId: string, branchId: string | undefined, userId: string, saleId: string, reason: string, approvalId?: string) {
   if (useDemoStore) {
     const sale = saleLedger.find((item) => item.tenantId === tenantId && item.id === saleId && (!branchId || item.branchId === branchId));
     if (!sale) return { status: "sale_not_found" as const };
     if (sale.status !== "completed") return { status: "not_completed" as const };
+    const approvalValidation = await validateAppliedApproval(tenantId, approvalId, {
+      branchId: sale.branchId,
+      entityType: "sale",
+      entityId: sale.id,
+      type: "void",
+      amount: sale.summary.total
+    });
+    if (approvalValidation.status !== "valid") return approvalValidation;
 
     applyDemoCustomerSaleReversal(sale, {
       creditAmount: customerCreditPaidForDemoSale(sale.id),
@@ -957,7 +991,7 @@ export async function voidSale(tenantId: string, branchId: string | undefined, u
       action: "sale.voided",
       entityType: "sale",
       entityId: sale.id,
-      metadata: { reason, total: sale.summary.total }
+      metadata: { reason, total: sale.summary.total, approvalId: approvalId?.trim() }
     });
 
     return { status: "voided" as const, sale: serializeDemoSale(sale) };
@@ -967,6 +1001,14 @@ export async function voidSale(tenantId: string, branchId: string | undefined, u
   if (!saleRecord) return { status: "sale_not_found" as const };
   const sale = toApiSale(saleRecord);
   if (sale.status !== "completed") return { status: "not_completed" as const };
+  const approvalValidation = await validateAppliedApproval(tenantId, approvalId, {
+    branchId: sale.branchId,
+    entityType: "sale",
+    entityId: sale.id,
+    type: "void",
+    amount: sale.summary.total
+  });
+  if (approvalValidation.status !== "valid") return approvalValidation;
   const creditAmount = await customerCreditPaidForDbSale(sale.id);
 
   await prisma.$transaction(async (tx) => {
@@ -988,7 +1030,7 @@ export async function voidSale(tenantId: string, branchId: string | undefined, u
         action: "sale.voided",
         entityType: "sale",
         entityId: sale.id,
-        metadata: { reason, total: sale.summary.total }
+        metadata: { reason, total: sale.summary.total, approvalId: approvalId?.trim() }
       }
     });
   });
@@ -997,7 +1039,7 @@ export async function voidSale(tenantId: string, branchId: string | undefined, u
   return { status: "voided" as const, sale: await serializeDbSale(updatedSale) };
 }
 
-export async function refundSale(tenantId: string, branchId: string | undefined, userId: string, saleId: string, amount: number, reason: string) {
+export async function refundSale(tenantId: string, branchId: string | undefined, userId: string, saleId: string, amount: number, reason: string, approvalId?: string) {
   if (useDemoStore) {
     const sale = saleLedger.find((item) => item.tenantId === tenantId && item.id === saleId && (!branchId || item.branchId === branchId));
     if (!sale) return { status: "sale_not_found" as const };
@@ -1005,6 +1047,14 @@ export async function refundSale(tenantId: string, branchId: string | undefined,
 
     const nextRefundTotal = sale.refundTotal + amount;
     if (nextRefundTotal > sale.summary.total) return { status: "refund_exceeds_total" as const };
+    const approvalValidation = await validateAppliedApproval(tenantId, approvalId, {
+      branchId: sale.branchId,
+      entityType: "sale",
+      entityId: sale.id,
+      type: "refund",
+      amount
+    });
+    if (approvalValidation.status !== "valid") return approvalValidation;
 
     const creditAmount = customerCreditPaidForDemoSale(sale.id);
     const previousReturnedQuantities = refundedQuantitiesForSale(sale, sale.refundTotal);
@@ -1035,7 +1085,7 @@ export async function refundSale(tenantId: string, branchId: string | undefined,
       action: "sale.refunded",
       entityType: "sale",
       entityId: sale.id,
-      metadata: { reason, amount, refundTotal: sale.refundTotal }
+      metadata: { reason, amount, refundTotal: sale.refundTotal, approvalId: approvalId?.trim() }
     });
 
     return { status: "refunded" as const, sale: serializeDemoSale(sale) };
@@ -1048,6 +1098,14 @@ export async function refundSale(tenantId: string, branchId: string | undefined,
 
   const nextRefundTotal = sale.refundTotal + amount;
   if (nextRefundTotal > sale.summary.total) return { status: "refund_exceeds_total" as const };
+  const approvalValidation = await validateAppliedApproval(tenantId, approvalId, {
+    branchId: sale.branchId,
+    entityType: "sale",
+    entityId: sale.id,
+    type: "refund",
+    amount
+  });
+  if (approvalValidation.status !== "valid") return approvalValidation;
 
   const creditAmount = await customerCreditPaidForDbSale(sale.id);
   const previousReturnedQuantities = refundedQuantitiesForSale(sale, sale.refundTotal);
@@ -1085,7 +1143,7 @@ export async function refundSale(tenantId: string, branchId: string | undefined,
         action: "sale.refunded",
         entityType: "sale",
         entityId: sale.id,
-        metadata: { reason, amount, refundTotal: nextRefundTotal }
+        metadata: { reason, amount, refundTotal: nextRefundTotal, approvalId: approvalId?.trim() }
       }
     });
   });

@@ -15,6 +15,18 @@ type ApprovalApplyInput = {
   amount: number;
   note: string;
 };
+type AppliedApprovalInput = {
+  branchId: string;
+  entityType: string;
+  entityId: string;
+  type: ApprovalRequest["type"];
+  amount: number;
+};
+
+function requiresManagerApplication(input: ApprovalApplyInput) {
+  if (input.type === "register_close" || input.type === "refund") return true;
+  return input.type === "void" && input.entityType === "sale";
+}
 
 function nextApprovalId() {
   return `approval-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -222,6 +234,7 @@ export async function applyApproval(tenantContext: TenantContext, approvalId: st
     if (approval.status !== "approved") return { status: "not_approved" as const };
     if (approval.entityType !== input.entityType || approval.entityId !== input.entityId) return { status: "workflow_mismatch" as const };
     if (approval.type !== input.type || approval.amount < input.amount) return { status: "coverage_mismatch" as const };
+    if (requiresManagerApplication(input) && !tenantContext.permissions.includes("approval.manage")) return { status: "forbidden" as const };
     if (approval.requestedBy !== tenantContext.userId && !tenantContext.permissions.includes("approval.manage")) return { status: "forbidden" as const };
 
     approval.status = "applied";
@@ -249,6 +262,7 @@ export async function applyApproval(tenantContext: TenantContext, approvalId: st
     if (approval.status !== "approved") return { status: "not_approved" as const };
     if (approval.entityType !== input.entityType || approval.entityId !== input.entityId) return { status: "workflow_mismatch" as const };
     if (approval.type !== input.type || approval.amount < input.amount) return { status: "coverage_mismatch" as const };
+    if (requiresManagerApplication(input) && !tenantContext.permissions.includes("approval.manage")) return { status: "forbidden" as const };
     if (approval.requestedBy !== tenantContext.userId && !tenantContext.permissions.includes("approval.manage")) return { status: "forbidden" as const };
 
     const updatedApproval = await tx.approvalRequest.update({
@@ -272,4 +286,30 @@ export async function applyApproval(tenantContext: TenantContext, approvalId: st
 
     return { status: "applied" as const, approval: toApiApproval(updatedApproval) };
   });
+}
+
+export async function validateAppliedApproval(tenantId: string, approvalId: string | undefined, input: AppliedApprovalInput) {
+  if (!approvalId?.trim()) return { status: "approval_required" as const };
+
+  if (useDemoStore) {
+    const approval = approvalRequests.find((item) => item.tenantId === tenantId && item.branchId === input.branchId && item.id === approvalId.trim());
+
+    if (!approval) return { status: "approval_not_found" as const };
+    if (approval.status !== "applied") return { status: "approval_not_applied" as const };
+    if (approval.entityType !== input.entityType || approval.entityId !== input.entityId) return { status: "approval_mismatch" as const };
+    if (approval.type !== input.type || approval.amount < input.amount) return { status: "approval_mismatch" as const };
+
+    return { status: "valid" as const, approval };
+  }
+
+  const approval = await prisma.approvalRequest.findFirst({
+    where: { tenantId, branchId: input.branchId, id: approvalId.trim() }
+  });
+
+  if (!approval) return { status: "approval_not_found" as const };
+  if (approval.status !== "applied") return { status: "approval_not_applied" as const };
+  if (approval.entityType !== input.entityType || approval.entityId !== input.entityId) return { status: "approval_mismatch" as const };
+  if (approval.type !== input.type || approval.amount < input.amount) return { status: "approval_mismatch" as const };
+
+  return { status: "valid" as const, approval: toApiApproval(approval) };
 }

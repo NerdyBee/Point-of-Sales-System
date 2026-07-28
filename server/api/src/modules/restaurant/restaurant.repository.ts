@@ -7,6 +7,7 @@ import type {
 import type { Prisma } from "@prisma/client";
 import {
   appendAudit,
+  branches,
   demoProducts,
   prepTickets,
   restaurantTables,
@@ -275,6 +276,79 @@ export async function getFloorState(tenantId: string, branchId?: string) {
   return { tables: tables.map(toApiTable), openOrders: openOrders.map(toApiOrder), reservations: reservations.map(toApiReservation) };
 }
 
+export async function createRestaurantTable(tenantId: string, userId: string, input: { branchId: string; area: string; label: string; seats: number; x: number; y: number }) {
+  const normalizedLabel = input.label.trim();
+  const normalizedArea = input.area.trim();
+
+  if (useDemoStore) {
+    const branch = branches.find((item) => item.tenantId === tenantId && item.id === input.branchId);
+    if (!branch) return { status: "branch_not_found" as const };
+    const duplicate = restaurantTables.find(
+      (table) => table.tenantId === tenantId && table.branchId === input.branchId && table.label.toLowerCase() === normalizedLabel.toLowerCase()
+    );
+    if (duplicate) return { status: "duplicate_label" as const };
+
+    const table: RestaurantTable = {
+      id: `table-${restaurantTables.length + 1}`,
+      tenantId,
+      branchId: input.branchId,
+      area: normalizedArea,
+      label: normalizedLabel,
+      seats: input.seats,
+      state: "available",
+      guests: 0,
+      x: input.x,
+      y: input.y
+    };
+    restaurantTables.push(table);
+    appendAudit({
+      tenantId,
+      branchId: input.branchId,
+      userId,
+      action: "table.created",
+      entityType: "restaurantTable",
+      entityId: table.id,
+      metadata: { area: table.area, label: table.label, seats: table.seats, x: table.x, y: table.y }
+    });
+    return { status: "created" as const, table };
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const branch = await tx.branch.findFirst({ where: { tenantId, id: input.branchId } });
+    if (!branch) return { status: "branch_not_found" as const };
+
+    const duplicate = await tx.restaurantTable.findFirst({
+      where: { tenantId, branchId: input.branchId, label: normalizedLabel }
+    });
+    if (duplicate) return { status: "duplicate_label" as const };
+
+    const table = await tx.restaurantTable.create({
+      data: {
+        id: nextId("table"),
+        tenantId,
+        branchId: input.branchId,
+        area: normalizedArea,
+        label: normalizedLabel,
+        seats: input.seats,
+        state: "available",
+        guests: 0,
+        x: input.x,
+        y: input.y
+      }
+    });
+    await createAudit(tx, {
+      tenantId,
+      branchId: input.branchId,
+      userId,
+      action: "table.created",
+      entityType: "restaurantTable",
+      entityId: table.id,
+      metadata: { area: table.area, label: table.label, seats: table.seats, x: table.x, y: table.y }
+    });
+    return { status: "created" as const, table: toApiTable(table) };
+  });
+}
+
 export async function createReservation(tenantId: string, userId: string, input: Omit<TableReservation, "id" | "tenantId" | "tableLabel" | "status" | "createdAt" | "createdBy">) {
   if (useDemoStore) {
     const table = restaurantTables.find((item) => item.tenantId === tenantId && item.branchId === input.branchId && item.id === input.tableId);
@@ -368,6 +442,79 @@ export async function createReservation(tenantId: string, userId: string, input:
       metadata: { tableId: table.id, customerName: reservation.customerName, reservedAt: reservation.reservedAt.toISOString() }
     });
     return { status: "created" as const, table: toApiTable(updatedTable), reservation: toApiReservation(reservation) };
+  });
+}
+
+export async function updateReservationStatus(
+  tenantId: string,
+  branchId: string | undefined,
+  userId: string,
+  reservationId: string,
+  input: { status: Extract<TableReservation["status"], "seated" | "cancelled" | "no_show">; note?: string }
+) {
+  if (useDemoStore) {
+    const reservation = tableReservations.find((item) => item.tenantId === tenantId && (!branchId || item.branchId === branchId) && item.id === reservationId);
+    if (!reservation) return { status: "reservation_not_found" as const };
+    if (reservation.status !== "booked") return { status: "reservation_closed" as const };
+
+    reservation.status = input.status;
+    reservation.note = input.note ? [reservation.note, input.note].filter(Boolean).join(" | ") : reservation.note;
+    const table = restaurantTables.find((item) => item.tenantId === tenantId && item.id === reservation.tableId);
+    if (table && (input.status === "cancelled" || input.status === "no_show") && table.state === "reserved") {
+      const hasFutureBooking = tableReservations.some(
+        (item) => item.tenantId === tenantId && item.tableId === table.id && item.id !== reservation.id && item.status === "booked"
+      );
+      if (!hasFutureBooking) {
+        table.state = "available";
+        table.customerName = undefined;
+      }
+    }
+    appendAudit({
+      tenantId,
+      branchId: reservation.branchId,
+      userId,
+      action: "table.reservation_status_changed",
+      entityType: "tableReservation",
+      entityId: reservation.id,
+      metadata: { tableId: reservation.tableId, status: reservation.status, note: input.note }
+    });
+    return { status: "updated" as const, reservation, table };
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.tableReservation.findFirst({ where: { tenantId, branchId: branchId ? branchId : undefined, id: reservationId } });
+    if (!existing) return { status: "reservation_not_found" as const };
+    if (existing.status !== "booked") return { status: "reservation_closed" as const };
+
+    const reservation = await tx.tableReservation.update({
+      where: { id: existing.id },
+      data: {
+        status: input.status,
+        note: input.note ? [existing.note, input.note].filter(Boolean).join(" | ") : existing.note
+      }
+    });
+    const table = await tx.restaurantTable.findFirst({ where: { tenantId, id: existing.tableId } });
+    let updatedTable = table;
+
+    if (table && (input.status === "cancelled" || input.status === "no_show") && table.state === "reserved") {
+      const futureBooking = await tx.tableReservation.findFirst({
+        where: { tenantId, tableId: table.id, id: { not: reservation.id }, status: "booked" }
+      });
+      if (!futureBooking) {
+        updatedTable = await tx.restaurantTable.update({ where: { id: table.id }, data: { state: "available", customerName: null } });
+      }
+    }
+
+    await createAudit(tx, {
+      tenantId,
+      branchId: reservation.branchId,
+      userId,
+      action: "table.reservation_status_changed",
+      entityType: "tableReservation",
+      entityId: reservation.id,
+      metadata: { tableId: reservation.tableId, status: reservation.status, note: input.note }
+    });
+    return { status: "updated" as const, reservation: toApiReservation(reservation), table: updatedTable ? toApiTable(updatedTable) : undefined };
   });
 }
 
@@ -524,6 +671,77 @@ export async function requestTableBill(tenantId: string, branchId: string | unde
   });
 }
 
+export async function transferTableOrder(tenantId: string, branchId: string | undefined, userId: string, orderId: string, input: { targetTableId: string; reason?: string }) {
+  if (useDemoStore) {
+    const order = tableOrders.find((item) => item.tenantId === tenantId && (!branchId || item.branchId === branchId) && item.id === orderId && item.status !== "closed" && item.status !== "cancelled");
+    if (!order) return { status: "order_not_found" as const };
+    if (order.tableId === input.targetTableId) return { status: "same_table" as const };
+
+    const sourceTable = restaurantTables.find((item) => item.tenantId === tenantId && item.id === order.tableId);
+    const targetTable = restaurantTables.find((item) => item.tenantId === tenantId && item.branchId === order.branchId && item.id === input.targetTableId);
+    if (!targetTable) return { status: "target_table_not_found" as const };
+    if (targetTable.orderId || ["occupied", "awaiting_payment", "delayed", "unavailable"].includes(targetTable.state)) return { status: "target_unavailable" as const };
+
+    if (sourceTable?.orderId === order.id) {
+      Object.assign(sourceTable, { state: "available", guests: 0, waiterId: undefined, orderId: undefined, customerName: undefined, specialInstructions: undefined, openedAt: undefined });
+    }
+
+    order.tableId = targetTable.id;
+    Object.assign(targetTable, {
+      state: order.status === "bill_requested" ? "awaiting_payment" : "occupied",
+      guests: order.guests,
+      waiterId: order.waiterId,
+      orderId: order.id,
+      customerName: order.customerName,
+      specialInstructions: order.specialInstructions,
+      openedAt: order.openedAt
+    });
+    prepTickets.filter((ticket) => ticket.tenantId === tenantId && ticket.tableOrderId === order.id).forEach((ticket) => {
+      ticket.tableLabel = targetTable.label;
+    });
+    appendAudit({ tenantId, branchId: order.branchId, userId, action: "table.order_transferred", entityType: "tableOrder", entityId: order.id, metadata: { sourceTableId: sourceTable?.id, targetTableId: targetTable.id, reason: input.reason } });
+    return { status: "transferred" as const, order, sourceTable, targetTable };
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const orderRecord = await tx.tableOrder.findFirst({ where: { tenantId, branchId: branchId ? branchId : undefined, id: orderId, status: { notIn: ["closed", "cancelled"] } } });
+    if (!orderRecord) return { status: "order_not_found" as const };
+    if (orderRecord.tableId === input.targetTableId) return { status: "same_table" as const };
+
+    const [sourceTable, targetTable] = await Promise.all([
+      tx.restaurantTable.findFirst({ where: { tenantId, id: orderRecord.tableId } }),
+      tx.restaurantTable.findFirst({ where: { tenantId, branchId: orderRecord.branchId, id: input.targetTableId } })
+    ]);
+    if (!targetTable) return { status: "target_table_not_found" as const };
+    if (targetTable.orderId || ["occupied", "awaiting_payment", "delayed", "unavailable"].includes(targetTable.state)) return { status: "target_unavailable" as const };
+
+    const [updatedOrder, updatedSourceTable, updatedTargetTable] = await Promise.all([
+      tx.tableOrder.update({ where: { id: orderRecord.id }, data: { tableId: targetTable.id } }),
+      sourceTable
+        ? tx.restaurantTable.update({
+            where: { id: sourceTable.id },
+            data: { state: "available", guests: 0, waiterId: null, orderId: null, customerName: null, specialInstructions: null, openedAt: null }
+          })
+        : Promise.resolve(null),
+      tx.restaurantTable.update({
+        where: { id: targetTable.id },
+        data: {
+          state: orderRecord.status === "bill_requested" ? "awaiting_payment" : "occupied",
+          guests: orderRecord.guests,
+          waiterId: orderRecord.waiterId,
+          orderId: orderRecord.id,
+          customerName: orderRecord.customerName,
+          specialInstructions: orderRecord.specialInstructions,
+          openedAt: orderRecord.openedAt
+        }
+      })
+    ]);
+    await tx.prepTicket.updateMany({ where: { tenantId, tableOrderId: orderRecord.id }, data: { tableLabel: updatedTargetTable.label } });
+    await createAudit(tx, { tenantId, branchId: orderRecord.branchId, userId, action: "table.order_transferred", entityType: "tableOrder", entityId: orderRecord.id, metadata: { sourceTableId: sourceTable?.id, targetTableId: targetTable.id, reason: input.reason } });
+    return { status: "transferred" as const, order: toApiOrder(updatedOrder), sourceTable: updatedSourceTable ? toApiTable(updatedSourceTable) : undefined, targetTable: toApiTable(updatedTargetTable) };
+  });
+}
+
 export async function updateTableState(tenantId: string, branchId: string | undefined, userId: string, tableId: string, input: { state: RestaurantTable["state"]; reason?: string }) {
   if (useDemoStore) {
     const table = restaurantTables.find((item) => item.tenantId === tenantId && (!branchId || item.branchId === branchId) && item.id === tableId);
@@ -623,6 +841,25 @@ export async function updatePrepTicketStatus(tenantId: string, branchId: string 
     });
     await syncDbTableOrderPrepStatus(tx, ticket.tableOrderId);
     await createAudit(tx, { tenantId, branchId: ticket.branchId, userId, action: "prep_ticket.status_changed", entityType: "prepTicket", entityId: ticket.id, metadata: { previousStatus, status: ticket.status, station: ticket.station, note: input.note } });
+    return { status: "updated" as const, ticket: toApiTicket(ticket) };
+  });
+}
+
+export async function updatePrepTicketPriority(tenantId: string, branchId: string | undefined, userId: string, ticketId: string, input: { priority: PrepTicket["priority"]; note?: string }) {
+  if (useDemoStore) {
+    const ticket = prepTickets.find((item) => item.tenantId === tenantId && (!branchId || item.branchId === branchId) && item.id === ticketId);
+    if (!ticket) return { status: "ticket_not_found" as const };
+    const previousPriority = ticket.priority;
+    ticket.priority = input.priority;
+    appendAudit({ tenantId, branchId: ticket.branchId, userId, action: "prep_ticket.priority_changed", entityType: "prepTicket", entityId: ticket.id, metadata: { previousPriority, priority: ticket.priority, station: ticket.station, note: input.note } });
+    return { status: "updated" as const, ticket };
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const ticketRecord = await tx.prepTicket.findFirst({ where: { tenantId, branchId: branchId ? branchId : undefined, id: ticketId } });
+    if (!ticketRecord) return { status: "ticket_not_found" as const };
+    const ticket = await tx.prepTicket.update({ where: { id: ticketRecord.id }, data: { priority: input.priority } });
+    await createAudit(tx, { tenantId, branchId: ticket.branchId, userId, action: "prep_ticket.priority_changed", entityType: "prepTicket", entityId: ticket.id, metadata: { previousPriority: ticketRecord.priority, priority: ticket.priority, station: ticket.station, note: input.note } });
     return { status: "updated" as const, ticket: toApiTicket(ticket) };
   });
 }

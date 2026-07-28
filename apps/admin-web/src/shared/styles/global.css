@@ -467,7 +467,7 @@ button {
   border-top: 1px solid #b8c0cc;
   display: grid;
   gap: 12px;
-  grid-template-columns: 1.3fr 1fr 1fr auto auto;
+  grid-template-columns: 1.3fr 1fr 1fr auto auto auto;
   padding: 14px 18px;
 }
 
@@ -525,6 +525,38 @@ button {
 
 .auth-staff-list .eyebrow {
   margin-bottom: 2px;
+}
+
+.auth-id-panel {
+  align-content: center;
+  background: white;
+  border: 1px solid #c3cad4;
+  border-radius: 4px;
+  color: var(--text);
+  display: grid;
+  gap: 8px;
+  min-height: 160px;
+  padding: 18px;
+}
+
+.auth-id-panel svg {
+  color: var(--primary);
+}
+
+.auth-id-panel strong,
+.auth-id-panel span {
+  display: block;
+}
+
+.auth-id-panel strong {
+  color: var(--primary);
+  font-size: 18px;
+}
+
+.auth-id-panel span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .auth-teller-shortcut {
@@ -668,6 +700,16 @@ button {
   text-decoration: underline;
 }
 
+.auth-company-footer {
+  align-items: center;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 900;
+  min-height: 38px;
+  white-space: nowrap;
+}
+
 .auth-pin-stage {
   align-items: center;
   display: flex;
@@ -697,6 +739,29 @@ button {
 .auth-pin-heading span {
   color: var(--muted);
   font-size: 13px;
+}
+
+.auth-pin-id {
+  color: var(--muted);
+  display: grid;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 8px;
+  margin-bottom: 24px;
+  text-align: left;
+  text-transform: uppercase;
+  width: min(100%, 320px);
+}
+
+.auth-pin-id input {
+  background: white;
+  border: 1px solid #b8c0cc;
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 18px;
+  min-height: 44px;
+  padding: 0 12px;
+  width: 100%;
 }
 
 .auth-pin-dots {
@@ -2262,6 +2327,43 @@ th {
   font-weight: 800;
 }
 
+.catalog-filter-bar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.catalog-filter-bar > span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.search-field {
+  align-items: center;
+  background: white;
+  border: 1px solid var(--outline);
+  border-radius: 8px;
+  color: var(--muted);
+  display: inline-flex;
+  gap: 8px;
+  min-height: 42px;
+  min-width: min(360px, 100%);
+  padding: 0 12px;
+}
+
+.search-field input {
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  flex: 1;
+  font: inherit;
+  min-width: 0;
+  outline: 0;
+}
+
 .catalog-form-panel, .inventory-form-panel, .customers-form-panel, .staff-form-panel, .register-form-panel {
   align-self: start;
 }
@@ -3265,6 +3367,17 @@ th {
   min-height: 40px;
 }
 
+.table-transfer-control {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-top: 10px;
+}
+
+.table-transfer-control select {
+  min-width: 0;
+}
+
 .table-item-form {
   border-top: 1px dashed var(--outline);
   margin-top: 14px;
@@ -3308,6 +3421,18 @@ th {
 
 .ticket-card {
   padding: 16px;
+}
+
+.ticket-card.ticket-rush {
+  border-color: var(--danger);
+  box-shadow: inset 4px 0 0 var(--danger);
+}
+
+.ticket-heading-actions {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .ticket-card ul {
