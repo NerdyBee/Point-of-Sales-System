@@ -16,8 +16,8 @@ import { StatusBadge } from "../../shared/components/StatusBadge";
 import { TablePagination, usePaginatedRows } from "../../shared/components/TablePagination";
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 
-const approvalTypes: Array<ApprovalType | "all"> = ["all", "discount", "void", "refund", "cash_movement", "register_close", "stock_adjustment", "customer_credit", "expense"];
-const approvalStatuses: Array<ApprovalStatus | "all"> = ["all", "pending", "approved", "rejected", "applied"];
+const approvalTypes: ApprovalType[] = ["discount", "void", "refund", "cash_movement", "register_close", "stock_adjustment", "customer_credit", "expense"];
+const approvalStatuses: ApprovalStatus[] = ["pending", "approved", "rejected", "applied"];
 type ApprovalSourceModule = "sales" | "salesHistory" | "inventory" | "registers" | "customers" | "expenses";
 const fallbackBranches: BranchOption[] = [];
 
@@ -95,6 +95,10 @@ export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
   const [selectedApproval, setSelectedApproval] = useState<ApprovalRequest | null>(null);
   const [statusFilter, setStatusFilter] = useState<ApprovalStatus | "all" | "">("pending");
   const [typeFilter, setTypeFilter] = useState<ApprovalType | "all" | "">("");
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [query, setQuery] = useState("");
   const [decisionNote, setDecisionNote] = useState("Manager reviewed request");
   const [requestModalOpen, setRequestModalOpen] = useState(false);
@@ -106,19 +110,31 @@ export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
     const needle = query.toLowerCase();
     return approvals.filter((approval) => {
       const haystack = `${approval.type} ${approval.entityType} ${approval.entityId} ${approval.reason} ${approval.requestedBy}`.toLowerCase();
-      return haystack.includes(needle);
+      const matchesQuery = haystack.includes(needle);
+      const matchesSource = !sourceFilter || sourceLabel(approval) === sourceFilter;
+      const matchesPriority = !priorityFilter || priorityLabel(approval.amount) === priorityFilter;
+      return matchesQuery && matchesSource && matchesPriority;
     });
-  }, [approvals, query]);
+  }, [approvals, priorityFilter, query, sourceFilter]);
+  const sourceOptions = useMemo(() => Array.from(new Set(approvals.map(sourceLabel))).sort(), [approvals]);
   const approvalPage = usePaginatedRows(filteredApprovals, 10);
+  const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
+  const branchLocked = Boolean(branchId && branches.length === 1);
   const pendingCount = useMemo(() => approvals.filter((approval) => approval.status === "pending").length, [approvals]);
-  const decidedToday = useMemo(() => approvals.filter((approval) => approval.decidedAt || approval.status === "applied").length, [approvals]);
+  const decidedToday = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return approvals.filter((approval) => {
+      const decidedAt = approval.decidedAt ?? (approval.status === "applied" ? approval.createdAt : "");
+      return decidedAt.startsWith(today);
+    }).length;
+  }, [approvals]);
   const pendingValue = useMemo(
     () => approvals.filter((approval) => approval.status === "pending").reduce((sum, approval) => sum + approval.amount, 0),
     [approvals]
   );
   const highPriorityCount = useMemo(() => approvals.filter((approval) => approval.status === "pending" && approval.amount >= 100000).length, [approvals]);
 
-  async function loadApprovals(nextStatus = statusFilter, nextType = typeFilter, nextBranchId = branchId) {
+  async function loadApprovals(nextStatus = statusFilter, nextType = typeFilter, nextBranchId = branchId, nextStartDate = startDate, nextEndDate = endDate) {
     setStatus("Syncing approvals...");
 
     try {
@@ -132,7 +148,7 @@ export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
         return;
       }
 
-      const response = await fetchApprovals(nextStatus || "all", nextType || "all", nextBranchId, activeUserId);
+      const response = await fetchApprovals(nextStatus || "all", nextType || "all", nextBranchId, activeUserId, nextStartDate, nextEndDate);
       setApprovals(response.approvals);
       setSelectedApproval((current) => response.approvals.find((approval) => approval.id === current?.id) ?? response.approvals[0] ?? null);
       setStatus("Approvals synced");
@@ -171,6 +187,15 @@ export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
     setBranchId(nextBranchId);
     setRequestForm(blankApproval(nextBranchId));
     void loadApprovals(statusFilter, typeFilter, nextBranchId);
+  }
+
+  function clearQueueFilters() {
+    setQuery("");
+    setSourceFilter("");
+    setPriorityFilter("");
+    setStartDate("");
+    setEndDate("");
+    void loadApprovals(statusFilter, typeFilter, branchId, "", "");
   }
 
   async function submitApproval(event: FormEvent) {
@@ -237,12 +262,19 @@ export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
         <div className="button-group">
           <label className="toolbar-select">
             Branch
-            <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-              <option value="">Branch</option>
-              {branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
-              ))}
-            </select>
+            {branchLocked ? (
+              <span className="locked-select-value locked-select-value-compact">
+                <strong>{selectedBranch?.name ?? branchId}</strong>
+                <small>{selectedBranch?.city ?? "assigned"}</small>
+              </span>
+            ) : (
+              <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
+                <option value="">Branch</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
+                ))}
+              </select>
+            )}
           </label>
           <button className="secondary-button" onClick={() => loadApprovals()}><RefreshCcw size={18} /> Sync</button>
           <button className="primary-button" onClick={() => setRequestModalOpen(true)}><Plus size={18} /> New request</button>
@@ -298,6 +330,35 @@ export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
           <div className="search-box approvals-search">
             <Search size={16} />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search approvals" />
+            {query ? (
+              <button type="button" onClick={() => setQuery("")} aria-label="Clear approval search"><X size={14} /></button>
+            ) : null}
+          </div>
+          <div className="table-toolbar approval-filter-toolbar">
+            <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
+              <option value="">Source</option>
+              {sourceOptions.map((source) => <option key={source} value={source}>{source}</option>)}
+            </select>
+            <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
+              <option value="">Priority</option>
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Normal">Normal</option>
+            </select>
+            <div className="date-range-filter approval-date-range-filter">
+              <label>
+                <span>Start</span>
+                <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+              </label>
+              <label>
+                <span>End</span>
+                <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+              </label>
+            </div>
+            <button className="secondary-button" type="button" onClick={() => loadApprovals(statusFilter, typeFilter, branchId, startDate, endDate)}>Apply dates</button>
+            {(query || sourceFilter || priorityFilter || startDate || endDate) ? (
+              <button className="secondary-button" type="button" onClick={clearQueueFilters}>Clear filters</button>
+            ) : null}
           </div>
           <div className="approval-list">
             {approvalPage.pageRows.length === 0 ? (
@@ -385,8 +446,8 @@ export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
               <label>
                 Type
                 <select value={requestForm.type} onChange={(event) => updateRequestForm("type", event.target.value as ApprovalType)}>
-                  <option value="" disabled>Type</option>
-                  {approvalTypes.filter((type) => type !== "all").map((type) => <option key={type} value={type}>{formatLabel(type)}</option>)}
+                  <option value="">Type</option>
+                  {approvalTypes.map((type) => <option key={type} value={type}>{formatLabel(type)}</option>)}
                 </select>
               </label>
               <label>

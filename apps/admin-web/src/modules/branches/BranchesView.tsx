@@ -1,4 +1,4 @@
-import { Building2, Check, MonitorCog, Pencil, Plus, RefreshCcw, X } from "lucide-react";
+import { Building2, Check, MonitorCog, Pencil, Plus, RefreshCcw, Search, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   createBranch,
@@ -73,6 +73,11 @@ export function BranchesView() {
   const [terminalForm, setTerminalForm] = useState<TerminalPayload>(blankTerminal);
   const [branchModalOpen, setBranchModalOpen] = useState(false);
   const [terminalModalOpen, setTerminalModalOpen] = useState(false);
+  const [branchQuery, setBranchQuery] = useState("");
+  const [branchStatusFilter, setBranchStatusFilter] = useState<BranchStatus | "">("");
+  const [terminalQuery, setTerminalQuery] = useState("");
+  const [terminalStatusFilter, setTerminalStatusFilter] = useState<TerminalStatus | "">("");
+  const [terminalBranchFilter, setTerminalBranchFilter] = useState("");
   const [tenantProfile, setTenantProfile] = useState<Pick<TenantProfile, "branchLimit" | "settings" | "plan">>(fallbackTenant);
   const [status, setStatus] = useState("Ready");
 
@@ -83,8 +88,27 @@ export function BranchesView() {
     () => selectedBranch ? terminals.filter((terminal) => terminal.branchId === selectedBranch.id && terminal.status === "online").length : 0,
     [selectedBranch, terminals]
   );
-  const branchPage = usePaginatedRows(branches, 10);
-  const terminalPage = usePaginatedRows(terminals, 8);
+  const filteredBranches = useMemo(() => {
+    const query = branchQuery.trim().toLowerCase();
+    return branches
+      .filter((branch) => !branchStatusFilter || branch.status === branchStatusFilter)
+      .filter((branch) => {
+        if (!query) return true;
+        return [branch.name, branch.address, branch.city, branch.phone].some((value) => value.toLowerCase().includes(query));
+      });
+  }, [branchQuery, branchStatusFilter, branches]);
+  const filteredTerminals = useMemo(() => {
+    const query = terminalQuery.trim().toLowerCase();
+    return terminals
+      .filter((terminal) => !terminalStatusFilter || terminal.status === terminalStatusFilter)
+      .filter((terminal) => !terminalBranchFilter || terminal.branchId === terminalBranchFilter)
+      .filter((terminal) => {
+        if (!query) return true;
+        return [terminal.name, terminal.deviceCode, terminal.appVersion, branchName(terminal.branchId)].some((value) => value.toLowerCase().includes(query));
+      });
+  }, [terminalQuery, terminalStatusFilter, terminalBranchFilter, terminals, branches]);
+  const branchPage = usePaginatedRows(filteredBranches, 10);
+  const terminalPage = usePaginatedRows(filteredTerminals, 8);
 
   async function loadBranches() {
     setStatus("Syncing branches...");
@@ -238,6 +262,17 @@ export function BranchesView() {
     return branches.find((branch) => branch.id === branchId)?.name ?? branchId;
   }
 
+  function clearBranchFilters() {
+    setBranchQuery("");
+    setBranchStatusFilter("");
+  }
+
+  function clearTerminalFilters() {
+    setTerminalQuery("");
+    setTerminalBranchFilter("");
+    setTerminalStatusFilter("");
+  }
+
   return (
     <div className="module-view">
       <div className="module-heading">
@@ -274,7 +309,24 @@ export function BranchesView() {
         <section className="panel">
           <div className="panel-header">
             <h2>Branch directory</h2>
-            <span>{branches.length} locations</span>
+            <span>{filteredBranches.length} of {branches.length} locations</span>
+          </div>
+          <div className="table-toolbar branch-filter-toolbar">
+            <div className="search-box compact-search">
+              <Search size={16} />
+              <input value={branchQuery} onChange={(event) => setBranchQuery(event.target.value)} placeholder="Search branch, city or phone" />
+              {branchQuery ? (
+                <button type="button" onClick={() => setBranchQuery("")} aria-label="Clear branch search"><X size={14} /></button>
+              ) : null}
+            </div>
+            <select value={branchStatusFilter} onChange={(event) => setBranchStatusFilter(event.target.value as BranchStatus | "")}>
+              <option value="">Branch status</option>
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
+            </select>
+            {(branchQuery || branchStatusFilter) ? (
+              <button className="secondary-button" type="button" onClick={clearBranchFilters}>Clear filters</button>
+            ) : null}
           </div>
           <div className="table-wrap">
             <table>
@@ -316,7 +368,29 @@ export function BranchesView() {
         <section className="panel">
           <div className="panel-header">
             <h2>Terminal fleet</h2>
-            <span>{onlineTerminalCount} online</span>
+            <span>{filteredTerminals.length} devices</span>
+          </div>
+          <div className="table-toolbar terminal-filter-toolbar">
+            <div className="search-box compact-search">
+              <Search size={16} />
+              <input value={terminalQuery} onChange={(event) => setTerminalQuery(event.target.value)} placeholder="Search terminal, device or version" />
+              {terminalQuery ? (
+                <button type="button" onClick={() => setTerminalQuery("")} aria-label="Clear terminal search"><X size={14} /></button>
+              ) : null}
+            </div>
+            <select value={terminalBranchFilter} onChange={(event) => setTerminalBranchFilter(event.target.value)}>
+              <option value="">Terminal branch</option>
+              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+            </select>
+            <select value={terminalStatusFilter} onChange={(event) => setTerminalStatusFilter(event.target.value as TerminalStatus | "")}>
+              <option value="">Terminal status</option>
+              <option value="online">Online</option>
+              <option value="offline">Offline</option>
+              <option value="maintenance">Maintenance</option>
+            </select>
+            {(terminalQuery || terminalBranchFilter || terminalStatusFilter) ? (
+              <button className="secondary-button" type="button" onClick={clearTerminalFilters}>Clear filters</button>
+            ) : null}
           </div>
           <div className="table-wrap">
             <table>
@@ -380,7 +454,7 @@ export function BranchesView() {
               <label>
                 Status
                 <select value={branchForm.status} onChange={(event) => updateBranchForm("status", event.target.value as BranchStatus)}>
-                  <option value="" disabled>Status</option>
+                  <option value="">Status</option>
                   <option value="active">Active</option>
                   <option value="paused">Paused</option>
                 </select>
@@ -431,7 +505,7 @@ export function BranchesView() {
               <label>
                 Status
                 <select value={terminalForm.status} onChange={(event) => updateTerminalForm("status", event.target.value as TerminalStatus)}>
-                  <option value="" disabled>Status</option>
+                  <option value="">Status</option>
                   <option value="online">Online</option>
                   <option value="offline">Offline</option>
                   <option value="maintenance">Maintenance</option>

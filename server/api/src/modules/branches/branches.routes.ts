@@ -14,10 +14,14 @@ function requireBranchContext(req: Request, res: Response) {
   return true;
 }
 
-branchesRouter.get("/", requireTenant, requireAuthenticatedUser, async (req, res) => {
+function requestedBranch(req: Request) {
+  return req.query.branchId?.toString() ?? req.header("x-branch-id") ?? (canAccessAllBranches(req.tenantContext!) ? undefined : req.tenantContext!.branchId);
+}
+
+branchesRouter.get("/", requireTenant, requirePermission("branch.manage"), async (req, res) => {
   if (!requireBranchContext(req, res)) return;
 
-  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
@@ -33,7 +37,7 @@ branchesRouter.get("/", requireTenant, requireAuthenticatedUser, async (req, res
 branchesRouter.get("/options", requireTenant, requireAuthenticatedUser, async (req, res) => {
   if (!requireBranchContext(req, res)) return;
 
-  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
@@ -136,7 +140,8 @@ branchesRouter.post("/terminals", requireTenant, requirePermission("branch.manag
     return;
   }
 
-  const result = await createTerminal(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+  const terminalInput = { ...parsed.data, branchId: scope.branchId ?? parsed.data.branchId };
+  const result = await createTerminal(req.tenantContext!.tenantId, req.tenantContext!.userId, terminalInput);
 
   if (result.status === "branch_not_found") {
     res.status(404).json({ error: "Branch not found" });
@@ -172,8 +177,9 @@ branchesRouter.patch("/terminals/:terminalId", requireTenant, requirePermission(
     return;
   }
 
+  const terminalInput = parsed.data.branchId ? { ...parsed.data, branchId: scope.branchId ?? parsed.data.branchId } : parsed.data;
   const scopedBranchId = canAccessAllBranches(req.tenantContext!) ? undefined : scope.branchId;
-  const result = await updateTerminal(req.tenantContext!.tenantId, req.tenantContext!.userId, req.params.terminalId.toString(), parsed.data, scopedBranchId);
+  const result = await updateTerminal(req.tenantContext!.tenantId, req.tenantContext!.userId, req.params.terminalId.toString(), terminalInput, scopedBranchId);
 
   if (result.status === "not_found") {
     res.status(404).json({ error: "Terminal not found" });

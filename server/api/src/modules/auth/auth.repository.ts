@@ -12,8 +12,8 @@ const authFailureWindowMs = 15 * 60 * 1000;
 const authLockoutMs = 10 * 60 * 1000;
 const maxAuthFailures = 5;
 
-type LoginInput = { tenantId: string; identifier: string; email?: string; password: string; terminalId?: string };
-type PinLoginInput = { tenantId: string; branchId: string; terminalId: string; staffId: string; pin: string };
+type LoginInput = { tenantId?: string; identifier: string; email?: string; password: string; terminalId?: string };
+type PinLoginInput = { tenantId?: string; branchId?: string; terminalId: string; staffId: string; pin: string };
 type StaffShape = StaffMember & { passwordHash?: string; pinHash?: string };
 type InvalidCredentialReason =
   | "staff_not_found"
@@ -61,6 +61,10 @@ function verifySecret(secret: string, storedHash?: string | null) {
 
 function normalizeLoginText(value: string) {
   return value.normalize("NFKC").replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
+}
+
+function normalizeStaffId(value: string) {
+  return normalizeLoginText(value).toUpperCase();
 }
 
 function authAttemptKey(kind: "password" | "pin", tenantId: string, identifier: string, ipAddress?: string) {
@@ -151,32 +155,62 @@ function dateOrNull(value?: string) {
   return value ? new Date(value) : null;
 }
 
-async function findOrCreateSeededStaff(tenantId: string, identifier: string) {
-  const identifierKey = identifier.toLowerCase();
-  const demoStaff = staffMembers.find((member) => member.tenantId === tenantId && (member.email.toLowerCase() === identifierKey || member.id.toLowerCase() === identifierKey)) as StaffShape | undefined;
+export async function findOrCreateSeededStaff(tenantId: string | undefined, identifier: string) {
+  const identifierKey = normalizeLoginText(identifier).toLowerCase();
+  const staffIdKey = normalizeStaffId(identifier);
+  const demoStaff = staffMembers.find((member) =>
+    (!tenantId || member.tenantId === tenantId) &&
+    (member.email.toLowerCase() === identifierKey || member.id.toUpperCase() === staffIdKey)
+  ) as StaffShape | undefined;
   if (!demoStaff) return null;
+
+  const seededStaffData = {
+    tenantId: demoStaff.tenantId,
+    branchId: demoStaff.branchId,
+    name: demoStaff.name,
+    email: demoStaff.email.toLowerCase(),
+    phone: demoStaff.phone,
+    role: demoStaff.role,
+    passwordHash: demoStaff.passwordHash ?? null,
+    pinHash: demoStaff.pinHash ?? null,
+    pinEnabled: demoStaff.pinEnabled,
+    active: demoStaff.active,
+    salesTotal: demoStaff.salesTotal,
+    inviteStatus: demoStaff.inviteStatus,
+    invitedAt: dateOrNull(demoStaff.invitedAt),
+    invitedBy: demoStaff.invitedBy ?? null,
+    inviteExpiresAt: dateOrNull(demoStaff.inviteExpiresAt),
+    lastSeenAt: dateOrNull(demoStaff.lastSeenAt),
+    createdAt: new Date(demoStaff.createdAt)
+  };
+
+  const existing = await prisma.staffMember.findFirst({
+    where: {
+      tenantId: demoStaff.tenantId,
+      OR: [{ id: demoStaff.id }, { email: demoStaff.email.toLowerCase() }]
+    }
+  });
+
+  if (existing) {
+    if (existing.id !== demoStaff.id) {
+      await prisma.authSession.deleteMany({ where: { staffId: existing.id } });
+    }
+
+    const updatedStaff = await prisma.staffMember.update({
+      where: { id: existing.id },
+      data: {
+        id: demoStaff.id,
+        ...seededStaffData
+      }
+    });
+    return toApiStaff(updatedStaff);
+  }
 
   try {
     const createdStaff = await prisma.staffMember.create({
       data: {
         id: demoStaff.id,
-        tenantId: demoStaff.tenantId,
-        branchId: demoStaff.branchId,
-        name: demoStaff.name,
-        email: demoStaff.email,
-        phone: demoStaff.phone,
-        role: demoStaff.role,
-        passwordHash: demoStaff.passwordHash ?? null,
-        pinHash: demoStaff.pinHash ?? null,
-        pinEnabled: demoStaff.pinEnabled,
-        active: demoStaff.active,
-        salesTotal: demoStaff.salesTotal,
-        inviteStatus: demoStaff.inviteStatus,
-        invitedAt: dateOrNull(demoStaff.invitedAt),
-        invitedBy: demoStaff.invitedBy ?? null,
-        inviteExpiresAt: dateOrNull(demoStaff.inviteExpiresAt),
-        lastSeenAt: dateOrNull(demoStaff.lastSeenAt),
-        createdAt: new Date(demoStaff.createdAt)
+        ...seededStaffData
       }
     });
     return toApiStaff(createdStaff);
@@ -268,6 +302,10 @@ async function recordFailedAuthAttempt(input: {
   });
 }
 
+function looksLikeCompactStaffId(identifier: string) {
+  return /^[A-Z0-9]{2,6}-[A-Z0-9]{2,6}-[A-Z0-9]{2,8}$/i.test(identifier.trim());
+}
+
 async function createSession(staff: StaffShape, input: { branchId?: string; terminalId?: string; userAgent?: string; ipAddress?: string; action: "auth.login" | "auth.pin_login" }) {
   const refreshToken = randomToken();
   const now = new Date();
@@ -335,100 +373,120 @@ async function createSession(staff: StaffShape, input: { branchId?: string; term
 export async function loginWithPassword(input: LoginInput, meta: { userAgent?: string; ipAddress?: string }) {
   const identifier = normalizeLoginText(input.identifier || input.email || "");
   const identifierKey = identifier.toLowerCase();
-  const attemptKey = authAttemptKey("password", input.tenantId, identifierKey, meta.ipAddress);
+  const submittedTenantId = input.tenantId?.trim();
+  const auditTenantId = submittedTenantId || "unknown";
+  const attemptKey = authAttemptKey("password", auditTenantId, identifierKey, meta.ipAddress);
   const fail = async (reason: InvalidCredentialReason, staff?: StaffShape) => {
     const lockedUntil = reason === "account_locked" ? lockedUntilForAttempt(attemptKey) : recordFailedAttempt(attemptKey);
-    await recordFailedAuthAttempt({
-      tenantId: input.tenantId,
-      branchId: staff?.branchId,
-      userId: staff?.id,
-      action: "auth.login_failed",
-      reason,
-      metadata: {
-        identifier: identifierKey,
-        terminalId: input.terminalId,
+    const failureTenantId = staff?.tenantId ?? submittedTenantId;
+    if (failureTenantId) {
+      await recordFailedAuthAttempt({
+        tenantId: failureTenantId,
+        branchId: staff?.branchId,
+        userId: staff?.id,
+        action: "auth.login_failed",
         reason,
-        lockedUntil: lockedUntil ? new Date(lockedUntil).toISOString() : undefined,
-        userAgent: meta.userAgent,
-        ipAddress: meta.ipAddress
-      }
-    });
+        metadata: {
+          identifier: identifierKey,
+          terminalId: input.terminalId,
+          reason,
+          lockedUntil: lockedUntil ? new Date(lockedUntil).toISOString() : undefined,
+          userAgent: meta.userAgent,
+          ipAddress: meta.ipAddress
+        }
+      });
+    }
     return { status: "invalid_credentials" as const, reason, lockedUntil: lockedUntil ? new Date(lockedUntil).toISOString() : undefined };
   };
 
   if (lockedUntilForAttempt(attemptKey)) return await fail("account_locked");
 
+  if (!submittedTenantId && !looksLikeCompactStaffId(identifier)) return await fail("staff_not_found");
+
   if (useDemoStore) {
-    const staff = staffMembers.find((member) => member.tenantId === input.tenantId && (member.email.toLowerCase() === identifierKey || member.id.toLowerCase() === identifierKey)) as StaffShape | undefined;
+    const staff = staffMembers.find((member) =>
+      (!submittedTenantId || member.tenantId === submittedTenantId) &&
+      (member.email.toLowerCase() === identifierKey || member.id.toLowerCase() === identifierKey)
+    ) as StaffShape | undefined;
     if (!staff) return await fail("staff_not_found");
     if (!staff.active || staff.inviteStatus !== "accepted") return await fail("staff_inactive_or_pending", staff);
     if (!verifySecret(input.password, staff.passwordHash)) return await fail("password_mismatch", staff);
-    if (!(await terminalBelongsToBranch(input.tenantId, staff.branchId, input.terminalId))) return await fail("terminal_mismatch", staff);
+    if (!(await terminalBelongsToBranch(staff.tenantId, staff.branchId, input.terminalId))) return await fail("terminal_mismatch", staff);
     clearFailedAttempt(attemptKey);
     return { status: "authenticated" as const, auth: await createSession(staff, { terminalId: input.terminalId, userAgent: meta.userAgent, ipAddress: meta.ipAddress, action: "auth.login" }) };
   }
 
   const record = await prisma.staffMember.findFirst({
     where: {
-      tenantId: input.tenantId,
+      tenantId: submittedTenantId ? submittedTenantId : undefined,
       OR: [{ email: identifierKey }, { id: identifier }]
     }
   });
-  const staff = record ? toApiStaff(record) : await findOrCreateSeededStaff(input.tenantId, identifierKey);
+  const staff = record ? toApiStaff(record) : await findOrCreateSeededStaff(submittedTenantId, identifierKey);
   if (!staff) return await fail("staff_not_found");
   if (!staff.active || staff.inviteStatus !== "accepted") return await fail("staff_inactive_or_pending", staff);
   if (!verifySecret(input.password, staff.passwordHash)) return await fail("password_mismatch", staff);
-  if (!(await terminalBelongsToBranch(input.tenantId, staff.branchId, input.terminalId))) return await fail("terminal_mismatch", staff);
+  if (!(await terminalBelongsToBranch(staff.tenantId, staff.branchId, input.terminalId))) return await fail("terminal_mismatch", staff);
   clearFailedAttempt(attemptKey);
   return { status: "authenticated" as const, auth: await createSession(staff, { terminalId: input.terminalId, userAgent: meta.userAgent, ipAddress: meta.ipAddress, action: "auth.login" }) };
 }
 
 export async function loginWithPin(input: PinLoginInput, meta: { userAgent?: string; ipAddress?: string }) {
-  const attemptKey = authAttemptKey("pin", input.tenantId, input.staffId, meta.ipAddress);
+  const submittedStaffId = normalizeStaffId(input.staffId);
+  const auditTenantId = input.tenantId?.trim() || "unknown";
+  const attemptKey = authAttemptKey("pin", auditTenantId, submittedStaffId, meta.ipAddress);
   const fail = async (reason: InvalidCredentialReason, staff?: StaffShape) => {
     const lockedUntil = reason === "account_locked" ? lockedUntilForAttempt(attemptKey) : recordFailedAttempt(attemptKey);
-    await recordFailedAuthAttempt({
-      tenantId: input.tenantId,
-      branchId: input.branchId,
-      userId: staff?.id ?? input.staffId,
-      action: "auth.pin_login_failed",
-      reason,
-      metadata: {
-        staffId: input.staffId,
-        terminalId: input.terminalId,
+    const failureTenantId = staff?.tenantId ?? input.tenantId?.trim();
+    if (failureTenantId) {
+      await recordFailedAuthAttempt({
+        tenantId: failureTenantId,
+        branchId: staff?.branchId ?? input.branchId,
+        userId: staff?.id ?? submittedStaffId,
+        action: "auth.pin_login_failed",
         reason,
-        lockedUntil: lockedUntil ? new Date(lockedUntil).toISOString() : undefined,
-        userAgent: meta.userAgent,
-        ipAddress: meta.ipAddress
-      }
-    });
+        metadata: {
+          staffId: submittedStaffId,
+          terminalId: input.terminalId,
+          reason,
+          lockedUntil: lockedUntil ? new Date(lockedUntil).toISOString() : undefined,
+          userAgent: meta.userAgent,
+          ipAddress: meta.ipAddress
+        }
+      });
+    }
     return { status: "invalid_credentials" as const, reason, lockedUntil: lockedUntil ? new Date(lockedUntil).toISOString() : undefined };
   };
 
   if (lockedUntilForAttempt(attemptKey)) return await fail("account_locked");
 
   if (useDemoStore) {
-    const staff = staffMembers.find((member) => member.tenantId === input.tenantId && member.id === input.staffId) as StaffShape | undefined;
+    const staff = staffMembers.find((member) => member.id.toUpperCase() === submittedStaffId && (!input.tenantId || member.tenantId === input.tenantId)) as StaffShape | undefined;
     if (!staff) return await fail("staff_not_found");
-    if (staff.branchId !== input.branchId) return await fail("branch_mismatch", staff);
-    if (!(await terminalBelongsToBranch(input.tenantId, input.branchId, input.terminalId))) return await fail("terminal_mismatch", staff);
+    if (input.branchId && staff.branchId !== input.branchId) return await fail("branch_mismatch", staff);
+    if (!(await terminalBelongsToBranch(staff.tenantId, staff.branchId, input.terminalId))) return await fail("terminal_mismatch", staff);
     if (!staff.active || staff.inviteStatus !== "accepted") return await fail("staff_inactive_or_pending", staff);
     if (!staff.pinEnabled) return await fail("pin_disabled", staff);
     if (!verifySecret(input.pin, staff.pinHash)) return await fail("pin_mismatch", staff);
     clearFailedAttempt(attemptKey);
-    return { status: "authenticated" as const, auth: await createSession(staff, { branchId: input.branchId, terminalId: input.terminalId, userAgent: meta.userAgent, ipAddress: meta.ipAddress, action: "auth.pin_login" }) };
+    return { status: "authenticated" as const, auth: await createSession(staff, { branchId: staff.branchId, terminalId: input.terminalId, userAgent: meta.userAgent, ipAddress: meta.ipAddress, action: "auth.pin_login" }) };
   }
 
-  const record = await prisma.staffMember.findFirst({ where: { tenantId: input.tenantId, id: input.staffId } });
-  const staff = record ? toApiStaff(record) : null;
+  const record = await prisma.staffMember.findFirst({
+    where: {
+      id: submittedStaffId,
+      tenantId: input.tenantId ? input.tenantId : undefined
+    }
+  });
+  const staff = record ? toApiStaff(record) : await findOrCreateSeededStaff(input.tenantId?.trim(), submittedStaffId);
   if (!staff) return await fail("staff_not_found");
-  if (staff.branchId !== input.branchId) return await fail("branch_mismatch", staff);
-  if (!(await terminalBelongsToBranch(input.tenantId, input.branchId, input.terminalId))) return await fail("terminal_mismatch", staff);
+  if (input.branchId && staff.branchId !== input.branchId) return await fail("branch_mismatch", staff);
+  if (!(await terminalBelongsToBranch(staff.tenantId, staff.branchId, input.terminalId))) return await fail("terminal_mismatch", staff);
   if (!staff.active || staff.inviteStatus !== "accepted") return await fail("staff_inactive_or_pending", staff);
   if (!staff.pinEnabled) return await fail("pin_disabled", staff);
   if (!verifySecret(input.pin, staff.pinHash)) return await fail("pin_mismatch", staff);
   clearFailedAttempt(attemptKey);
-  return { status: "authenticated" as const, auth: await createSession(staff, { branchId: input.branchId, terminalId: input.terminalId, userAgent: meta.userAgent, ipAddress: meta.ipAddress, action: "auth.pin_login" }) };
+  return { status: "authenticated" as const, auth: await createSession(staff, { branchId: staff.branchId, terminalId: input.terminalId, userAgent: meta.userAgent, ipAddress: meta.ipAddress, action: "auth.pin_login" }) };
 }
 
 export async function refreshAuthSession(refreshToken: string, meta: { userAgent?: string; ipAddress?: string }) {

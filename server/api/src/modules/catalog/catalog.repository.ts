@@ -59,6 +59,18 @@ export async function listCatalogProducts(tenantId: string, branchId?: string) {
   return products.map(toApiProduct);
 }
 
+export async function getCatalogProductRecord(tenantId: string, productId: string) {
+  if (useDemoStore) {
+    return demoProducts.find((product) => product.tenantId === tenantId && product.id === productId) ?? null;
+  }
+
+  const product = await prisma.product.findFirst({
+    where: { tenantId, id: productId }
+  });
+
+  return product ? toApiProduct(product) : null;
+}
+
 export async function getTenantSettings(tenantId: string) {
   if (useDemoStore) {
     return demoTenants.find((tenant) => tenant.id === tenantId)?.settings ?? null;

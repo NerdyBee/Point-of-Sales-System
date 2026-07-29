@@ -1,4 +1,4 @@
-import { Armchair, CalendarDays, Check, Plus, RefreshCcw, Users, X } from "lucide-react";
+import { Armchair, CalendarDays, Check, Plus, RefreshCcw, Search, Users, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   addTableOrderItem,
@@ -6,8 +6,8 @@ import {
   createTableReservation,
   fetchBranchOptions,
   fetchCatalogProducts,
+  fetchRestaurantStaffOptions,
   fetchRestaurantTables,
-  fetchStaff,
   openTableOrder,
   readStoredAuth,
   removeTableOrderItem,
@@ -20,7 +20,6 @@ import {
   type OpenTableOrderPayload,
   type RestaurantTable,
   type RestaurantTableState,
-  type StaffMember,
   type TableCreatePayload,
   type TableLayoutPayload,
   type TableOrderItemPayload,
@@ -36,6 +35,7 @@ import type { SettledTableReceipt, TerminalTableContext } from "../sales/SalesTe
 
 const defaultBranchId = "";
 const fallbackBranches: BranchOption[] = [];
+type RestaurantStaffOption = Awaited<ReturnType<typeof fetchRestaurantStaffOptions>>["staff"][number];
 
 const stateTone: Record<RestaurantTableState, "success" | "warning" | "danger" | "info"> = {
   available: "success",
@@ -91,7 +91,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
   const [tables, setTables] = useState<RestaurantTable[]>([]);
   const [orders, setOrders] = useState<TableOrder[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [staff, setStaff] = useState<RestaurantStaffOption[]>([]);
   const [branches, setBranches] = useState<BranchOption[]>(fallbackBranches);
   const [branchId, setBranchId] = useState(initialBranchId);
   const [reservations, setReservations] = useState<TableReservation[]>([]);
@@ -122,6 +122,10 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
   });
   const [transferTargetTableId, setTransferTargetTableId] = useState("");
   const [status, setStatus] = useState("Ready");
+  const [tableQuery, setTableQuery] = useState("");
+  const [tableStateFilter, setTableStateFilter] = useState("");
+  const [areaFilter, setAreaFilter] = useState("");
+  const [waiterFilter, setWaiterFilter] = useState("");
   const { displayMoney } = useTenantSettings();
 
   const selectedTable = useMemo(
@@ -140,18 +144,46 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
     () => products.filter((product) => product.branchId === branchId),
     [branchId, products]
   );
+  const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
+  const branchLocked = Boolean(branchId && branches.length === 1);
   const selectedOrderTotal = useMemo(
     () => selectedOrder?.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0) ?? 0,
     [selectedOrder]
   );
   const waiterOptions = useMemo(() => staff.filter((member) => member.active), [staff]);
+  const areaOptions = useMemo(() => Array.from(new Set(tables.map((table) => table.area).filter(Boolean))).sort(), [tables]);
   const actingWaiterId = selectedOrder?.waiterId ?? form.waiterId ?? storedAuth?.staff.id ?? "";
   const transferTableOptions = useMemo(
     () => tables.filter((table) => table.id !== selectedTable?.id && !table.orderId && (table.state === "available" || table.state === "reserved")),
     [selectedTable?.id, tables]
   );
+  const filteredTables = useMemo(() => {
+    const normalizedQuery = tableQuery.trim().toLowerCase();
+
+    return tables.filter((table) => {
+      const tableOrder = orders.find((order) => order.tableId === table.id && order.status !== "closed" && order.status !== "cancelled");
+      const waiterId = tableOrder?.waiterId ?? table.waiterId ?? "";
+      const waiter = staff.find((member) => member.id === waiterId);
+      const haystack = [
+        table.label,
+        table.area,
+        table.customerName,
+        table.orderId,
+        tableOrder?.id,
+        waiter?.name
+      ].filter(Boolean).join(" ").toLowerCase();
+
+      const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
+      const matchesState = !tableStateFilter || table.state === tableStateFilter;
+      const matchesArea = !areaFilter || table.area === areaFilter;
+      const matchesWaiter = !waiterFilter || waiterId === waiterFilter;
+
+      return matchesQuery && matchesState && matchesArea && matchesWaiter;
+    });
+  }, [areaFilter, orders, staff, tableQuery, tableStateFilter, tables, waiterFilter]);
   const reservationPage = usePaginatedRows(reservations, 4);
-  const tableSummaryPage = usePaginatedRows(tables, 8);
+  const tableSummaryPage = usePaginatedRows(filteredTables, 8);
+  const hasTableFilters = Boolean(tableQuery || tableStateFilter || areaFilter || waiterFilter);
 
   const counts = useMemo(() => {
     return tables.reduce<Record<RestaurantTableState, number>>(
@@ -172,7 +204,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
         return;
       }
 
-      const [branchResponse, response, staffResponse] = await Promise.all([fetchBranchOptions(), fetchRestaurantTables(nextBranchId, activeUserId), fetchStaff(nextBranchId, activeUserId)]);
+      const [branchResponse, response, staffResponse] = await Promise.all([fetchBranchOptions(), fetchRestaurantTables(nextBranchId, activeUserId), fetchRestaurantStaffOptions(nextBranchId)]);
       setBranches(branchResponse.branches.length ? branchResponse.branches : fallbackBranches);
       setTables(response.tables);
       setOrders(response.openOrders);
@@ -247,6 +279,13 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
     setItemForm({ productId: "", quantity: 1, modifiers: [], note: "" });
     void loadTables(nextBranchId);
     void loadCatalog(nextBranchId);
+  }
+
+  function clearTableFilters() {
+    setTableQuery("");
+    setTableStateFilter("");
+    setAreaFilter("");
+    setWaiterFilter("");
   }
 
   function openLayoutModal() {
@@ -555,12 +594,19 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
         <div className="button-group">
           <label className="toolbar-select">
             Branch
-            <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-              <option value="">Branch</option>
-              {branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
-              ))}
-            </select>
+            {branchLocked ? (
+              <span className="locked-select-value locked-select-value-compact">
+                <strong>{selectedBranch?.name ?? branchId}</strong>
+                <small>{selectedBranch?.city ?? "assigned"}</small>
+              </span>
+            ) : (
+              <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
+                <option value="">Branch</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
+                ))}
+              </select>
+            )}
           </label>
           <button className="secondary-button" onClick={() => void loadTables()}><RefreshCcw size={18} /> Sync</button>
           <button className="secondary-button" onClick={openReservationModal}><CalendarDays size={18} /> Reservations</button>
@@ -600,6 +646,36 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
           <button className="secondary-button" onClick={onSettledReceiptSeen}>Clear</button>
         </section>
       ) : null}
+      <section className="table-toolbar floor-filter-toolbar" aria-label="Floor filters">
+        <div className="search-box compact-search">
+          <Search size={16} />
+          <input
+            value={tableQuery}
+            onChange={(event) => setTableQuery(event.target.value)}
+            placeholder="Search table, guest, order or waiter"
+          />
+          {tableQuery ? (
+            <button type="button" onClick={() => setTableQuery("")} aria-label="Clear table search"><X size={14} /></button>
+          ) : null}
+        </div>
+        <select value={tableStateFilter} onChange={(event) => setTableStateFilter(event.target.value)}>
+          <option value="">Table status</option>
+          {Object.entries(stateLabels).map(([state, label]) => (
+            <option key={state} value={state}>{label}</option>
+          ))}
+        </select>
+        <select value={areaFilter} onChange={(event) => setAreaFilter(event.target.value)}>
+          <option value="">Area</option>
+          {areaOptions.map((area) => <option key={area} value={area}>{area}</option>)}
+        </select>
+        <select value={waiterFilter} onChange={(event) => setWaiterFilter(event.target.value)}>
+          <option value="">Waiter</option>
+          {waiterOptions.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+        </select>
+        {hasTableFilters ? (
+          <button className="secondary-button" type="button" onClick={clearTableFilters}>Clear filters</button>
+        ) : null}
+      </section>
       <section className="floor-wrap">
         <div className="floor-map">
           {tables.length === 0 ? (
@@ -607,7 +683,12 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
               <span>No floor tables found for this branch.</span>
               <button className="secondary-button" onClick={openCreateTableModal}><Plus size={18} /> Add table</button>
             </div>
-          ) : tables.map((table) => (
+          ) : filteredTables.length === 0 && hasTableFilters ? (
+            <div className="empty-state">
+              <span>No tables match the current filters.</span>
+              <button className="secondary-button" onClick={clearTableFilters}>Clear filters</button>
+            </div>
+          ) : filteredTables.map((table) => (
             <button
               className={`table-node table-${stateTone[table.state]} ${selectedTableId === table.id ? "table-selected" : ""}`}
               key={table.id}
@@ -650,7 +731,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
               <label>
                 Waiter
                 <select value={form.waiterId} onChange={(event) => setForm((current) => ({ ...current, waiterId: event.target.value }))}>
-                  <option value="" disabled>Waiter</option>
+                  <option value="">Waiter</option>
                   {waiterOptions.map((member) => <option key={member.id} value={member.id}>{member.name} - {member.role}</option>)}
                 </select>
               </label>
@@ -683,7 +764,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
                     modifiers: nextProduct?.modifiers.slice(0, 1) ?? []
                   }));
                 }}>
-                  <option value="" disabled>Product</option>
+                  <option value="">Product</option>
                   {branchProducts.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
                 </select>
               </label>
@@ -786,7 +867,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
                 </div>
               );
             })}
-            {tables.length > 0 ? (
+            {filteredTables.length > 0 ? (
               <TablePagination
                 page={tableSummaryPage.page}
                 pageCount={tableSummaryPage.pageCount}
@@ -815,7 +896,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
               <label>
                 Table
                 <select value={reservationForm.tableId} onChange={(event) => setReservationForm((current) => ({ ...current, tableId: event.target.value }))}>
-                  <option value="" disabled>Table</option>
+                  <option value="">Table</option>
                   {tables.map((table) => <option key={table.id} value={table.id}>{table.label} - {table.seats} seats</option>)}
                 </select>
               </label>
@@ -838,7 +919,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
               <label>
                 Duration
                 <select value={reservationForm.durationMinutes} onChange={(event) => setReservationForm((current) => ({ ...current, durationMinutes: Number(event.target.value) }))}>
-                  <option value="" disabled>Duration</option>
+                  <option value="">Duration</option>
                   <option value={60}>1 hour</option>
                   <option value={90}>1.5 hours</option>
                   <option value={120}>2 hours</option>

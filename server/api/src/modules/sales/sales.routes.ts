@@ -1,13 +1,16 @@
 import { saleActionSchema, saleReceiptActionSchema, saleRefundSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
-import { canAccessAllBranches, resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant, selfScopedUserId } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, resolveBranchScope, requirePermission, requireTenant, selfScopedUserId } from "../../shared/http/tenantContext";
 import { createSale, listSales, queueReceiptAction, refundSale, voidSale } from "./sales.repository";
 import { createSaleSchema } from "./sales.service";
 
 export const salesRouter = Router();
 
 function requireBranchContext(req: Request, res: Response) {
-  const scope = resolveBranchScope(req.tenantContext!, req.tenantContext!.branchId);
+  const requestedBranchId = req.query.branchId?.toString() ?? req.header("x-branch-id") ?? (
+    canAccessAllBranches(req.tenantContext!) ? undefined : req.tenantContext!.branchId
+  );
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranchId);
   if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return null;
@@ -16,12 +19,9 @@ function requireBranchContext(req: Request, res: Response) {
   return scope;
 }
 
-salesRouter.get("/", requireTenant, requireAuthenticatedUser, async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
-    res.status(403).json({ error: "Branch access denied" });
-    return;
-  }
+salesRouter.get("/", requireTenant, requirePermission("sale.create"), async (req, res) => {
+  const scope = requireBranchContext(req, res);
+  if (!scope) return;
 
   const status = req.query.status?.toString();
   const sales = await listSales(req.tenantContext!.tenantId, {
@@ -48,7 +48,10 @@ salesRouter.post("/", requireTenant, requirePermission("sale.create"), async (re
   }
 
   try {
-    const result = await createSale(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+    const result = await createSale(req.tenantContext!.tenantId, req.tenantContext!.userId, {
+      ...parsed.data,
+      branchId: scope.branchId ?? parsed.data.branchId
+    });
 
     if (result.status === "no_open_shift") {
       res.status(409).json({ error: "No open register shift for this terminal" });

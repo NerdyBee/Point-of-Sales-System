@@ -1,11 +1,13 @@
-import { Check, CreditCard, RefreshCcw, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { Check, CreditCard, FilePlus, RefreshCcw, Search, ShieldCheck, SlidersHorizontal, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   fetchCurrentTenant,
   fetchSubscriptionOverview,
+  createSubscriptionInvoice,
   readStoredAuth,
   updateSubscription,
   updateSubscriptionInvoice,
+  type SubscriptionInvoiceCreatePayload,
   type SubscriptionInvoice,
   type SubscriptionPlan,
   type SubscriptionPlanOption,
@@ -29,6 +31,15 @@ const blankForm: SubscriptionUpdatePayload = {
   graceEndsAt: "",
   notes: ""
 };
+
+const todayValue = new Date().toISOString().slice(0, 10);
+const blankInvoiceForm = (): SubscriptionInvoiceCreatePayload => ({
+  plan: "" as SubscriptionPlan,
+  amount: undefined,
+  status: "open",
+  issuedAt: dateToIso(todayValue),
+  dueAt: dateToIso(new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString().slice(0, 10))
+});
 
 function statusTone(status: SubscriptionStatus | SubscriptionInvoice["status"]): "success" | "warning" | "danger" | "info" {
   if (status === "active" || status === "paid") return "success";
@@ -54,12 +65,41 @@ export function SubscriptionsView() {
   const [plans, setPlans] = useState<SubscriptionPlanOption[]>(fallbackPlans);
   const [invoices, setInvoices] = useState<SubscriptionInvoice[]>([]);
   const [form, setForm] = useState<SubscriptionUpdatePayload>(blankForm);
+  const [invoiceQuery, setInvoiceQuery] = useState("");
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState("");
+  const [invoicePlanFilter, setInvoicePlanFilter] = useState<SubscriptionPlan | "">("");
+  const [invoiceForm, setInvoiceForm] = useState<SubscriptionInvoiceCreatePayload>(blankInvoiceForm);
+  const [statusInvoice, setStatusInvoice] = useState<SubscriptionInvoice | null>(null);
+  const [statusForm, setStatusForm] = useState<{ status: SubscriptionInvoice["status"] | ""; paymentReference: string }>({
+    status: "",
+    paymentReference: ""
+  });
   const [status, setStatus] = useState("Ready");
 
   const selectedPlan = useMemo(() => plans.find((plan) => plan.plan === form.plan), [form.plan, plans]);
+  const selectedInvoicePlan = useMemo(() => plans.find((plan) => plan.plan === invoiceForm.plan), [invoiceForm.plan, plans]);
   const openBalance = useMemo(() => invoices.filter((invoice) => invoice.status === "open" || invoice.status === "overdue").reduce((sum, invoice) => sum + invoice.amount, 0), [invoices]);
   const paidTotal = useMemo(() => invoices.filter((invoice) => invoice.status === "paid").reduce((sum, invoice) => sum + invoice.amount, 0), [invoices]);
-  const invoicePage = usePaginatedRows(invoices, 10);
+  const filteredInvoices = useMemo(() => {
+    const normalizedQuery = invoiceQuery.trim().toLowerCase();
+
+    return invoices.filter((invoice) => {
+      const haystack = [
+        invoice.invoiceNumber,
+        invoice.plan,
+        invoice.status,
+        invoice.currency,
+        invoice.paymentReference
+      ].filter(Boolean).join(" ").toLowerCase();
+
+      const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
+      const matchesStatus = !invoiceStatusFilter || invoice.status === invoiceStatusFilter;
+      const matchesPlan = !invoicePlanFilter || invoice.plan === invoicePlanFilter;
+
+      return matchesQuery && matchesStatus && matchesPlan;
+    });
+  }, [invoicePlanFilter, invoiceQuery, invoiceStatusFilter, invoices]);
+  const invoicePage = usePaginatedRows(filteredInvoices, 10);
 
   async function loadSubscription() {
     setStatus("Syncing subscription...");
@@ -82,15 +122,21 @@ export function SubscriptionsView() {
       setSubscription(subscriptionResponse.subscription);
       setPlans(subscriptionResponse.plans);
       setInvoices(subscriptionResponse.invoices);
-      if (subscriptionResponse.subscription) {
+      const nextSubscription = subscriptionResponse.subscription;
+      if (nextSubscription) {
         setForm({
-          plan: subscriptionResponse.subscription.plan,
-          status: subscriptionResponse.subscription.status,
-          billingEmail: subscriptionResponse.subscription.billingEmail,
-          renewalDate: subscriptionResponse.subscription.renewalDate,
-          graceEndsAt: subscriptionResponse.subscription.graceEndsAt ?? "",
-          notes: subscriptionResponse.subscription.notes ?? ""
+          plan: nextSubscription.plan,
+          status: nextSubscription.status,
+          billingEmail: nextSubscription.billingEmail,
+          renewalDate: nextSubscription.renewalDate,
+          graceEndsAt: nextSubscription.graceEndsAt ?? "",
+          notes: nextSubscription.notes ?? ""
         });
+        setInvoiceForm((current) => ({
+          ...current,
+          plan: current.plan || nextSubscription.plan,
+          amount: current.amount ?? nextSubscription.amount
+        }));
       }
       setStatus("Subscription synced");
     } catch (error) {
@@ -108,6 +154,10 @@ export function SubscriptionsView() {
 
   function updateForm<K extends keyof SubscriptionUpdatePayload>(key: K, value: SubscriptionUpdatePayload[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateInvoiceForm<K extends keyof SubscriptionInvoiceCreatePayload>(key: K, value: SubscriptionInvoiceCreatePayload[K]) {
+    setInvoiceForm((current) => ({ ...current, [key]: value }));
   }
 
   async function saveSubscription(event: FormEvent) {
@@ -139,20 +189,88 @@ export function SubscriptionsView() {
   }
 
   async function markInvoicePaid(invoice: SubscriptionInvoice) {
+    setStatusInvoice(invoice);
+    setStatusForm({
+      status: "paid",
+      paymentReference: invoice.paymentReference ?? `MANUAL-${invoice.invoiceNumber}`
+    });
+  }
+
+  function editInvoiceStatus(invoice: SubscriptionInvoice) {
+    setStatusInvoice(invoice);
+    setStatusForm({
+      status: invoice.status,
+      paymentReference: invoice.paymentReference ?? ""
+    });
+  }
+
+  function closeInvoiceStatusModal() {
+    setStatusInvoice(null);
+    setStatusForm({ status: "", paymentReference: "" });
+  }
+
+  async function saveInvoiceStatus(event: FormEvent) {
+    event.preventDefault();
+
+    if (!statusInvoice || !statusForm.status) {
+      setStatus("Select an invoice status");
+      return;
+    }
+
     if (!activeUserId || !activeBranchId) {
       setStatus("Sign in with a branch before updating invoices");
       return;
     }
 
-    setStatus(`Updating ${invoice.invoiceNumber}...`);
+    setStatus(`Updating ${statusInvoice.invoiceNumber}...`);
 
     try {
-      const response = await updateSubscriptionInvoice(invoice.id, "paid", `MANUAL-${invoice.invoiceNumber}`, activeBranchId);
+      const response = await updateSubscriptionInvoice(
+        statusInvoice.id,
+        statusForm.status,
+        statusForm.paymentReference.trim() || undefined,
+        activeBranchId
+      );
       setInvoices((current) => current.map((item) => (item.id === response.invoice.id ? response.invoice : item)));
-      setStatus("Invoice marked paid");
+      closeInvoiceStatusModal();
+      setStatus("Invoice status updated");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to update invoice");
     }
+  }
+
+  async function createInvoice(event: FormEvent) {
+    event.preventDefault();
+
+    if (!invoiceForm.plan) {
+      setStatus("Select an invoice plan");
+      return;
+    }
+
+    if (!activeUserId || !activeBranchId) {
+      setStatus("Sign in with a branch before creating invoices");
+      return;
+    }
+
+    setStatus("Creating invoice...");
+
+    try {
+      const response = await createSubscriptionInvoice({
+        ...invoiceForm,
+        amount: invoiceForm.amount ?? selectedInvoicePlan?.amount
+      }, activeBranchId);
+      setInvoices((current) => [response.invoice, ...current]);
+      setInvoiceForm(blankInvoiceForm());
+      setStatus(`${response.invoice.invoiceNumber} created`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to create invoice");
+    }
+  }
+
+  function clearInvoiceFilters() {
+    setInvoiceQuery("");
+    setInvoiceStatusFilter("");
+    setInvoicePlanFilter("");
   }
 
   return (
@@ -173,8 +291,8 @@ export function SubscriptionsView() {
         <StatCard label="Open balance" value={formatMoney(openBalance)} detail={`${formatMoney(paidTotal)} paid history`} icon={SlidersHorizontal} />
       </section>
 
-      <form className="settings-workflow" onSubmit={saveSubscription}>
-        <section className="panel">
+      <form className="settings-workflow subscription-workflow" onSubmit={saveSubscription}>
+        <section className="panel subscription-limits-panel">
           <div className="panel-header">
             <h2>Subscription controls</h2>
             {subscription ? <StatusBadge label={subscription.status.replace("_", " ")} tone={statusTone(subscription.status)} /> : null}
@@ -222,7 +340,7 @@ export function SubscriptionsView() {
           </div>
         </section>
 
-        <section className="panel">
+        <section className="panel subscription-plan-table-panel">
           <div className="panel-header">
             <h2>Plan limits</h2>
             <span>{plans.length} plans</span>
@@ -251,7 +369,73 @@ export function SubscriptionsView() {
       <section className="panel">
         <div className="panel-header">
           <h2>Billing invoices</h2>
-          <span>{invoices.length} records</span>
+          <span>{filteredInvoices.length} of {invoices.length} records</span>
+        </div>
+        <form className="inline-form subscription-invoice-create" onSubmit={createInvoice}>
+          <label>
+            Plan
+            <select value={invoiceForm.plan} onChange={(event) => updateInvoiceForm("plan", event.target.value as SubscriptionPlan)} required>
+              <option value="">Plan</option>
+              {plans.map((plan) => <option key={plan.plan} value={plan.plan}>{plan.plan}</option>)}
+            </select>
+          </label>
+          <label>
+            Amount
+            <input
+              type="number"
+              min={0}
+              value={invoiceForm.amount ?? ""}
+              onChange={(event) => updateInvoiceForm("amount", event.target.value ? Number(event.target.value) : undefined)}
+              placeholder={selectedInvoicePlan ? String(selectedInvoicePlan.amount) : "0"}
+            />
+          </label>
+          <label>
+            Status
+            <select value={invoiceForm.status} onChange={(event) => updateInvoiceForm("status", event.target.value as SubscriptionInvoice["status"])}>
+              <option value="">Status</option>
+              <option value="draft">Draft</option>
+              <option value="open">Open</option>
+              <option value="paid">Paid</option>
+              <option value="overdue">Overdue</option>
+            </select>
+          </label>
+          <label>
+            Issued
+            <input type="date" value={dateValue(invoiceForm.issuedAt)} onChange={(event) => updateInvoiceForm("issuedAt", dateToIso(event.target.value))} required />
+          </label>
+          <label>
+            Due
+            <input type="date" value={dateValue(invoiceForm.dueAt)} onChange={(event) => updateInvoiceForm("dueAt", dateToIso(event.target.value))} required />
+          </label>
+          <button className="primary-button" type="submit"><FilePlus size={18} /> Create invoice</button>
+        </form>
+        <div className="table-toolbar subscription-invoice-toolbar">
+          <div className="search-box compact-search">
+            <Search size={16} />
+            <input
+              value={invoiceQuery}
+              onChange={(event) => setInvoiceQuery(event.target.value)}
+              placeholder="Search invoice, reference or plan"
+            />
+            {invoiceQuery ? (
+              <button type="button" onClick={() => setInvoiceQuery("")} aria-label="Clear invoice search"><X size={14} /></button>
+            ) : null}
+          </div>
+          <select value={invoiceStatusFilter} onChange={(event) => setInvoiceStatusFilter(event.target.value)}>
+            <option value="">Invoice status</option>
+            <option value="draft">Draft</option>
+            <option value="open">Open</option>
+            <option value="paid">Paid</option>
+            <option value="void">Void</option>
+            <option value="overdue">Overdue</option>
+          </select>
+          <select value={invoicePlanFilter} onChange={(event) => setInvoicePlanFilter(event.target.value as SubscriptionPlan | "")}>
+            <option value="">Invoice plan</option>
+            {plans.map((plan) => <option key={plan.plan} value={plan.plan}>{plan.plan}</option>)}
+          </select>
+          {(invoiceQuery || invoiceStatusFilter || invoicePlanFilter) ? (
+            <button className="secondary-button" type="button" onClick={clearInvoiceFilters}>Clear filters</button>
+          ) : null}
         </div>
         <div className="table-wrap">
           <table>
@@ -271,6 +455,7 @@ export function SubscriptionsView() {
                   <td>{invoice.paymentReference ?? "None"}</td>
                   <td className="row-actions">
                     <button disabled={invoice.status === "paid" || invoice.status === "void"} onClick={() => markInvoicePaid(invoice)}>Mark paid</button>
+                    <button onClick={() => editInvoiceStatus(invoice)}>Update</button>
                   </td>
                 </tr>
               ))}
@@ -288,6 +473,51 @@ export function SubscriptionsView() {
           onPageSizeChange={invoicePage.setPageSize}
         />
       </section>
+      {statusInvoice ? (
+        <div className="modal-backdrop" role="presentation" onMouseDown={closeInvoiceStatusModal}>
+          <section className="modal-panel subscription-modal" role="dialog" aria-modal="true" aria-labelledby="invoice-status-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">Billing workflow</p>
+                <h2 id="invoice-status-title">Update invoice</h2>
+              </div>
+              <button className="icon-button" onClick={closeInvoiceStatusModal} aria-label="Close invoice status modal"><X size={18} /></button>
+            </div>
+            <form className="settings-form" onSubmit={saveInvoiceStatus}>
+              <label>
+                Invoice
+                <span className="locked-select-value">
+                  <strong>{statusInvoice.invoiceNumber}</strong>
+                  <small>{statusInvoice.plan} - {formatMoney(statusInvoice.amount, statusInvoice.currency)}</small>
+                </span>
+              </label>
+              <label>
+                Status
+                <select value={statusForm.status} onChange={(event) => setStatusForm((current) => ({ ...current, status: event.target.value as SubscriptionInvoice["status"] }))} required>
+                  <option value="">Status</option>
+                  <option value="draft">Draft</option>
+                  <option value="open">Open</option>
+                  <option value="paid">Paid</option>
+                  <option value="overdue">Overdue</option>
+                  <option value="void">Void</option>
+                </select>
+              </label>
+              <label className="wide-field">
+                Payment reference
+                <input
+                  value={statusForm.paymentReference}
+                  onChange={(event) => setStatusForm((current) => ({ ...current, paymentReference: event.target.value }))}
+                  placeholder="Bank transfer, Paystack or manual reference"
+                />
+              </label>
+              <div className="form-summary">
+                <span>{status}</span>
+                <button className="primary-button" type="submit"><Check size={18} /> Save status</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

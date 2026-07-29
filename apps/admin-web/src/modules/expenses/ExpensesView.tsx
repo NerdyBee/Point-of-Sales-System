@@ -1,4 +1,4 @@
-import { Check, CircleDollarSign, ClipboardCheck, Plus, RefreshCcw, X } from "lucide-react";
+import { Check, CircleDollarSign, ClipboardCheck, Plus, RefreshCcw, Search, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyApproval,
@@ -68,6 +68,11 @@ export function ExpensesView({ approvalHandoff, onApprovalHandoffConsumed }: Exp
   const [form, setForm] = useState<ExpensePayload>(blankExpense(initialBranchId));
   const [modalOpen, setModalOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");
+  const [expenseQuery, setExpenseQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [status, setStatus] = useState("Ready");
   const { displayMoney } = useTenantSettings();
 
@@ -75,9 +80,29 @@ export function ExpensesView({ approvalHandoff, onApprovalHandoffConsumed }: Exp
   const pendingTotal = useMemo(() => expenses.filter((expense) => expense.status === "pending_approval").reduce((sum, expense) => sum + expense.amount, 0), [expenses]);
   const approvedUnpaid = useMemo(() => expenses.filter((expense) => expense.status === "approved").reduce((sum, expense) => sum + expense.amount, 0), [expenses]);
   const rejectedOrVoided = useMemo(() => expenses.filter((expense) => expense.status === "rejected" || expense.status === "voided").reduce((sum, expense) => sum + expense.amount, 0), [expenses]);
-  const expensePage = usePaginatedRows(expenses, 10);
+  const filteredExpenses = useMemo(() => {
+    const normalizedQuery = expenseQuery.trim().toLowerCase();
+    return expenses.filter((expense) => {
+      const matchesQuery = !normalizedQuery || [
+        expense.category,
+        expense.description,
+        expense.vendor ?? "",
+        expense.reference ?? "",
+        expense.note ?? "",
+        expense.paymentMethod,
+        expense.status,
+        String(expense.amount)
+      ].some((value) => value.toLowerCase().includes(normalizedQuery));
+      const matchesCategory = !categoryFilter || expense.category === categoryFilter;
+      const matchesPaymentMethod = !paymentMethodFilter || expense.paymentMethod === paymentMethodFilter;
+      return matchesQuery && matchesCategory && matchesPaymentMethod;
+    });
+  }, [categoryFilter, expenseQuery, expenses, paymentMethodFilter]);
+  const expensePage = usePaginatedRows(filteredExpenses, 10);
+  const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
+  const branchLocked = Boolean(branchId && branches.length === 1);
 
-  async function loadExpenses(nextStatus = statusFilter, nextBranchId = branchId) {
+  async function loadExpenses(nextStatus = statusFilter, nextBranchId = branchId, nextStartDate = startDate, nextEndDate = endDate) {
     setStatus("Syncing expenses...");
 
     try {
@@ -90,7 +115,7 @@ export function ExpensesView({ approvalHandoff, onApprovalHandoffConsumed }: Exp
         return;
       }
 
-      const response = await fetchExpenses(nextBranchId, nextStatus || "all", activeUserId);
+      const response = await fetchExpenses(nextBranchId, nextStatus || "all", activeUserId, nextStartDate, nextEndDate);
       setExpenses(response.expenses);
       setStatus("Expenses synced");
     } catch (error) {
@@ -148,6 +173,15 @@ export function ExpensesView({ approvalHandoff, onApprovalHandoffConsumed }: Exp
     setBranchId(nextBranchId);
     setForm(blankExpense(nextBranchId));
     void loadExpenses(statusFilter, nextBranchId);
+  }
+
+  function clearExpenseFilters() {
+    setExpenseQuery("");
+    setCategoryFilter("");
+    setPaymentMethodFilter("");
+    setStartDate("");
+    setEndDate("");
+    void loadExpenses(statusFilter, branchId, "", "");
   }
 
   async function saveExpense(event: FormEvent) {
@@ -254,7 +288,6 @@ export function ExpensesView({ approvalHandoff, onApprovalHandoffConsumed }: Exp
             void loadExpenses(event.target.value);
           }}>
             <option value="">Status</option>
-            <option value="all">All</option>
             <option value="draft">Draft</option>
             <option value="pending_approval">Pending approval</option>
             <option value="approved">Approved</option>
@@ -264,12 +297,19 @@ export function ExpensesView({ approvalHandoff, onApprovalHandoffConsumed }: Exp
           </select>
           <label className="toolbar-select">
             Branch
-            <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-              <option value="">Branch</option>
-              {branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
-              ))}
-            </select>
+            {branchLocked ? (
+              <span className="locked-select-value locked-select-value-compact">
+                <strong>{selectedBranch?.name ?? branchId}</strong>
+                <small>{selectedBranch?.city ?? "assigned"}</small>
+              </span>
+            ) : (
+              <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
+                <option value="">Branch</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
+                ))}
+              </select>
+            )}
           </label>
           <button className="secondary-button" onClick={() => loadExpenses()}><RefreshCcw size={18} /> Sync</button>
           <button className="primary-button" onClick={() => setModalOpen(true)}><Plus size={18} /> Add expense</button>
@@ -286,7 +326,38 @@ export function ExpensesView({ approvalHandoff, onApprovalHandoffConsumed }: Exp
       <section className="panel">
         <div className="panel-header">
           <h2>Expense ledger</h2>
-          <span>{expenses.length} records</span>
+          <span>{filteredExpenses.length} of {expenses.length} records</span>
+        </div>
+        <div className="table-toolbar expense-filter-toolbar">
+          <div className="search-box compact-search">
+            <Search size={16} />
+            <input value={expenseQuery} onChange={(event) => setExpenseQuery(event.target.value)} placeholder="Search description, vendor, reference or amount" />
+            {expenseQuery ? (
+              <button type="button" onClick={() => setExpenseQuery("")} aria-label="Clear expense search"><X size={14} /></button>
+            ) : null}
+          </div>
+          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+            <option value="">Category</option>
+            {expenseCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+          </select>
+          <select value={paymentMethodFilter} onChange={(event) => setPaymentMethodFilter(event.target.value)}>
+            <option value="">Payment method</option>
+            {paymentMethods.map((method) => <option key={method.value} value={method.value}>{method.label}</option>)}
+          </select>
+          <div className="date-range-filter expense-date-range-filter">
+            <label>
+              <span>Start</span>
+              <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+            </label>
+            <label>
+              <span>End</span>
+              <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+            </label>
+          </div>
+          <button className="secondary-button" type="button" onClick={() => loadExpenses(statusFilter, branchId, startDate, endDate)}>Apply dates</button>
+          {(expenseQuery || categoryFilter || paymentMethodFilter || startDate || endDate) ? (
+            <button className="secondary-button" type="button" onClick={clearExpenseFilters}>Clear filters</button>
+          ) : null}
         </div>
         <div className="table-wrap">
           <table>
@@ -365,6 +436,18 @@ export function ExpensesView({ approvalHandoff, onApprovalHandoffConsumed }: Exp
               <label>
                 Amount
                 <input min={1} type="number" value={form.amount} onChange={(event) => updateForm("amount", Number(event.target.value))} required />
+              </label>
+              <label>
+                Spent date
+                <input
+                  type="date"
+                  value={form.spentAt.slice(0, 10)}
+                  onChange={(event) => {
+                    if (!event.target.value) return;
+                    updateForm("spentAt", new Date(`${event.target.value}T12:00:00.000`).toISOString());
+                  }}
+                  required
+                />
               </label>
               <label className="wide-field">
                 Description

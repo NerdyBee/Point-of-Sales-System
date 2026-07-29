@@ -1,27 +1,31 @@
-import { profileUpdateSchema, staffInputSchema, staffStatusSchema } from "@pos/validation";
+import { profileSecurityUpdateSchema, profileUpdateSchema, staffInputSchema, staffSecurityUpdateSchema, staffStatusSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
 import { canAccessAllBranches, resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
-import { createStaff, getStaffProfile, listStaff, resendStaffInvite, revokeStaffInvite, setStaffStatus, updateOwnProfile, updateStaff } from "./staff.repository";
+import { createStaff, getStaffProfile, listStaff, resendStaffInvite, revokeStaffInvite, setStaffStatus, updateOwnProfile, updateOwnSecurity, updateStaff, updateStaffSecurity } from "./staff.repository";
 
 export const staffRouter = Router();
 
-function requireBranchContext(req: Request, res: Response) {
-  if (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId) {
-    res.status(403).json({ error: "Branch access denied" });
-    return false;
+function requestedBranch(req: Request, bodyBranchId?: string) {
+  if (!canAccessAllBranches(req.tenantContext!) && req.tenantContext!.branchId) {
+    return req.tenantContext!.branchId;
   }
 
-  return true;
+  return bodyBranchId ?? req.query.branchId?.toString() ?? req.header("x-branch-id") ?? req.tenantContext!.branchId;
 }
 
-staffRouter.get("/", requireTenant, requireAuthenticatedUser, async (req, res) => {
-  if (!requireBranchContext(req, res)) return;
-
-  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
-  if (scope.forbidden) {
+function resolveStaffBranch(req: Request, res: Response, requestedBranchId?: string) {
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranchId ?? requestedBranch(req));
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
-    return;
+    return null;
   }
+
+  return scope;
+}
+
+staffRouter.get("/", requireTenant, requirePermission("staff.manage"), async (req, res) => {
+  const scope = resolveStaffBranch(req, res, req.query.branchId?.toString());
+  if (!scope) return;
 
   const staff = await listStaff(req.tenantContext!.tenantId, scope.branchId);
 
@@ -62,6 +66,34 @@ staffRouter.patch("/me", requireTenant, requireAuthenticatedUser, async (req, re
   res.json({ staff: result.staff });
 });
 
+staffRouter.patch("/me/security", requireTenant, requireAuthenticatedUser, async (req, res) => {
+  const parsed = profileSecurityUpdateSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid security payload", issues: parsed.error.flatten() });
+    return;
+  }
+
+  const result = await updateOwnSecurity(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+
+  if (result.status === "not_found") {
+    res.status(404).json({ error: "Staff member not found" });
+    return;
+  }
+
+  if (result.status === "password_mismatch") {
+    res.status(401).json({ error: "Current password is incorrect" });
+    return;
+  }
+
+  if (result.status === "pin_required") {
+    res.status(400).json({ error: "Enter a 6-digit PIN to enable PIN login" });
+    return;
+  }
+
+  res.json({ staff: result.staff });
+});
+
 staffRouter.post("/", requireTenant, requirePermission("staff.manage"), async (req, res) => {
   const parsed = staffInputSchema.safeParse(req.body);
 
@@ -70,15 +102,13 @@ staffRouter.post("/", requireTenant, requirePermission("staff.manage"), async (r
     return;
   }
 
-  if (!requireBranchContext(req, res)) return;
+  const scope = resolveStaffBranch(req, res, parsed.data.branchId);
+  if (!scope) return;
 
-  const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
-  if (scope.forbidden) {
-    res.status(403).json({ error: "Branch access denied" });
-    return;
-  }
-
-  const result = await createStaff(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+  const result = await createStaff(req.tenantContext!.tenantId, req.tenantContext!.userId, {
+    ...parsed.data,
+    branchId: scope.branchId ?? parsed.data.branchId
+  });
 
   if (result.status === "branch_not_found") {
     res.status(404).json({ error: "Staff branch not found for this tenant" });
@@ -101,22 +131,15 @@ staffRouter.patch("/:staffId", requireTenant, requirePermission("staff.manage"),
     return;
   }
 
-  if (!requireBranchContext(req, res)) return;
-
-  if (parsed.data.branchId) {
-    const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
-    if (scope.forbidden) {
-      res.status(403).json({ error: "Branch access denied" });
-      return;
-    }
-  }
-
+  const scope = resolveStaffBranch(req, res, parsed.data.branchId);
+  if (!scope) return;
+  const scopedPayload = parsed.data.branchId ? { ...parsed.data, branchId: scope.branchId ?? parsed.data.branchId } : parsed.data;
   const result = await updateStaff(
     req.tenantContext!.tenantId,
-    req.tenantContext!.branchId,
+    scope.branchId,
     req.tenantContext!.userId,
     req.params.staffId.toString(),
-    parsed.data
+    scopedPayload
   );
 
   if (result.status === "not_found") {
@@ -145,11 +168,12 @@ staffRouter.patch("/:staffId/status", requireTenant, requirePermission("staff.ma
     return;
   }
 
-  if (!requireBranchContext(req, res)) return;
+  const scope = resolveStaffBranch(req, res);
+  if (!scope) return;
 
   const result = await setStaffStatus(
     req.tenantContext!.tenantId,
-    req.tenantContext!.branchId,
+    scope.branchId,
     req.tenantContext!.userId,
     req.params.staffId.toString(),
     parsed.data
@@ -168,12 +192,50 @@ staffRouter.patch("/:staffId/status", requireTenant, requirePermission("staff.ma
   res.json({ staff: result.staff });
 });
 
+staffRouter.patch("/:staffId/security", requireTenant, requirePermission("staff.manage"), async (req, res) => {
+  const parsed = staffSecurityUpdateSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid staff security payload", issues: parsed.error.flatten() });
+    return;
+  }
+
+  const scope = resolveStaffBranch(req, res);
+  if (!scope) return;
+
+  const result = await updateStaffSecurity(
+    req.tenantContext!.tenantId,
+    scope.branchId,
+    req.tenantContext!.userId,
+    req.params.staffId.toString(),
+    parsed.data
+  );
+
+  if (result.status === "not_found") {
+    res.status(404).json({ error: "Staff member not found" });
+    return;
+  }
+
+  if (result.status === "pin_required") {
+    res.status(400).json({ error: "Enter a 6-digit PIN to enable PIN login" });
+    return;
+  }
+
+  if (result.status === "self_password_reset") {
+    res.status(409).json({ error: "Use your profile page to change your own password" });
+    return;
+  }
+
+  res.json({ staff: result.staff });
+});
+
 staffRouter.post("/:staffId/invite/resend", requireTenant, requirePermission("staff.manage"), async (req, res) => {
-  if (!requireBranchContext(req, res)) return;
+  const scope = resolveStaffBranch(req, res);
+  if (!scope) return;
 
   const result = await resendStaffInvite(
     req.tenantContext!.tenantId,
-    req.tenantContext!.branchId,
+    scope.branchId,
     req.tenantContext!.userId,
     req.params.staffId.toString()
   );
@@ -187,11 +249,12 @@ staffRouter.post("/:staffId/invite/resend", requireTenant, requirePermission("st
 });
 
 staffRouter.post("/:staffId/invite/revoke", requireTenant, requirePermission("staff.manage"), async (req, res) => {
-  if (!requireBranchContext(req, res)) return;
+  const scope = resolveStaffBranch(req, res);
+  if (!scope) return;
 
   const result = await revokeStaffInvite(
     req.tenantContext!.tenantId,
-    req.tenantContext!.branchId,
+    scope.branchId,
     req.tenantContext!.userId,
     req.params.staffId.toString()
   );

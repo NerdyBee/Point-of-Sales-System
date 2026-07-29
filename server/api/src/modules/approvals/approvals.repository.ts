@@ -83,7 +83,10 @@ async function appendApprovalAudit(tx: Prisma.TransactionClient, event: Paramete
   });
 }
 
-export async function listApprovals(tenantId: string, filters: { branchId?: string; status?: string; type?: string }) {
+export async function listApprovals(
+  tenantId: string,
+  filters: { branchId?: string; status?: string; type?: string; startDate?: Date; endDate?: Date }
+) {
   const status = filters.status ?? "all";
   const type = filters.type ?? "all";
 
@@ -92,15 +95,25 @@ export async function listApprovals(tenantId: string, filters: { branchId?: stri
       .filter((approval) => approval.tenantId === tenantId)
       .filter((approval) => (filters.branchId ? approval.branchId === filters.branchId : true))
       .filter((approval) => (status === "all" ? true : approval.status === status))
-      .filter((approval) => (type === "all" ? true : approval.type === type));
+      .filter((approval) => (type === "all" ? true : approval.type === type))
+      .filter((approval) => (filters.startDate ? new Date(approval.createdAt).getTime() >= filters.startDate.getTime() : true))
+      .filter((approval) => (filters.endDate ? new Date(approval.createdAt).getTime() <= filters.endDate.getTime() : true));
   }
+
+  const createdAt = filters.startDate || filters.endDate
+    ? {
+        ...(filters.startDate ? { gte: filters.startDate } : {}),
+        ...(filters.endDate ? { lte: filters.endDate } : {})
+      }
+    : undefined;
 
   const approvals = await prisma.approvalRequest.findMany({
     where: {
       tenantId,
       branchId: filters.branchId ? filters.branchId : undefined,
       status: status === "all" ? undefined : status,
-      type: type === "all" ? undefined : type
+      type: type === "all" ? undefined : type,
+      createdAt
     },
     orderBy: { createdAt: "desc" }
   });

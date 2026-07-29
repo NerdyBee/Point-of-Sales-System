@@ -13,6 +13,10 @@ const fallbackReport: DashboardReport = {
   periodLabel: "Today",
   summary: {
     totalSales: 0,
+    taxableSales: 0,
+    discountTotal: 0,
+    serviceChargeTotal: 0,
+    vatTotal: 0,
     orderCount: 0,
     averageTransaction: 0,
     grossProfit: 0,
@@ -23,6 +27,12 @@ const fallbackReport: DashboardReport = {
     cashMovementIn: 0,
     cashMovementOut: 0,
     cashMovementNet: 0,
+    customerCount: 0,
+    customerOutstandingBalance: 0,
+    customerCreditLimit: 0,
+    customerLoyaltyPoints: 0,
+    customerAccountPayments: 0,
+    customerAccountCreditIssued: 0,
     auditEventCount: 0,
     pendingApprovalCount: 0,
     pendingApprovalValue: 0,
@@ -69,13 +79,14 @@ export function Dashboard({ onNewSale, onOpenApprovals, onOpenAudit, onOpenInven
   const [report, setReport] = useState<DashboardReport>(fallbackReport);
   const [branchId, setBranchId] = useState(initialBranchId);
   const [branches, setBranches] = useState<BranchOption[]>(fallbackBranches);
-  const [reportPeriod, setReportPeriod] = useState<ReportPeriod | "">("");
+  const [reportPeriod, setReportPeriod] = useState<ReportPeriod | "">("today");
   const [status, setStatus] = useState("Ready");
   const { displayMoney } = useTenantSettings();
   const maxHourlySale = useMemo(() => Math.max(...report.hourlySales.map((item) => item.amount), 1), [report.hourlySales]);
   const paymentRows = useMemo(() => Object.entries(report.paymentMix).sort(([, left], [, right]) => right - left), [report.paymentMix]);
   const maxCategorySale = useMemo(() => Math.max(...report.categorySales.map((item) => item.sales), 1), [report.categorySales]);
   const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId), [branchId, branches]);
+  const branchLocked = Boolean(branchId && branches.length === 1);
   const staffRows = useMemo(() => [...report.staffPerformance].sort((left, right) => right.salesTotal - left.salesTotal), [report.staffPerformance]);
   const staffPage = usePaginatedRows(staffRows, 10);
 
@@ -123,10 +134,17 @@ export function Dashboard({ onNewSale, onOpenApprovals, onOpenAudit, onOpenInven
         <div className="button-group">
           <label className="toolbar-select">
             Branch
-            <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-              <option value="" disabled>Branch</option>
-              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-            </select>
+            {branchLocked ? (
+              <span className="locked-select-value locked-select-value-compact">
+                <strong>{selectedBranch?.name ?? branchId}</strong>
+                <small>{selectedBranch?.city ?? "assigned"}</small>
+              </span>
+            ) : (
+              <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
+                <option value="">Branch</option>
+                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+              </select>
+            )}
           </label>
           <select className="compact-select" value={reportPeriod} onChange={(event) => setReportPeriod(event.target.value as ReportPeriod | "")}>
             <option value="">Period</option>
@@ -142,10 +160,14 @@ export function Dashboard({ onNewSale, onOpenApprovals, onOpenAudit, onOpenInven
 
       <section className="stats-grid">
         <StatCard label="Total sales" value={displayMoney(report.summary.totalSales)} detail={status} icon={Banknote} />
+        <StatCard label="VAT collected" value={displayMoney(report.summary.vatTotal)} detail={`${displayMoney(report.summary.serviceChargeTotal)} service charge`} icon={ReceiptText} />
         <StatCard label="Orders" value={String(report.summary.orderCount)} detail={report.periodLabel} icon={ShoppingBasket} />
         <StatCard label="Avg. transaction" value={displayMoney(report.summary.averageTransaction)} detail="Selected period" icon={TrendingUp} />
         <StatCard label="Net profit" value={displayMoney(report.summary.netProfit)} detail={`${displayMoney(report.summary.expenseTotal)} expenses`} icon={Banknote} tone="dark" />
         <StatCard label="Pending approvals" value={String(report.summary.pendingApprovalCount)} detail={displayMoney(report.summary.pendingApprovalValue)} icon={ClipboardCheck} />
+        <StatCard label="Credit exposure" value={displayMoney(report.summary.customerOutstandingBalance)} detail={`${report.summary.customerCount} customer accounts`} icon={WalletCards} />
+        <StatCard label="Account payments" value={displayMoney(report.summary.customerAccountPayments)} detail={`${displayMoney(report.summary.customerAccountCreditIssued)} credit issued`} icon={WalletCards} />
+        <StatCard label="Cash movement net" value={displayMoney(report.summary.cashMovementNet)} detail={`${displayMoney(report.summary.cashMovementIn)} in / ${displayMoney(report.summary.cashMovementOut)} out`} icon={Banknote} />
       </section>
 
       <div className="content-grid">
@@ -338,6 +360,41 @@ export function Dashboard({ onNewSale, onOpenApprovals, onOpenAudit, onOpenInven
           </div>
         </section>
 
+        <section className="panel">
+          <div className="panel-header">
+            <h2>Cash movements</h2>
+            <button className="secondary-button" onClick={onOpenRegisters}>
+              <Banknote size={16} />
+              Register
+            </button>
+          </div>
+          <div className="stack">
+            <div className="list-row">
+              <div>
+                <strong>Net movement</strong>
+                <span>{displayMoney(report.summary.cashMovementIn)} in - {displayMoney(report.summary.cashMovementOut)} out</span>
+              </div>
+              <b>{displayMoney(report.summary.cashMovementNet)}</b>
+            </div>
+            {report.cashMovements.length === 0 ? (
+              <div className="empty-state">No cash movements for this period.</div>
+            ) : (
+              report.cashMovements.map((movement) => (
+                <div className="list-row dashboard-approval-row" key={movement.id}>
+                  <div>
+                    <strong>{formatLabel(movement.type)}</strong>
+                    <span>{movement.reason}</span>
+                    <small>{movement.createdBy} - {new Date(movement.createdAt).toLocaleString()}</small>
+                  </div>
+                  <b>{displayMoney(movement.amount)}</b>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      </div>
+
+      <div className="content-grid">
         <section className="panel">
           <div className="panel-header">
             <h2>Control alerts</h2>

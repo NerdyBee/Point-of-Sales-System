@@ -4,18 +4,22 @@ import {
   applyApproval,
   createApproval,
   createCustomer,
+  fetchBranchOptions,
   fetchCustomerLedger,
   fetchCustomers,
   postCustomerLedger,
   readStoredAuth,
   updateCustomer,
   type ApprovalRequest,
+  type BranchOption,
   type Customer,
   type CustomerGroup,
   type CustomerLedgerEntry,
   type CustomerLedgerPayload,
-  type CustomerPayload
+  type CustomerPayload,
+  type TerminalOption
 } from "../../shared/api/client";
+import { StatusBadge } from "../../shared/components/StatusBadge";
 import { TablePagination, usePaginatedRows } from "../../shared/components/TablePagination";
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 
@@ -34,7 +38,10 @@ const blankLedger: CustomerLedgerPayload = {
   type: "" as CustomerLedgerPayload["type"],
   amount: 0,
   pointsDelta: 0,
-  note: ""
+  note: "",
+  paymentMethod: "cash",
+  paymentReference: "",
+  terminalId: ""
 };
 
 interface CustomersViewProps {
@@ -44,10 +51,17 @@ interface CustomersViewProps {
 
 export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: CustomersViewProps) {
   const storedAuth = useMemo(() => readStoredAuth(), []);
-  const activeBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
+  const initialBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
+  const initialTerminalId = storedAuth?.session.terminalId ?? "";
   const activeUserId = storedAuth?.staff.id ?? "";
+  const [branchId, setBranchId] = useState(initialBranchId);
+  const [terminalId, setTerminalId] = useState(initialTerminalId);
+  const [branches, setBranches] = useState<BranchOption[]>([]);
+  const [terminals, setTerminals] = useState<TerminalOption[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [query, setQuery] = useState("");
+  const [groupFilter, setGroupFilter] = useState<CustomerGroup | "">("");
+  const [creditStatusFilter, setCreditStatusFilter] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [form, setForm] = useState<CustomerPayload>(blankCustomer);
   const [modalOpen, setModalOpen] = useState(false);
@@ -55,6 +69,8 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
   const [ledgerEntries, setLedgerEntries] = useState<CustomerLedgerEntry[]>([]);
   const [ledgerForm, setLedgerForm] = useState<CustomerLedgerPayload>(blankLedger);
   const [ledgerApprovalId, setLedgerApprovalId] = useState("");
+  const [ledgerStartDate, setLedgerStartDate] = useState("");
+  const [ledgerEndDate, setLedgerEndDate] = useState("");
   const [ledgerModalOpen, setLedgerModalOpen] = useState(false);
   const [status, setStatus] = useState("Ready");
   const { displayMoney } = useTenantSettings();
@@ -62,10 +78,47 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
 
   const creditExposure = useMemo(() => customers.reduce((sum, customer) => sum + customer.outstandingBalance, 0), [customers]);
   const loyaltyLiability = useMemo(() => customers.reduce((sum, customer) => sum + customer.loyaltyPoints, 0), [customers]);
-  const customerPage = usePaginatedRows(customers, 10);
+  const filteredCustomers = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return customers.filter((customer) => {
+      const matchesQuery = !normalizedQuery || [
+        customer.name,
+        customer.phone,
+        customer.email ?? "",
+        customer.group,
+        customer.notes ?? "",
+        String(customer.loyaltyPoints),
+        String(customer.outstandingBalance),
+        String(customer.creditLimit)
+      ].some((value) => value.toLowerCase().includes(normalizedQuery));
+      const matchesGroup = !groupFilter || customer.group === groupFilter;
+      const matchesCreditStatus = !creditStatusFilter
+        || (creditStatusFilter === "clear" && customer.outstandingBalance <= 0)
+        || (creditStatusFilter === "outstanding" && customer.outstandingBalance > 0 && customer.outstandingBalance <= customer.creditLimit)
+        || (creditStatusFilter === "over_limit" && customer.outstandingBalance > customer.creditLimit);
+
+      return matchesQuery && matchesGroup && matchesCreditStatus;
+    });
+  }, [creditStatusFilter, customers, groupFilter, query]);
+  const customerPage = usePaginatedRows(filteredCustomers, 10);
   const ledgerPage = usePaginatedRows(ledgerEntries, 8);
-  const ledgerCreditAmount = Math.abs(ledgerForm.amount);
-  const projectedLedgerBalance = ledgerCustomer ? ledgerCustomer.outstandingBalance + ledgerCreditAmount : ledgerCreditAmount;
+  const branchTerminals = useMemo(() => terminals.filter((terminal) => terminal.branchId === branchId), [branchId, terminals]);
+  const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
+  const branchLocked = Boolean(branchId && branches.length === 1);
+  const hasCustomerFilters = Boolean(query || groupFilter || creditStatusFilter);
+  const signedLedgerAmount = ledgerForm.type === "payment" || ledgerForm.type === "voucher"
+    ? -Math.abs(ledgerForm.amount)
+    : Math.abs(ledgerForm.amount);
+  const projectedLedgerBalance = ledgerCustomer ? ledgerCustomer.outstandingBalance + signedLedgerAmount : signedLedgerAmount;
+  function customerCreditStatus(customer: Customer) {
+    if (customer.outstandingBalance > customer.creditLimit) {
+      return { label: "Over limit", tone: "danger" as const };
+    }
+    if (customer.outstandingBalance > 0) {
+      return { label: "Outstanding", tone: "warning" as const };
+    }
+    return { label: "Clear", tone: "success" as const };
+  }
 
   async function loadCustomers(nextQuery = query) {
     try {
@@ -78,7 +131,32 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
     }
   }
 
+  async function loadBranchOptions() {
+    try {
+      const response = await fetchBranchOptions();
+      setBranches(response.branches);
+      setTerminals(response.terminals);
+
+      const resolvedBranchId = branchId || response.branches[0]?.id || "";
+      if (!branchId && resolvedBranchId) {
+        setBranchId(resolvedBranchId);
+      }
+
+      const terminalOptions = response.terminals.filter((terminal) => terminal.branchId === resolvedBranchId);
+      const resolvedTerminal = terminalOptions.find((terminal) => terminal.id === terminalId)
+        ?? terminalOptions.find((terminal) => terminal.status === "online")
+        ?? terminalOptions[0];
+      if (!terminalId || resolvedTerminal?.branchId !== resolvedBranchId) {
+        setTerminalId(resolvedTerminal?.id ?? "");
+      }
+    } catch {
+      setBranches([]);
+      setTerminals([]);
+    }
+  }
+
   useEffect(() => {
+    void loadBranchOptions();
     void loadCustomers();
   }, []);
 
@@ -112,11 +190,11 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
     setLedgerModalOpen(true);
     setStatus(`Customer credit approval ready: ${approvalHandoff.id}`);
 
-    void fetchCustomerLedger(customer.id, activeBranchId, activeUserId)
+    void fetchCustomerLedger(customer.id, branchId, activeUserId, ledgerStartDate, ledgerEndDate)
       .then((response) => setLedgerEntries(response.entries))
       .catch(() => setLedgerEntries([]));
     onApprovalHandoffConsumed?.();
-  }, [approvalHandoff?.id, customers]);
+  }, [approvalHandoff?.id, customers, branchId]);
 
   function updateForm<K extends keyof CustomerPayload>(key: K, value: CustomerPayload[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -126,6 +204,17 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
     setLedgerForm((current) => ({ ...current, [key]: value }));
     if (key === "type" || key === "amount" || key === "note") {
       setLedgerApprovalId("");
+    }
+  }
+
+  function changeBranch(nextBranchId: string) {
+    const nextTerminals = terminals.filter((terminal) => terminal.branchId === nextBranchId);
+    const nextTerminal = nextTerminals.find((terminal) => terminal.status === "online") ?? nextTerminals[0];
+    setBranchId(nextBranchId);
+    setTerminalId(nextTerminal?.id ?? "");
+    setLedgerEntries([]);
+    if (ledgerModalOpen) {
+      setStatus("Branch changed. Reopen the customer ledger to refresh entries.");
     }
   }
 
@@ -161,14 +250,19 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
       type,
       amount: type === "payment" ? Math.min(customer.outstandingBalance || 10000, 10000) : type === "credit_sale" ? 10000 : 0,
       pointsDelta: type === "loyalty_adjustment" ? 100 : 0,
-      note: type === "payment" ? "Customer account payment" : type === "voucher" ? "Customer voucher" : type === "credit_sale" ? "Manual credit sale" : "Manual loyalty reward"
+      note: type === "payment" ? "Customer account payment" : type === "voucher" ? "Customer voucher" : type === "credit_sale" ? "Manual credit sale" : "Manual loyalty reward",
+      paymentMethod: type === "payment" ? "cash" : type === "voucher" ? "voucher" : undefined,
+      paymentReference: "",
+      terminalId
     });
     setLedgerApprovalId("");
+    setLedgerStartDate("");
+    setLedgerEndDate("");
     setLedgerModalOpen(true);
     setStatus("Loading customer ledger...");
 
     try {
-      const response = await fetchCustomerLedger(customer.id, activeBranchId, activeUserId);
+      const response = await fetchCustomerLedger(customer.id, branchId, activeUserId);
       setLedgerEntries(response.entries);
       setStatus("Customer ledger loaded");
     } catch (error) {
@@ -183,6 +277,35 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
     setLedgerEntries([]);
     setLedgerForm(blankLedger);
     setLedgerApprovalId("");
+    setLedgerStartDate("");
+    setLedgerEndDate("");
+  }
+
+  async function loadLedgerEntries(customer = ledgerCustomer, nextStartDate = ledgerStartDate, nextEndDate = ledgerEndDate) {
+    if (!customer) return;
+    setStatus("Loading customer ledger...");
+
+    try {
+      const response = await fetchCustomerLedger(customer.id, branchId, activeUserId, nextStartDate, nextEndDate);
+      setLedgerEntries(response.entries);
+      setStatus("Customer ledger loaded");
+    } catch (error) {
+      setLedgerEntries([]);
+      setStatus(error instanceof Error ? error.message : "Unable to load customer ledger");
+    }
+  }
+
+  function clearLedgerDateFilters() {
+    setLedgerStartDate("");
+    setLedgerEndDate("");
+    void loadLedgerEntries(ledgerCustomer, "", "");
+  }
+
+  function clearCustomerFilters() {
+    setQuery("");
+    setGroupFilter("");
+    setCreditStatusFilter("");
+    void loadCustomers("");
   }
 
   async function saveCustomer(event: FormEvent) {
@@ -197,8 +320,8 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
 
     try {
       const response = selectedCustomer
-        ? await updateCustomer(selectedCustomer.id, form, activeBranchId, activeUserId)
-        : await createCustomer(form, activeBranchId, activeUserId);
+        ? await updateCustomer(selectedCustomer.id, form, branchId, activeUserId)
+        : await createCustomer(form, branchId, activeUserId);
       setCustomers((current) => {
         const existing = current.some((customer) => customer.id === response.customer.id);
         return existing
@@ -239,16 +362,26 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
       : Math.abs(ledgerForm.amount);
     const isCreditSale = ledgerForm.type === "credit_sale" && signedAmount > 0;
 
+    if ((ledgerForm.type === "payment" || ledgerForm.type === "voucher") && ledgerCustomer.outstandingBalance + signedAmount < 0) {
+      setStatus("Payment exceeds customer outstanding balance");
+      return;
+    }
+
+    if (!branchId) {
+      setStatus("Select a branch before posting customer ledger entries");
+      return;
+    }
+
+    if ((ledgerForm.type === "payment" || ledgerForm.type === "voucher") && ledgerForm.paymentMethod === "cash" && !terminalId) {
+      setStatus("Select a terminal for cash customer payments");
+      return;
+    }
+
     try {
       if (isCreditSale && !ledgerApprovalId.trim()) {
-        if (!activeBranchId) {
-          setStatus("Select a branch before requesting customer credit approval");
-          return;
-        }
-
         setStatus("Requesting customer credit approval...");
         const response = await createApproval({
-          branchId: activeBranchId,
+          branchId,
           type: "customer_credit",
           entityType: "customerAccount",
           entityId: ledgerCustomer.id,
@@ -270,19 +403,19 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
           signedAmount,
           ledgerForm.note,
           activeUserId,
-          activeBranchId
+          branchId
         );
       } else {
         setStatus("Posting customer ledger...");
       }
 
-      const response = await postCustomerLedger(ledgerCustomer.id, { ...ledgerForm, amount: signedAmount }, activeBranchId, activeUserId);
+      const response = await postCustomerLedger(ledgerCustomer.id, { ...ledgerForm, amount: signedAmount, terminalId: ledgerForm.paymentMethod === "cash" ? terminalId : ledgerForm.terminalId }, branchId, activeUserId);
       setCustomers((current) => current.map((item) => (item.id === response.customer.id ? response.customer : item)));
       setLedgerCustomer(response.customer);
       setLedgerEntries((current) => [response.entry, ...current]);
       setLedgerForm((current) => ({ ...current, amount: 0, pointsDelta: 0, note: "" }));
       setLedgerApprovalId("");
-      setStatus("Customer ledger posted");
+      setStatus(response.movement ? `Customer ledger posted and drawer updated: ${displayMoney(response.movement.expectedCashAfter ?? 0)}` : "Customer ledger posted");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to post customer ledger");
     }
@@ -296,7 +429,28 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
           <h1>Customers</h1>
         </div>
         <div className="button-group">
-          <button className="secondary-button" onClick={() => loadCustomers()}><RefreshCcw size={18} /> Sync</button>
+          <label className="toolbar-select">
+            Branch
+            {branchLocked ? (
+              <span className="locked-select-value locked-select-value-compact">
+                <strong>{selectedBranch?.name ?? branchId}</strong>
+                <small>{selectedBranch?.city ?? "assigned"}</small>
+              </span>
+            ) : (
+              <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
+                <option value="">Branch</option>
+                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+              </select>
+            )}
+          </label>
+          <label className="toolbar-select">
+            Terminal
+            <select value={terminalId} onChange={(event) => setTerminalId(event.target.value)}>
+              <option value="">Terminal</option>
+              {branchTerminals.map((terminal) => <option key={terminal.id} value={terminal.id}>{terminal.name} - {terminal.status}</option>)}
+            </select>
+          </label>
+          <button className="secondary-button" onClick={() => { void loadBranchOptions(); void loadCustomers(); }}><RefreshCcw size={18} /> Sync</button>
           <button className="primary-button" onClick={resetForm}><Plus size={18} /> Add customer</button>
         </div>
       </div>
@@ -330,33 +484,53 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
               }}
               placeholder="Search customer"
             />
+            {query ? <button type="button" onClick={() => setQuery("")} aria-label="Clear customer search"><X size={14} /></button> : null}
           </div>
+        </div>
+        <div className="table-toolbar customer-filter-toolbar">
+          <select value={groupFilter} onChange={(event) => setGroupFilter(event.target.value as CustomerGroup | "")}>
+            <option value="">Customer group</option>
+            {groups.map((group) => <option key={group} value={group}>{group}</option>)}
+          </select>
+          <select value={creditStatusFilter} onChange={(event) => setCreditStatusFilter(event.target.value)}>
+            <option value="">Credit status</option>
+            <option value="clear">Clear</option>
+            <option value="outstanding">Outstanding</option>
+            <option value="over_limit">Over limit</option>
+          </select>
+          {hasCustomerFilters ? (
+            <button className="secondary-button" type="button" onClick={clearCustomerFilters}>Clear filters</button>
+          ) : null}
         </div>
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>#</th><th>Name</th><th>Phone</th><th>Group</th><th>Loyalty</th><th>Balance</th><th>Credit limit</th><th>Actions</th></tr>
+              <tr><th>#</th><th>Name</th><th>Phone</th><th>Group</th><th>Loyalty</th><th>Balance</th><th>Credit limit</th><th>Status</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {customerPage.pageRows.length === 0 ? (
-                <tr><td colSpan={8}>No customers found.</td></tr>
-              ) : customerPage.pageRows.map((customer, index) => (
-                <tr key={customer.id}>
-                  <td className="number-cell">{customerPage.startIndex + index + 1}</td>
-                  <td>{customer.name}</td>
-                  <td>{customer.phone}</td>
-                  <td>{customer.group}</td>
-                  <td>{customer.loyaltyPoints} pts</td>
-                  <td>{displayMoney(customer.outstandingBalance)}</td>
-                  <td>{displayMoney(customer.creditLimit)}</td>
-                  <td className="row-actions">
-                    <button onClick={() => openLedgerModal(customer, "loyalty_adjustment")} aria-label={`Reward ${customer.name}`}><Gift size={16} /></button>
-                    <button onClick={() => openLedgerModal(customer, "payment")} aria-label={`Record payment for ${customer.name}`}><MessageCircle size={16} /></button>
-                    <button onClick={() => openLedgerModal(customer, "credit_sale")} aria-label={`Post credit sale for ${customer.name}`}><CreditCard size={16} /></button>
-                    <button onClick={() => editCustomer(customer)} aria-label={`Edit ${customer.name}`}><Pencil size={16} /></button>
-                  </td>
-                </tr>
-              ))}
+                <tr><td colSpan={9}>No customers found.</td></tr>
+              ) : customerPage.pageRows.map((customer, index) => {
+                const creditStatus = customerCreditStatus(customer);
+                return (
+                  <tr key={customer.id}>
+                    <td className="number-cell">{customerPage.startIndex + index + 1}</td>
+                    <td>{customer.name}</td>
+                    <td>{customer.phone}</td>
+                    <td>{customer.group}</td>
+                    <td>{customer.loyaltyPoints} pts</td>
+                    <td>{displayMoney(customer.outstandingBalance)}</td>
+                    <td>{displayMoney(customer.creditLimit)}</td>
+                    <td><StatusBadge label={creditStatus.label} tone={creditStatus.tone} /></td>
+                    <td className="row-actions">
+                      <button onClick={() => openLedgerModal(customer, "loyalty_adjustment")} aria-label={`Reward ${customer.name}`}><Gift size={16} /></button>
+                      <button onClick={() => openLedgerModal(customer, "payment")} aria-label={`Record payment for ${customer.name}`}><MessageCircle size={16} /></button>
+                      <button onClick={() => openLedgerModal(customer, "credit_sale")} aria-label={`Post credit sale for ${customer.name}`}><CreditCard size={16} /></button>
+                      <button onClick={() => editCustomer(customer)} aria-label={`Edit ${customer.name}`}><Pencil size={16} /></button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -397,7 +571,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
               <label>
                 Group
                 <select value={form.group} onChange={(event) => updateForm("group", event.target.value as CustomerGroup)}>
-                  <option value="" disabled>Group</option>
+                  <option value="">Group</option>
                   {groups.map((group) => <option key={group} value={group}>{group}</option>)}
                 </select>
               </label>
@@ -438,7 +612,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
                 <select value={ledgerForm.type} onChange={(event) => {
                   updateLedgerForm("type", event.target.value as CustomerLedgerPayload["type"]);
                 }}>
-                  <option value="" disabled>Entry type</option>
+                  <option value="">Entry type</option>
                   <option value="payment">Payment</option>
                   <option value="loyalty_adjustment">Loyalty adjustment</option>
                   <option value="voucher">Voucher</option>
@@ -447,12 +621,37 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
               </label>
               <label>
                 Amount
-                <input min="0" type="number" value={ledgerForm.amount} onChange={(event) => updateLedgerForm("amount", Number(event.target.value))} />
+                <input
+                  min="0"
+                  max={ledgerForm.type === "payment" || ledgerForm.type === "voucher" ? ledgerCustomer.outstandingBalance : undefined}
+                  type="number"
+                  value={ledgerForm.amount}
+                  onChange={(event) => updateLedgerForm("amount", Number(event.target.value))}
+                />
               </label>
               <label>
                 Points delta
                 <input type="number" value={ledgerForm.pointsDelta} onChange={(event) => updateLedgerForm("pointsDelta", Number(event.target.value))} />
               </label>
+              {ledgerForm.type === "payment" || ledgerForm.type === "voucher" ? (
+                <>
+                  <label>
+                    Payment method
+                    <select value={ledgerForm.paymentMethod ?? ""} onChange={(event) => updateLedgerForm("paymentMethod", event.target.value as CustomerLedgerPayload["paymentMethod"])}>
+                      <option value="">Payment method</option>
+                      <option value="cash">Cash</option>
+                      <option value="card">Card</option>
+                      <option value="bank_transfer">Bank transfer</option>
+                      <option value="mobile_money">Mobile money</option>
+                      <option value="voucher">Voucher</option>
+                    </select>
+                  </label>
+                  <label>
+                    Reference
+                    <input value={ledgerForm.paymentReference ?? ""} onChange={(event) => updateLedgerForm("paymentReference", event.target.value)} />
+                  </label>
+                </>
+              ) : null}
               <label>
                 Note
                 <input value={ledgerForm.note} onChange={(event) => updateLedgerForm("note", event.target.value)} required />
@@ -472,12 +671,28 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
               ) : null}
               <div className="customer-ledger-summary wide-field">
                 <span>Balance {displayMoney(ledgerCustomer.outstandingBalance)}</span>
-                <span>{ledgerCustomer.loyaltyPoints} pts</span>
+                <span>After {displayMoney(projectedLedgerBalance)}</span>
                 <button className="primary-button" type="submit">
                   <Check size={18} /> {ledgerForm.type === "credit_sale" && !ledgerApprovalId.trim() ? "Request approval" : "Post entry"}
                 </button>
               </div>
               <div className="customer-ledger-list wide-field">
+                <div className="table-toolbar customer-ledger-filter-toolbar">
+                  <div className="date-range-filter customer-ledger-date-range-filter">
+                    <label>
+                      <span>Start</span>
+                      <input type="date" value={ledgerStartDate} onChange={(event) => setLedgerStartDate(event.target.value)} />
+                    </label>
+                    <label>
+                      <span>End</span>
+                      <input type="date" value={ledgerEndDate} onChange={(event) => setLedgerEndDate(event.target.value)} />
+                    </label>
+                  </div>
+                  <button className="secondary-button" type="button" onClick={() => loadLedgerEntries(ledgerCustomer, ledgerStartDate, ledgerEndDate)}>Apply dates</button>
+                  {(ledgerStartDate || ledgerEndDate) ? (
+                    <button className="secondary-button" type="button" onClick={clearLedgerDateFilters}>Clear dates</button>
+                  ) : null}
+                </div>
                 <div className="table-wrap">
                   <table>
                     <thead><tr><th>#</th><th>Created</th><th>Type</th><th>Note</th><th>Amount</th><th>Balance</th><th>Points</th></tr></thead>

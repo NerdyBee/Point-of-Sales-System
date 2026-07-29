@@ -1,5 +1,5 @@
 import { expenseInputSchema } from "@pos/validation";
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { canAccessAllBranches, resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import { createExpense, listExpenses, updateExpenseStatus } from "./expenses.repository";
@@ -11,15 +11,62 @@ const expenseStatusUpdateSchema = z.object({
   note: z.string().min(3).max(180).optional()
 });
 
+function parseExpenseDate(value: string | undefined, endOfDay = false) {
+  if (!value) return null;
+  const date = new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function requestedBranch(req: Request) {
+  const requested = req.query.branchId?.toString() ?? req.header("x-branch-id");
+  if (requested) return requested;
+
+  if (!canAccessAllBranches(req.tenantContext!) && req.tenantContext!.branchId) {
+    return req.tenantContext!.branchId;
+  }
+
+  return undefined;
+}
+
+function resolveExpenseBranch(req: Request, res: Response) {
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
+    res.status(403).json({ error: "Branch access denied" });
+    return null;
+  }
+
+  return scope;
+}
+
 expensesRouter.get("/", requireTenant, requirePermission("expense.manage"), async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
   if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
 
+  const startDateValue = req.query.startDate?.toString();
+  const endDateValue = req.query.endDate?.toString();
+  const startDate = parseExpenseDate(startDateValue);
+  const endDate = parseExpenseDate(endDateValue, true);
+
+  if ((startDateValue && !startDate) || (endDateValue && !endDate)) {
+    res.status(400).json({ error: "Invalid expense date range" });
+    return;
+  }
+
+  if (startDate && endDate && startDate.getTime() > endDate.getTime()) {
+    res.status(400).json({ error: "Start date must be before end date" });
+    return;
+  }
+
   const status = req.query.status?.toString();
-  const expenses = await listExpenses(req.tenantContext!.tenantId, { branchId: scope.branchId, status });
+  const expenses = await listExpenses(req.tenantContext!.tenantId, {
+    branchId: scope.branchId,
+    status,
+    startDate: startDate ?? undefined,
+    endDate: endDate ?? undefined
+  });
 
   res.json({ expenses });
 });
@@ -38,7 +85,10 @@ expensesRouter.post("/", requireTenant, requirePermission("expense.manage"), asy
     return;
   }
 
-  const result = await createExpense(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+  const result = await createExpense(req.tenantContext!.tenantId, req.tenantContext!.userId, {
+    ...parsed.data,
+    branchId: scope.branchId ?? parsed.data.branchId
+  });
 
   if (result.status === "branch_not_found") {
     res.status(404).json({ error: "Expense branch not found for this tenant" });
@@ -56,11 +106,8 @@ expensesRouter.patch("/:expenseId/status", requireTenant, requirePermission("exp
     return;
   }
 
-  const scope = resolveBranchScope(req.tenantContext!, req.tenantContext!.branchId);
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
-    res.status(403).json({ error: "Branch access denied" });
-    return;
-  }
+  const scope = resolveExpenseBranch(req, res);
+  if (!scope) return;
 
   const result = await updateExpenseStatus(
     req.tenantContext!.tenantId,

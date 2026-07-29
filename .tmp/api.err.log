@@ -118,3 +118,33 @@ SyntaxError: The requested module '@pos/validation' does not provide an export n
     at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
 
 Node.js v24.16.0
+C:\Users\DELL\Dev\pos\server\api\src\modules\subscriptions\subscriptions.routes.ts:1
+import { subscriptionInvoiceCreateSchema, subscriptionInvoiceUpdateSchema, subscriptionUpdateSchema } from "@pos/validation";
+         ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'subscriptionInvoiceCreateSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0
+C:\Users\DELL\Dev\pos\server\api\src\modules\staff\staff.routes.ts:1
+import { profileSecurityUpdateSchema, profileUpdateSchema, staffInputSchema, staffStatusSchema } from "@pos/validation";
+         ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'profileSecurityUpdateSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0
+C:\Users\DELL\Dev\pos\server\api\src\modules\staff\staff.routes.ts:1
+import { profileSecurityUpdateSchema, profileUpdateSchema, staffInputSchema, staffSecurityUpdateSchema, staffStatusSchema } from "@pos/validation";
+                                                                             ^
+SyntaxError: The requested module '@pos/validation' does not provide an export named 'staffSecurityUpdateSchema'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:327:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:431:5)
+    at async node:internal/modules/esm/loader:633:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.16.0

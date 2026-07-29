@@ -182,7 +182,7 @@ describe("api foundation", () => {
       .get("/api/v1/catalog/products")
       .set("x-tenant-id", "tenant-abuja-pharma")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1");
+      .set("x-user-id", "LCF-MAI-ADA");
 
     expect(response.status).toBe(200);
     expect(response.body.products).toHaveLength(1);
@@ -209,6 +209,18 @@ describe("api foundation", () => {
     expect(response.body.products.every((product: { branchId: string }) => product.branchId === "branch-lagos-main")).toBe(true);
     expect(otherBranchResponse.status).toBe(200);
     expect(otherBranchResponse.body.products.every((product: { branchId: string }) => product.branchId === "branch-lagos-ikeja")).toBe(true);
+  });
+
+  it("blocks staff without POS, catalog, inventory, or floor permissions from catalog reads", async () => {
+    const response = await request(app)
+      .get("/api/v1/catalog/products?branchId=branch-lagos-main")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "kitchen")
+      .set("x-user-id", "kitchen-1");
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: "Permission denied", permission: "sale.create" });
   });
 
   it("does not seed opening stock movements for service products", async () => {
@@ -260,6 +272,18 @@ describe("api foundation", () => {
     expect(response.body.sales.every((sale: { branchId: string; cashierId: string }) => sale.branchId === "branch-lagos-main" && sale.cashierId === "cashier-1")).toBe(true);
   });
 
+  it("blocks non-sales staff from reading sales history", async () => {
+    const response = await request(app)
+      .get("/api/v1/sales?branchId=branch-lagos-main&status=all")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "kitchen")
+      .set("x-user-id", "kitchen-1");
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: "Permission denied", permission: "sale.create" });
+  });
+
   it("allows state managers to read across branches", async () => {
     const response = await request(app)
       .get("/api/v1/branches/options")
@@ -298,7 +322,7 @@ describe("api foundation", () => {
       .patch("/api/v1/tenants/current/settings")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         businessName: "Lagos Central Foods HQ",
         taxId: "TIN-1029384756",
@@ -323,7 +347,7 @@ describe("api foundation", () => {
       .patch("/api/v1/tenants/current/settings")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         businessName: "Lagos Central Foods HQ",
         taxId: "TIN-1029384756",
@@ -346,7 +370,7 @@ describe("api foundation", () => {
       .patch("/api/v1/tenants/current/settings")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         businessName: "Lagos Central Foods HQ",
         taxId: "TIN-1029384756",
@@ -369,7 +393,7 @@ describe("api foundation", () => {
       .patch("/api/v1/tenants/current/settings")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         businessName: "Lagos Central Foods HQ",
         taxId: "TIN-1029384756",
@@ -394,7 +418,7 @@ describe("api foundation", () => {
       .patch("/api/v1/tenants/current/settings")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         businessName: "Lagos Central Foods HQ",
         taxId: "TIN-1029384756",
@@ -417,7 +441,7 @@ describe("api foundation", () => {
       .post("/api/v1/branches")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         name: "Surulere Pickup",
         address: "7 Bode Thomas Street",
@@ -431,7 +455,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", branchResponse.body.branch.id)
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         branchId: branchResponse.body.branch.id,
         name: "Pickup Counter",
@@ -444,12 +468,12 @@ describe("api foundation", () => {
       .get("/api/v1/branches")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1");
+      .set("x-user-id", "LCF-MAI-ADA");
     const optionsResponse = await request(app)
       .get("/api/v1/branches/options")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1");
+      .set("x-user-id", "LCF-MAI-ADA");
 
     expect(branchResponse.status).toBe(201);
     expect(terminalResponse.status).toBe(201);
@@ -459,6 +483,26 @@ describe("api foundation", () => {
     expect(optionsResponse.status).toBe(200);
     expect(optionsResponse.body.branches[0].address).toBeUndefined();
     expect(optionsResponse.body.terminals).toEqual(expect.arrayContaining([expect.objectContaining({ deviceCode: "LAG-SURULERE-01" })]));
+  });
+
+  it("blocks cashiers from full branch management reads but allows scoped branch options", async () => {
+    const listResponse = await request(app)
+      .get("/api/v1/branches?branchId=branch-lagos-main")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "cashier")
+      .set("x-user-id", "cashier-1");
+    const optionsResponse = await request(app)
+      .get("/api/v1/branches/options?branchId=branch-lagos-main")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "cashier")
+      .set("x-user-id", "cashier-1");
+
+    expect(listResponse.status).toBe(403);
+    expect(listResponse.body).toMatchObject({ error: "Permission denied", permission: "branch.manage" });
+    expect(optionsResponse.status).toBe(200);
+    expect(optionsResponse.body.branches.every((branch: { id: string }) => branch.id === "branch-lagos-main")).toBe(true);
   });
 
   it("keeps branch-scoped managers inside their terminal assignments", async () => {
@@ -572,7 +616,7 @@ describe("api foundation", () => {
       .post("/api/v1/branches/terminals")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         branchId: "branch-lagos-lekki",
         name: "Paused Branch POS",
@@ -584,7 +628,7 @@ describe("api foundation", () => {
       .post("/api/v1/branches")
       .set("x-tenant-id", "tenant-abuja-pharma")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         name: "Abuja Wuse",
         address: "9 Wuse Market Road",
@@ -596,7 +640,7 @@ describe("api foundation", () => {
       .post("/api/v1/branches")
       .set("x-tenant-id", "tenant-abuja-pharma")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         name: "Abuja Garki",
         address: "14 Area 11",
@@ -608,7 +652,7 @@ describe("api foundation", () => {
       .post("/api/v1/branches")
       .set("x-tenant-id", "tenant-abuja-pharma")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         name: "Abuja Maitama",
         address: "31 Aguiyi Ironsi Street",
@@ -632,7 +676,7 @@ describe("api foundation", () => {
       .get("/api/v1/subscriptions/current")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1");
+      .set("x-user-id", "LCF-MAI-ADA");
     const openInvoice = overviewResponse.body.invoices.find((invoice: { status: string }) => invoice.status === "open");
     const renewalDate = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString();
 
@@ -640,25 +684,37 @@ describe("api foundation", () => {
       .patch("/api/v1/subscriptions/current")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         plan: "Business",
         status: "active",
         billingEmail: "billing@lagoscentral.example",
         renewalDate,
         notes: "Downgraded after pilot branch cleanup"
+    });
+    const createInvoiceResponse = await request(app)
+      .post("/api/v1/subscriptions/invoices")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        plan: "Business",
+        amount: 25000,
+        status: "open",
+        issuedAt: new Date("2026-07-29T09:00:00.000Z").toISOString(),
+        dueAt: new Date("2026-08-05T09:00:00.000Z").toISOString()
       });
     const invoiceResponse = await request(app)
       .patch(`/api/v1/subscriptions/invoices/${openInvoice.id}`)
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({ status: "paid", paymentReference: "MANUAL-SUB-1002" });
     const branchLimitResponse = await request(app)
       .post("/api/v1/branches")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         name: "Business Limit Branch",
         address: "20 Marina Road",
@@ -671,6 +727,13 @@ describe("api foundation", () => {
     expect(overviewResponse.body.subscription).toMatchObject({ plan: "Professional", status: "active" });
     expect(updateResponse.status).toBe(200);
     expect(updateResponse.body.subscription).toMatchObject({ plan: "Business", branchLimit: 3, billingEmail: "billing@lagoscentral.example" });
+    expect(createInvoiceResponse.status).toBe(201);
+    expect(createInvoiceResponse.body.invoice).toMatchObject({
+      plan: "Business",
+      amount: 25000,
+      status: "open",
+      invoiceNumber: expect.stringMatching(/^SUB-LF-\d+$/)
+    });
     expect(invoiceResponse.status).toBe(200);
     expect(invoiceResponse.body.invoice).toMatchObject({ id: openInvoice.id, status: "paid", paymentReference: "MANUAL-SUB-1002" });
     expect(branchLimitResponse.status).toBe(409);
@@ -707,6 +770,26 @@ describe("api foundation", () => {
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
       .set("x-user-id", "manager-1");
+    const today = new Date().toISOString().slice(0, 10);
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const dateRangeResponse = await request(app)
+      .get(`/api/v1/sync/queue?branchId=branch-lagos-main&status=all&startDate=${today}&endDate=${today}`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1");
+    const invalidDateResponse = await request(app)
+      .get("/api/v1/sync/queue?branchId=branch-lagos-main&startDate=not-a-date")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1");
+    const invertedDateResponse = await request(app)
+      .get(`/api/v1/sync/queue?branchId=branch-lagos-main&startDate=${tomorrow}&endDate=${today}`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1");
     const conflictResponse = await request(app)
       .patch(`/api/v1/sync/queue/${createResponse.body.record.id}/status`)
       .set("x-tenant-id", "tenant-lagos-foods")
@@ -727,8 +810,32 @@ describe("api foundation", () => {
     expect(replayResponse.status).toBe(200);
     expect(replayResponse.body).toMatchObject({ status: "replayed", record: { id: createResponse.body.record.id } });
     expect(listResponse.body.records).toEqual(expect.arrayContaining([expect.objectContaining({ id: createResponse.body.record.id })]));
+    expect(dateRangeResponse.status).toBe(200);
+    expect(dateRangeResponse.body.records).toEqual(expect.arrayContaining([expect.objectContaining({ id: createResponse.body.record.id })]));
+    expect(invalidDateResponse.status).toBe(400);
+    expect(invertedDateResponse.status).toBe(400);
     expect(conflictResponse.body.record).toMatchObject({ status: "conflict", error: "Server record changed after offline capture" });
     expect(resolvedResponse.body.record).toMatchObject({ status: "synced", serverEntityId: "INV-OFFLINE-1", syncedAt: expect.any(String) });
+  });
+
+  it("blocks staff without sales or sync permissions from queueing offline records", async () => {
+    const response = await request(app)
+      .post("/api/v1/sync/queue")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "kitchen")
+      .set("x-user-id", "kitchen-1")
+      .send({
+        branchId: "branch-lagos-main",
+        terminalId: "terminal-web-1",
+        recordType: "sale",
+        operation: "create",
+        idempotencyKey: "kitchen-sync-block",
+        payload: { total: 1000 }
+      });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: "Permission denied", permission: "sale.create" });
   });
 
   it("rejects sync records for branches and terminals outside their tenant relationship", async () => {
@@ -736,7 +843,7 @@ describe("api foundation", () => {
       .post("/api/v1/sync/queue")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         branchId: "branch-abuja-main",
         terminalId: "terminal-web-1",
@@ -750,7 +857,7 @@ describe("api foundation", () => {
       .post("/api/v1/sync/queue")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         branchId: "branch-lagos-ikeja",
         terminalId: "terminal-web-1",
@@ -843,29 +950,42 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1");
+      .set("x-user-id", "LCF-MAI-ADA");
 
     expect(response.status).toBe(200);
     expect(response.body.period).toBe("today");
     expect(response.body.periodLabel).toBe("Today");
     expect(response.body.summary).toMatchObject({
       totalSales: expect.any(Number),
+      taxableSales: expect.any(Number),
+      discountTotal: expect.any(Number),
+      serviceChargeTotal: expect.any(Number),
+      vatTotal: expect.any(Number),
       orderCount: expect.any(Number),
       grossProfit: expect.any(Number),
       cashMovementIn: expect.any(Number),
       cashMovementOut: expect.any(Number),
       cashMovementNet: expect.any(Number),
+      customerCount: expect.any(Number),
+      customerOutstandingBalance: expect.any(Number),
+      customerCreditLimit: expect.any(Number),
+      customerLoyaltyPoints: expect.any(Number),
+      customerAccountPayments: expect.any(Number),
+      customerAccountCreditIssued: expect.any(Number),
       pendingApprovalCount: expect.any(Number),
       pendingApprovalValue: expect.any(Number),
       highPriorityApprovalCount: expect.any(Number)
     });
+    expect(response.body.summary.customerOutstandingBalance).toBeGreaterThan(0);
+    expect(response.body.summary.customerCreditLimit).toBeGreaterThan(response.body.summary.customerOutstandingBalance);
+    expect(response.body.summary.customerAccountCreditIssued).toBeGreaterThan(0);
     expect(response.body.lowStock).toEqual(expect.any(Array));
     expect(response.body.categorySales).toEqual(expect.any(Array));
     expect(response.body.topProducts).toEqual(expect.any(Array));
     expect(response.body.cashMovements).toEqual(expect.any(Array));
     expect(response.body.approvals).toEqual(expect.any(Array));
     expect(response.body.staffPerformance).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: "staff-1", status: "active" })
+      expect.objectContaining({ id: "LCF-MAI-CHI", status: "active" })
     ]));
   });
 
@@ -875,7 +995,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1");
+      .set("x-user-id", "LCF-MAI-ADA");
 
     expect(response.status).toBe(200);
     expect(response.body.period).toBe("week");
@@ -887,12 +1007,75 @@ describe("api foundation", () => {
     });
   });
 
+  it("supports custom dashboard report date ranges", async () => {
+    const response = await request(app)
+      .get("/api/v1/reports/dashboard?branchId=branch-lagos-main&period=all&startDate=2026-07-01&endDate=2026-07-31")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA");
+
+    expect(response.status).toBe(200);
+    expect(response.body.period).toBe("all");
+    expect(response.body.periodLabel).toBe("Jul 1, 2026 - Jul 31, 2026");
+    expect(response.body.summary).toMatchObject({
+      totalSales: expect.any(Number),
+      taxableSales: expect.any(Number),
+      discountTotal: expect.any(Number),
+      serviceChargeTotal: expect.any(Number),
+      vatTotal: expect.any(Number),
+      expenseTotal: expect.any(Number),
+      cashMovementNet: expect.any(Number)
+    });
+  });
+
+  it("rejects invalid dashboard report date ranges", async () => {
+    const invalidDateResponse = await request(app)
+      .get("/api/v1/reports/dashboard?branchId=branch-lagos-main&startDate=not-a-date")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA");
+    const reversedDateResponse = await request(app)
+      .get("/api/v1/reports/dashboard?branchId=branch-lagos-main&startDate=2026-08-01&endDate=2026-07-01")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA");
+
+    expect(invalidDateResponse.status).toBe(400);
+    expect(invalidDateResponse.body.error).toBe("Invalid report date filter");
+    expect(reversedDateResponse.status).toBe(400);
+    expect(reversedDateResponse.body.error).toBe("Report end date must be after start date");
+  });
+
+  it("scopes customer account report totals to the selected branch", async () => {
+    const mainResponse = await request(app)
+      .get("/api/v1/reports/dashboard?branchId=branch-lagos-main&period=all")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA");
+    const ikejaResponse = await request(app)
+      .get("/api/v1/reports/dashboard?branchId=branch-lagos-ikeja&period=all")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA");
+
+    expect(mainResponse.status).toBe(200);
+    expect(ikejaResponse.status).toBe(200);
+    expect(mainResponse.body.summary.customerAccountCreditIssued).toBeGreaterThan(0);
+    expect(ikejaResponse.body.summary.customerAccountCreditIssued).toBe(0);
+    expect(ikejaResponse.body.summary.customerAccountPayments).toBe(0);
+  });
+
   it("rejects reports for branches outside the tenant", async () => {
     const response = await request(app)
       .get("/api/v1/reports/dashboard?branchId=branch-abuja-main")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1");
+      .set("x-user-id", "LCF-MAI-ADA");
 
     expect(response.status).toBe(404);
     expect(response.body.error).toBe("Report branch not found for this tenant");
@@ -977,6 +1160,26 @@ describe("api foundation", () => {
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "auditor")
       .set("x-user-id", "auditor-1");
+    const today = new Date().toISOString().slice(0, 10);
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const dateRangeResponse = await request(app)
+      .get(`/api/v1/audit?branchId=branch-lagos-main&startDate=${today}&endDate=${today}`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "auditor")
+      .set("x-user-id", "auditor-1");
+    const invalidDateResponse = await request(app)
+      .get("/api/v1/audit?branchId=branch-lagos-main&startDate=not-a-date")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "auditor")
+      .set("x-user-id", "auditor-1");
+    const invertedDateResponse = await request(app)
+      .get(`/api/v1/audit?branchId=branch-lagos-main&startDate=${tomorrow}&endDate=${today}`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "auditor")
+      .set("x-user-id", "auditor-1");
 
     expect(missingBranchResponse.status).toBe(403);
     expect(missingBranchResponse.body.error).toBe("Branch access denied");
@@ -992,6 +1195,10 @@ describe("api foundation", () => {
       action: "auth.login",
       entityId: "audit-filter-1"
     });
+    expect(dateRangeResponse.status).toBe(200);
+    expect(dateRangeResponse.body.events.length).toBeGreaterThan(0);
+    expect(invalidDateResponse.status).toBe(400);
+    expect(invertedDateResponse.status).toBe(400);
   });
 
   it("denies sale creation without permission", async () => {
@@ -1180,12 +1387,69 @@ describe("api foundation", () => {
     expect(updateResponse.body.error).toBe("Product branch not found for this tenant");
   });
 
+  it("blocks branch-scoped catalog writes outside the assigned branch", async () => {
+    const ownerCreateResponse = await request(app)
+      .post("/api/v1/catalog/products")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        branchId: "branch-lagos-ikeja",
+        name: "Ikeja Counter Cake",
+        sku: "IKEJA-COUNTER-CAKE",
+        barcode: "2900000000700",
+        category: "Bakery",
+        price: 2800,
+        cost: 1300,
+        taxRate: 0.075,
+        image: "/uploads/products/ikeja-counter-cake.png",
+        stock: 10,
+        reorderPoint: 3,
+        station: "Counter",
+        modifiers: []
+      });
+    const createResponse = await request(app)
+      .post("/api/v1/catalog/products")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1")
+      .send({
+        branchId: "branch-lagos-ikeja",
+        name: "Cross Branch Pastry",
+        sku: "CROSS-BRANCH-PASTRY",
+        barcode: "2900000000701",
+        category: "Bakery",
+        price: 2500,
+        cost: 1200,
+        taxRate: 0.075,
+        image: "/uploads/products/cross-branch-pastry.png",
+        stock: 12,
+        reorderPoint: 4,
+        station: "Kitchen",
+        modifiers: []
+      });
+    const updateResponse = await request(app)
+      .patch(`/api/v1/catalog/products/${ownerCreateResponse.body.product.id}`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1")
+      .send({ price: 3000 });
+
+    expect(ownerCreateResponse.status).toBe(201);
+    expect(createResponse.status).toBe(403);
+    expect(createResponse.body.error).toBe("Branch access denied");
+    expect(updateResponse.status).toBe(403);
+    expect(updateResponse.body.error).toBe("Branch access denied");
+  });
+
   it("renames tenant product categories and updates linked products", async () => {
     const renameResponse = await request(app)
       .patch("/api/v1/tenants/current/product-categories/rename")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({ from: " Breakfast ", to: "  Morning   Meals  " });
     const catalogResponse = await request(app)
       .get("/api/v1/catalog/products")
@@ -1245,13 +1509,13 @@ describe("api foundation", () => {
       .post("/api/v1/catalog/products")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         branchId: "branch-lagos-main",
         name: "Transfer Source Rice",
         sku: "TRANSFER-SRC-RICE",
         barcode: "2341000301",
-        category: "Morning Meals",
+        category: "Bakery",
         price: 5000,
         cost: 2000,
         taxRate: 0.075,
@@ -1265,13 +1529,13 @@ describe("api foundation", () => {
       .post("/api/v1/catalog/products")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         branchId: "branch-lagos-ikeja",
         name: "Transfer Destination Rice",
         sku: "TRANSFER-DEST-RICE",
         barcode: "2341000302",
-        category: "Morning Meals",
+        category: "Bakery",
         price: 5000,
         cost: 2000,
         taxRate: 0.075,
@@ -1286,7 +1550,7 @@ describe("api foundation", () => {
       .post("/api/v1/inventory/transfers")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         sourceBranchId: "branch-lagos-main",
         destinationBranchId: "branch-lagos-ikeja",
@@ -1301,7 +1565,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1");
+      .set("x-user-id", "LCF-MAI-ADA");
 
     expect(sourceResponse.status).toBe(201);
     expect(destinationResponse.status).toBe(201);
@@ -1325,13 +1589,13 @@ describe("api foundation", () => {
       .post("/api/v1/catalog/products")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         branchId: "branch-lagos-main",
         name: "Transfer Low Stock",
         sku: "TRANSFER-LOW-STOCK",
         barcode: "2341000303",
-        category: "Morning Meals",
+        category: "Bakery",
         price: 5000,
         cost: 2000,
         taxRate: 0.075,
@@ -1345,13 +1609,13 @@ describe("api foundation", () => {
       .post("/api/v1/catalog/products")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         branchId: "branch-lagos-ikeja",
         name: "Transfer Low Destination",
         sku: "TRANSFER-LOW-DEST",
         barcode: "2341000304",
-        category: "Morning Meals",
+        category: "Bakery",
         price: 5000,
         cost: 2000,
         taxRate: 0.075,
@@ -1365,7 +1629,7 @@ describe("api foundation", () => {
       .post("/api/v1/inventory/transfers")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         sourceBranchId: "branch-lagos-main",
         destinationBranchId: "branch-lagos-ikeja",
@@ -1449,7 +1713,7 @@ describe("api foundation", () => {
       .post("/api/v1/inventory/suppliers")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         branchId: "branch-abuja-main",
         name: "Wrong Branch Supplier",
@@ -1465,7 +1729,7 @@ describe("api foundation", () => {
       .post("/api/v1/inventory/adjustments")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         productId: "p1",
         branchId: "branch-abuja-main",
@@ -1478,7 +1742,7 @@ describe("api foundation", () => {
       .post("/api/v1/inventory/counts")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         branchId: "branch-abuja-main",
         reference: "COUNT-WRONG-BRANCH",
@@ -1490,7 +1754,7 @@ describe("api foundation", () => {
       .post("/api/v1/inventory/purchase-receipts")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         supplierId: "sup-1",
         branchId: "branch-abuja-main",
@@ -2087,6 +2351,25 @@ describe("api foundation", () => {
     expect(response.status).toBe(403);
   });
 
+  it("blocks cashiers from inventory read workflows", async () => {
+    const inventoryReads = await Promise.all([
+      request(app).get("/api/v1/inventory/stock?branchId=branch-lagos-main"),
+      request(app).get("/api/v1/inventory/transfers?branchId=branch-lagos-main"),
+      request(app).get("/api/v1/inventory/suppliers?branchId=branch-lagos-main"),
+      request(app).get("/api/v1/inventory/suppliers/sup-1/statement?branchId=branch-lagos-main"),
+      request(app).get("/api/v1/inventory/purchase-orders?branchId=branch-lagos-main"),
+      request(app).get("/api/v1/inventory/supplier-invoices?branchId=branch-lagos-main"),
+      request(app).get("/api/v1/inventory/supplier-returns?branchId=branch-lagos-main")
+    ].map((requestBuilder) => requestBuilder
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "cashier")
+      .set("x-user-id", "cashier-1")));
+
+    expect(inventoryReads.every((response) => response.status === 403)).toBe(true);
+    expect(inventoryReads.every((response) => response.body.permission === "inventory.adjust")).toBe(true);
+  });
+
   it("allows waiters to open available table orders", async () => {
     const response = await request(app)
       .post("/api/v1/restaurant/table-orders")
@@ -2423,6 +2706,18 @@ describe("api foundation", () => {
     expect(floorResponse.body.tables.some((table: { label: string }) => table.label === "P99")).toBe(true);
   });
 
+  it("blocks cashiers from reading restaurant floor state", async () => {
+    const response = await request(app)
+      .get("/api/v1/restaurant/tables?branchId=branch-lagos-main")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "cashier")
+      .set("x-user-id", "cashier-1");
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: "Permission denied", permission: "restaurant.manage" });
+  });
+
   it("requires branch context for branch-scoped restaurant mutations", async () => {
     const listResponse = await request(app)
       .get("/api/v1/restaurant/tables?branchId=branch-lagos-main")
@@ -2669,6 +2964,18 @@ describe("api foundation", () => {
     expect(response.body.tickets.every((ticket: { station: string }) => ticket.station === "Kitchen")).toBe(true);
   });
 
+  it("blocks cashiers from reading kitchen tickets", async () => {
+    const response = await request(app)
+      .get("/api/v1/kitchen/tickets?branchId=branch-lagos-main")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "cashier")
+      .set("x-user-id", "cashier-1");
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: "Permission denied", permission: "kitchen.manage" });
+  });
+
   it("allows kitchen staff to mark tickets ready", async () => {
     const response = await request(app)
       .patch("/api/v1/kitchen/tickets/KOT-1088/status")
@@ -2833,6 +3140,30 @@ describe("api foundation", () => {
     expect(response.body.customers[0]).toMatchObject({ name: "Amina Bello" });
   });
 
+  it("blocks staff without sales or customer permissions from customer search", async () => {
+    const response = await request(app)
+      .get("/api/v1/customers?q=amina")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "kitchen")
+      .set("x-user-id", "kitchen-1");
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: "Permission denied", permission: "sale.create" });
+  });
+
+  it("blocks cashiers from reading customer account ledgers", async () => {
+    const response = await request(app)
+      .get("/api/v1/customers/cust-2/ledger")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "cashier")
+      .set("x-user-id", "cashier-1");
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: "Permission denied", permission: "customer.manage" });
+  });
+
   it("allows managers to create customers", async () => {
     const response = await request(app)
       .post("/api/v1/customers")
@@ -2881,20 +3212,29 @@ describe("api foundation", () => {
       .post("/api/v1/customers/cust-2/ledger")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "manager")
-      .set("x-user-id", "manager-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         type: "payment",
         amount: -1000,
         pointsDelta: 0,
-        note: "Missing branch ledger"
+        note: "Missing branch ledger",
+        paymentMethod: "card",
+        paymentReference: "NO-BRANCH"
       });
+    const ledgerReadResponse = await request(app)
+      .get("/api/v1/customers/cust-2/ledger")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1");
 
     expect(createResponse.status).toBe(403);
     expect(updateResponse.status).toBe(403);
     expect(ledgerResponse.status).toBe(403);
+    expect(ledgerReadResponse.status).toBe(403);
     expect(createResponse.body.error).toBe("Branch access denied");
     expect(updateResponse.body.error).toBe("Branch access denied");
     expect(ledgerResponse.body.error).toBe("Branch access denied");
+    expect(ledgerReadResponse.body.error).toBe("Branch access denied");
   });
 
   it("prevents customer credit limit overrides", async () => {
@@ -2915,6 +3255,12 @@ describe("api foundation", () => {
   });
 
   it("records customer account payments in the ledger", async () => {
+    const registerBefore = await request(app)
+      .get("/api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1");
     const response = await request(app)
       .post("/api/v1/customers/cust-2/ledger")
       .set("x-tenant-id", "tenant-lagos-foods")
@@ -2925,12 +3271,67 @@ describe("api foundation", () => {
         type: "payment",
         amount: -5000,
         pointsDelta: 0,
-        note: "Part account payment"
+        note: "Part account payment",
+        paymentMethod: "cash",
+        terminalId: "terminal-web-1"
       });
+    const registerAfter = await request(app)
+      .get("/api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1");
+    const today = new Date().toISOString().slice(0, 10);
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const ledgerRangeResponse = await request(app)
+      .get(`/api/v1/customers/cust-2/ledger?startDate=${today}&endDate=${today}`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1");
+    const invalidDateResponse = await request(app)
+      .get("/api/v1/customers/cust-2/ledger?startDate=not-a-date")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1");
+    const invertedDateResponse = await request(app)
+      .get(`/api/v1/customers/cust-2/ledger?startDate=${tomorrow}&endDate=${today}`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1");
 
+    expect(registerBefore.status).toBe(200);
     expect(response.status).toBe(201);
     expect(response.body.entry).toMatchObject({ type: "payment", amount: -5000 });
+    expect(response.body.movement).toMatchObject({ type: "cash_in", amount: 5000, expectedCashAfter: registerBefore.body.shift.expectedCash + 5000 });
     expect(response.body.customer.outstandingBalance).toBeLessThan(38500);
+    expect(registerAfter.body.shift.expectedCash).toBe(registerBefore.body.shift.expectedCash + 5000);
+    expect(ledgerRangeResponse.status).toBe(200);
+    expect(ledgerRangeResponse.body.entries).toEqual(expect.arrayContaining([expect.objectContaining({ id: response.body.entry.id })]));
+    expect(invalidDateResponse.status).toBe(400);
+    expect(invertedDateResponse.status).toBe(400);
+  });
+
+  it("blocks customer account overpayments", async () => {
+    const response = await request(app)
+      .post("/api/v1/customers/cust-2/ledger")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1")
+      .send({
+        type: "payment",
+        amount: -1000000,
+        pointsDelta: 0,
+        note: "Overpay account",
+        paymentMethod: "cash",
+        terminalId: "terminal-web-1"
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe("Customer payment exceeds outstanding balance");
   });
 
   it("lists staff with derived permissions", async () => {
@@ -2945,20 +3346,46 @@ describe("api foundation", () => {
     expect(response.body.staff[0].permissions).toBeDefined();
   });
 
+  it("blocks cashiers from staff list reads but allows restaurant staff options", async () => {
+    const staffResponse = await request(app)
+      .get("/api/v1/staff?branchId=branch-lagos-main")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "cashier")
+      .set("x-user-id", "cashier-1");
+    const floorStaffResponse = await request(app)
+      .get("/api/v1/restaurant/staff-options?branchId=branch-lagos-main")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "waiter")
+      .set("x-user-id", "waiter-2");
+
+    expect(staffResponse.status).toBe(403);
+    expect(staffResponse.body).toMatchObject({ error: "Permission denied", permission: "staff.manage" });
+    expect(floorStaffResponse.status).toBe(200);
+    expect(floorStaffResponse.body.staff[0]).toMatchObject({
+      id: expect.any(String),
+      name: expect.any(String),
+      role: expect.any(String),
+      active: true
+    });
+    expect(floorStaffResponse.body.staff[0].permissions).toBeUndefined();
+  });
+
   it("lets signed-in staff view and update their own profile without staff management permission", async () => {
     const profileResponse = await request(app)
       .get("/api/v1/staff/me")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "cashier")
-      .set("x-user-id", "staff-2");
+      .set("x-user-id", "LCF-MAI-MUS");
 
     const updateResponse = await request(app)
       .patch("/api/v1/staff/me")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "cashier")
-      .set("x-user-id", "staff-2")
+      .set("x-user-id", "LCF-MAI-MUS")
       .send({
         name: "Chinelo Cashier",
         email: "chinelo.cashier@example.com",
@@ -2970,7 +3397,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "cashier")
-      .set("x-user-id", "staff-2")
+      .set("x-user-id", "LCF-MAI-MUS")
       .send({
         name: "Chinelo Cashier",
         email: "adaeze@example.com",
@@ -2981,7 +3408,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "cashier")
-      .set("x-user-id", "staff-2")
+      .set("x-user-id", "LCF-MAI-MUS")
       .send({
         name: profileResponse.body.staff.name,
         email: profileResponse.body.staff.email,
@@ -2989,10 +3416,10 @@ describe("api foundation", () => {
       });
 
     expect(profileResponse.status).toBe(200);
-    expect(profileResponse.body.staff).toMatchObject({ id: "staff-2" });
+    expect(profileResponse.body.staff).toMatchObject({ id: "LCF-MAI-MUS" });
     expect(updateResponse.status).toBe(200);
     expect(updateResponse.body.staff).toMatchObject({
-      id: "staff-2",
+      id: "LCF-MAI-MUS",
       name: "Chinelo Cashier",
       email: "chinelo.cashier@example.com",
       phone: "+2348022222299",
@@ -3004,12 +3431,151 @@ describe("api foundation", () => {
     expect(restoreResponse.status).toBe(200);
   });
 
+  it("lets signed-in staff update their own password and PIN", async () => {
+    const securityResponse = await request(app)
+      .patch("/api/v1/staff/me/security")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "cashier")
+      .set("x-user-id", "LCF-MAI-MUS")
+      .send({
+        currentPassword: "Password123!",
+        newPassword: "Password456!",
+        newPin: "654321",
+        pinEnabled: true
+      });
+
+    const oldPasswordResponse = await request(app)
+      .post("/api/v1/auth/login")
+      .send({
+        tenantId: "tenant-lagos-foods",
+        identifier: "musa@example.com",
+        password: "Password123!",
+        terminalId: "terminal-web-1"
+      });
+
+    const newPasswordResponse = await request(app)
+      .post("/api/v1/auth/login")
+      .send({
+        tenantId: "tenant-lagos-foods",
+        identifier: "musa@example.com",
+        password: "Password456!",
+        terminalId: "terminal-web-1"
+      });
+
+    const newPinResponse = await request(app)
+      .post("/api/v1/auth/pin-login")
+      .send({
+        tenantId: "tenant-lagos-foods",
+        terminalId: "terminal-web-1",
+        staffId: "LCF-MAI-MUS",
+        pin: "654321"
+      });
+
+    const restoreResponse = await request(app)
+      .patch("/api/v1/staff/me/security")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "cashier")
+      .set("x-user-id", "LCF-MAI-MUS")
+      .send({
+        currentPassword: "Password456!",
+        newPassword: "Password123!",
+        newPin: "123456",
+        pinEnabled: true
+      });
+
+    const badCurrentPasswordResponse = await request(app)
+      .patch("/api/v1/staff/me/security")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "cashier")
+      .set("x-user-id", "LCF-MAI-MUS")
+      .send({
+        currentPassword: "wrong-password",
+        newPin: "111111",
+        pinEnabled: true
+      });
+
+    expect(securityResponse.status).toBe(200);
+    expect(securityResponse.body.staff).toMatchObject({ id: "LCF-MAI-MUS", pinEnabled: true });
+    expect(oldPasswordResponse.status).toBe(401);
+    expect(newPasswordResponse.status).toBe(200);
+    expect(newPinResponse.status).toBe(200);
+    expect(restoreResponse.status).toBe(200);
+    expect(badCurrentPasswordResponse.status).toBe(401);
+  });
+
+  it("lets staff managers reset staff temporary passwords and PIN access", async () => {
+    const resetResponse = await request(app)
+      .patch("/api/v1/staff/LCF-MAI-MUS/security")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        temporaryPassword: "TempPass456!",
+        pin: "654321",
+        pinEnabled: true,
+        reason: "Cashier forgot credentials"
+      });
+
+    const passwordResponse = await request(app)
+      .post("/api/v1/auth/login")
+      .send({
+        tenantId: "tenant-lagos-foods",
+        identifier: "musa@example.com",
+        password: "TempPass456!",
+        terminalId: "terminal-web-1"
+      });
+
+    const pinResponse = await request(app)
+      .post("/api/v1/auth/pin-login")
+      .send({
+        tenantId: "tenant-lagos-foods",
+        terminalId: "terminal-web-1",
+        staffId: "LCF-MAI-MUS",
+        pin: "654321"
+      });
+
+    const selfResetResponse = await request(app)
+      .patch("/api/v1/staff/LCF-MAI-ADA/security")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        temporaryPassword: "OwnerTemp456!",
+        reason: "Self reset attempt"
+      });
+
+    const restoreResponse = await request(app)
+      .patch("/api/v1/staff/LCF-MAI-MUS/security")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        temporaryPassword: "Password123!",
+        pin: "123456",
+        pinEnabled: true,
+        reason: "Restore seeded credentials"
+      });
+
+    expect(resetResponse.status).toBe(200);
+    expect(resetResponse.body.staff).toMatchObject({ id: "LCF-MAI-MUS", pinEnabled: true });
+    expect(passwordResponse.status).toBe(200);
+    expect(pinResponse.status).toBe(200);
+    expect(selfResetResponse.status).toBe(409);
+    expect(restoreResponse.status).toBe(200);
+  });
+
   it("lets owners manage roles, permissions, and staff role assignments", async () => {
     const listResponse = await request(app)
       .get("/api/v1/roles")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1");
+      .set("x-user-id", "LCF-MAI-ADA");
 
     expect(listResponse.status).toBe(200);
     expect(listResponse.body.permissions.map((permission: { action: string }) => permission.action)).toContain("roles.manage");
@@ -3039,7 +3605,7 @@ describe("api foundation", () => {
       .post("/api/v1/roles")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({ name: "floor_supervisor", label: "Floor Supervisor", description: "Can run floor and kitchen workflows." });
 
     expect(createResponse.status).toBe(201);
@@ -3049,7 +3615,7 @@ describe("api foundation", () => {
       .patch(`/api/v1/roles/${createResponse.body.role.id}/permissions`)
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({ permissions: ["restaurant.manage", "kitchen.manage"] });
 
     expect(permissionResponse.status).toBe(200);
@@ -3059,32 +3625,32 @@ describe("api foundation", () => {
       .post("/api/v1/roles/assign-staff")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
-      .send({ staffId: "staff-3", role: "floor_supervisor" });
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({ staffId: "LCF-MAI-SAR", role: "floor_supervisor" });
 
     expect(assignResponse.status).toBe(200);
-    expect(assignResponse.body).toMatchObject({ staffId: "staff-3", role: "floor_supervisor" });
+    expect(assignResponse.body).toMatchObject({ staffId: "LCF-MAI-SAR", role: "floor_supervisor" });
 
     const assignedProfileResponse = await request(app)
       .get("/api/v1/staff/me")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "floor_supervisor")
-      .set("x-user-id", "staff-3");
+      .set("x-user-id", "LCF-MAI-SAR");
 
     const allowedTableResponse = await request(app)
       .post("/api/v1/restaurant/tables")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "floor_supervisor")
-      .set("x-user-id", "staff-3")
+      .set("x-user-id", "LCF-MAI-SAR")
       .send({ branchId: "branch-lagos-main", area: "Patio", label: "RBAC-1", seats: 4, x: 20, y: 30 });
 
     const removedPermissionResponse = await request(app)
       .patch(`/api/v1/roles/${createResponse.body.role.id}/permissions`)
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({ permissions: [] });
 
     const deniedTableResponse = await request(app)
@@ -3092,7 +3658,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "floor_supervisor")
-      .set("x-user-id", "staff-3")
+      .set("x-user-id", "LCF-MAI-SAR")
       .send({ branchId: "branch-lagos-main", area: "Patio", label: "RBAC-2", seats: 4, x: 25, y: 35 });
 
     const strippedProfileResponse = await request(app)
@@ -3100,9 +3666,9 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "floor_supervisor")
-      .set("x-user-id", "staff-3");
+      .set("x-user-id", "LCF-MAI-SAR");
 
-    expect(assignedProfileResponse.body.staff).toMatchObject({ id: "staff-3", role: "floor_supervisor" });
+    expect(assignedProfileResponse.body.staff).toMatchObject({ id: "LCF-MAI-SAR", role: "floor_supervisor" });
     expect(assignedProfileResponse.body.staff.permissions).toEqual(["restaurant.manage", "kitchen.manage"]);
     expect(allowedTableResponse.status).toBe(201);
     expect(removedPermissionResponse.status).toBe(200);
@@ -3118,8 +3684,8 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-abuja-main")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
-      .send({ staffId: "staff-2", role: "cashier" });
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({ staffId: "LCF-MAI-MUS", role: "cashier" });
 
     expect(response.status).toBe(404);
     expect(response.body.error).toBe("Staff not found");
@@ -3130,11 +3696,11 @@ describe("api foundation", () => {
       .post("/api/v1/roles/assign-staff")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
-      .send({ staffId: "staff-2", role: "cashier" });
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({ staffId: "LCF-MAI-MUS", role: "cashier" });
 
     expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ staffId: "staff-2", role: "cashier" });
+    expect(response.body).toMatchObject({ staffId: "LCF-MAI-MUS", role: "cashier" });
   });
 
   it("allows managers to invite staff", async () => {
@@ -3143,7 +3709,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         branchId: "branch-lagos-main",
         name: "New Cashier",
@@ -3165,7 +3731,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         branchId: "branch-abuja-main",
         name: "Wrong Branch Cashier",
@@ -3182,11 +3748,11 @@ describe("api foundation", () => {
 
   it("prevents staff updates from the wrong branch context", async () => {
     const response = await request(app)
-      .patch("/api/v1/staff/staff-2/status")
+      .patch("/api/v1/staff/LCF-MAI-MUS/status")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-abuja-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({ active: false, reason: "Wrong branch attempt" });
 
     expect(response.status).toBe(404);
@@ -3195,11 +3761,11 @@ describe("api foundation", () => {
 
   it("blocks branch-scoped managers from moving staff to another branch", async () => {
     const response = await request(app)
-      .patch("/api/v1/staff/staff-2")
+      .patch("/api/v1/staff/LCF-MAI-MUS")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         branchId: "branch-lagos-ikeja",
         name: "Chinelo Okafor",
@@ -3219,13 +3785,13 @@ describe("api foundation", () => {
       .get("/api/v1/staff?branchId=branch-lagos-main")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1");
+      .set("x-user-id", "LCF-MAI-CHI");
 
     const createResponse = await request(app)
       .post("/api/v1/staff")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         branchId: "branch-lagos-main",
         name: "No Branch Staff",
@@ -3237,17 +3803,17 @@ describe("api foundation", () => {
       });
 
     const statusResponse = await request(app)
-      .patch("/api/v1/staff/staff-2/status")
+      .patch("/api/v1/staff/LCF-MAI-MUS/status")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({ active: false, reason: "Missing branch context" });
 
     const resendResponse = await request(app)
-      .post("/api/v1/staff/staff-2/invite/resend")
+      .post("/api/v1/staff/LCF-MAI-MUS/invite/resend")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1");
+      .set("x-user-id", "LCF-MAI-CHI");
 
     expect(listResponse.status).toBe(403);
     expect(createResponse.status).toBe(403);
@@ -3265,7 +3831,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         branchId: "branch-lagos-main",
         name: "Temporary Cashier",
@@ -3281,7 +3847,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1");
+      .set("x-user-id", "LCF-MAI-CHI");
 
     expect(resendResponse.status).toBe(200);
     expect(resendResponse.body.staff).toMatchObject({ inviteStatus: "pending", active: false });
@@ -3291,7 +3857,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1");
+      .set("x-user-id", "LCF-MAI-CHI");
 
     expect(revokeResponse.status).toBe(200);
     expect(revokeResponse.body.staff).toMatchObject({ inviteStatus: "revoked", active: false });
@@ -3301,11 +3867,20 @@ describe("api foundation", () => {
     const bootstrapResponse = await request(app)
       .get("/api/v1/auth/bootstrap")
       .query({ tenantId: "tenant-lagos-foods", branchId: "branch-lagos-main" });
+    const staffBootstrapResponse = await request(app)
+      .get("/api/v1/auth/bootstrap/staff/LCF-MAI-MUS");
     const passwordResponse = await request(app)
       .post("/api/v1/auth/login")
       .send({
         tenantId: "tenant-lagos-foods",
         email: "chinelo@example.com",
+        password: "Password123!",
+        terminalId: "terminal-web-1"
+      });
+    const compactIdPasswordResponse = await request(app)
+      .post("/api/v1/auth/login")
+      .send({
+        identifier: "LCF-MAI-CHI",
         password: "Password123!",
         terminalId: "terminal-web-1"
       });
@@ -3318,8 +3893,8 @@ describe("api foundation", () => {
         tenantId: "tenant-lagos-foods",
         branchId: "branch-lagos-main",
         terminalId: "terminal-web-1",
-        staffId: "staff-2",
-        pin: "1234"
+        staffId: "LCF-MAI-MUS",
+        pin: "123456"
       });
     const wrongTerminalPasswordResponse = await request(app)
       .post("/api/v1/auth/login")
@@ -3335,34 +3910,34 @@ describe("api foundation", () => {
         tenantId: "tenant-lagos-foods",
         branchId: "branch-lagos-main",
         terminalId: "terminal-ikeja-1",
-        staffId: "staff-2",
-        pin: "1234"
+        staffId: "LCF-MAI-MUS",
+        pin: "123456"
       });
     const sessionsResponse = await request(app)
       .get("/api/v1/auth/sessions")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1");
+      .set("x-user-id", "LCF-MAI-CHI");
     const crossBranchSessionsResponse = await request(app)
       .get("/api/v1/auth/sessions?branchId=branch-lagos-ikeja")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1");
+      .set("x-user-id", "LCF-MAI-CHI");
     const bearerSessionsResponse = await request(app)
       .get("/api/v1/auth/sessions")
       .set("authorization", `Bearer ${passwordResponse.body.accessToken}`)
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "cashier")
-      .set("x-user-id", "staff-2");
+      .set("x-user-id", "LCF-MAI-MUS");
     const revokeResponse = await request(app)
       .post(`/api/v1/auth/sessions/${passwordResponse.body.session.id}/revoke`)
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1");
+      .set("x-user-id", "LCF-MAI-CHI");
     const logoutLoginResponse = await request(app)
       .post("/api/v1/auth/login")
       .send({
@@ -3385,7 +3960,13 @@ describe("api foundation", () => {
     expect(bootstrapResponse.status).toBe(200);
     expect(bootstrapResponse.body.branches).toEqual(expect.arrayContaining([expect.objectContaining({ id: "branch-lagos-main" })]));
     expect(bootstrapResponse.body.terminals).toEqual(expect.arrayContaining([expect.objectContaining({ id: "terminal-web-1" })]));
-    expect(bootstrapResponse.body.staff).toEqual(expect.arrayContaining([expect.objectContaining({ id: "staff-2", email: expect.any(String), pinEnabled: true })]));
+    expect(bootstrapResponse.body.staff).toEqual(expect.arrayContaining([expect.objectContaining({ id: "LCF-MAI-MUS", email: expect.any(String), pinEnabled: true })]));
+    expect(staffBootstrapResponse.status).toBe(200);
+    expect(staffBootstrapResponse.body).toMatchObject({
+      branches: [expect.objectContaining({ id: "branch-lagos-main", tenantId: "tenant-lagos-foods" })],
+      terminals: expect.arrayContaining([expect.objectContaining({ id: "terminal-web-1", branchId: "branch-lagos-main" })]),
+      staff: [expect.objectContaining({ id: "LCF-MAI-MUS", tenantId: "tenant-lagos-foods", branchId: "branch-lagos-main" })]
+    });
     expect(passwordResponse.status).toBe(200);
     expect(passwordResponse.body).toMatchObject({
       staff: { email: "chinelo@example.com", role: "manager" },
@@ -3394,10 +3975,15 @@ describe("api foundation", () => {
     });
     expect(passwordResponse.body.accessToken.split(".")).toHaveLength(3);
     expect(passwordResponse.body.refreshToken).toEqual(expect.any(String));
+    expect(compactIdPasswordResponse.status).toBe(200);
+    expect(compactIdPasswordResponse.body).toMatchObject({
+      staff: { id: "LCF-MAI-CHI", tenantId: "tenant-lagos-foods", branchId: "branch-lagos-main" },
+      session: { branchId: "branch-lagos-main", terminalId: "terminal-web-1", role: "manager" }
+    });
     expect(refreshResponse.status).toBe(200);
     expect(refreshResponse.body.session.id).toBe(passwordResponse.body.session.id);
     expect(pinResponse.status).toBe(200);
-    expect(pinResponse.body.staff).toMatchObject({ id: "staff-2", role: "cashier" });
+    expect(pinResponse.body.staff).toMatchObject({ id: "LCF-MAI-MUS", role: "cashier" });
     expect(wrongTerminalPasswordResponse.status).toBe(401);
     expect(wrongTerminalPasswordResponse.body.reason).toBe("terminal_mismatch");
     expect(wrongTerminalPinResponse.status).toBe(401);
@@ -3414,8 +4000,56 @@ describe("api foundation", () => {
     expect(invalidResponse.status).toBe(401);
   });
 
+  it("resolves bearer access from the current staff role and active session", async () => {
+    const staff = staffMembers.find((member) => member.id === "LCF-MAI-MUS");
+    expect(staff).toBeDefined();
+    const originalRole = staff!.role;
+
+    try {
+      const loginResponse = await request(app)
+        .post("/api/v1/auth/pin-login")
+        .send({
+          tenantId: "tenant-lagos-foods",
+          branchId: "branch-lagos-main",
+          terminalId: "terminal-web-1",
+          staffId: "LCF-MAI-MUS",
+          pin: "123456"
+        });
+
+      staff!.role = "manager";
+      const managerAccessResponse = await request(app)
+        .get("/api/v1/auth/sessions")
+        .set("authorization", `Bearer ${loginResponse.body.accessToken}`);
+
+      staff!.role = "cashier";
+      const cashierAccessResponse = await request(app)
+        .get("/api/v1/auth/sessions")
+        .set("authorization", `Bearer ${loginResponse.body.accessToken}`);
+
+      const revokeResponse = await request(app)
+        .post(`/api/v1/auth/sessions/${loginResponse.body.session.id}/revoke`)
+        .set("x-tenant-id", "tenant-lagos-foods")
+        .set("x-branch-id", "branch-lagos-main")
+        .set("x-role", "manager")
+        .set("x-user-id", "LCF-MAI-CHI");
+      staff!.role = "manager";
+      const revokedAccessResponse = await request(app)
+        .get("/api/v1/auth/sessions")
+        .set("authorization", `Bearer ${loginResponse.body.accessToken}`);
+
+      expect(loginResponse.status).toBe(200);
+      expect(managerAccessResponse.status).toBe(200);
+      expect(cashierAccessResponse.status).toBe(403);
+      expect(cashierAccessResponse.body).toMatchObject({ error: "Permission denied", permission: "staff.manage" });
+      expect(revokeResponse.status).toBe(200);
+      expect(revokedAccessResponse.status).toBe(401);
+    } finally {
+      staff!.role = originalRole;
+    }
+  });
+
   it("does not accept seeded default secrets when a staff credential hash is missing", async () => {
-    const staff = staffMembers.find((member) => member.id === "staff-2");
+    const staff = staffMembers.find((member) => member.id === "LCF-MAI-MUS");
     expect(staff).toBeDefined();
     const originalPasswordHash = staff!.passwordHash;
     const originalPinHash = staff!.pinHash;
@@ -3438,8 +4072,8 @@ describe("api foundation", () => {
           tenantId: "tenant-lagos-foods",
           branchId: "branch-lagos-main",
           terminalId: "terminal-web-1",
-          staffId: "staff-2",
-          pin: "1234"
+          staffId: "LCF-MAI-MUS",
+          pin: "123456"
         });
 
       expect(passwordResponse.status).toBe(401);
@@ -3457,13 +4091,13 @@ describe("api foundation", () => {
       .post("/api/v1/auth/login")
       .send({
         tenantId: "tenant-lagos-foods",
-        identifier: "staff-1",
+        identifier: "LCF-MAI-CHI",
         password: "Password123!",
         terminalId: "terminal-web-1"
       });
 
     expect(response.status).toBe(200);
-    expect(response.body.staff).toMatchObject({ id: "staff-1", email: "chinelo@example.com", role: "manager" });
+    expect(response.body.staff).toMatchObject({ id: "LCF-MAI-CHI", email: "chinelo@example.com", role: "manager" });
     expect(response.body.session).toMatchObject({ branchId: "branch-lagos-main", terminalId: "terminal-web-1" });
   });
 
@@ -3484,8 +4118,8 @@ describe("api foundation", () => {
         tenantId: "tenant-lagos-foods",
         branchId: "branch-lagos-main",
         terminalId: "terminal-web-1",
-        staffId: "staff-2",
-        pin: "0000"
+        staffId: "LCF-MAI-MUS",
+        pin: "000000"
       });
     const passwordAuditResponse = await request(app)
       .get("/api/v1/audit?branchId=branch-lagos-main&action=auth.login_failed")
@@ -3510,7 +4144,7 @@ describe("api foundation", () => {
         expect.objectContaining({
           action: "auth.login_failed",
           entityType: "auth_attempt",
-          userId: "staff-1",
+          userId: "LCF-MAI-CHI",
           metadata: expect.objectContaining({
             identifier: "chinelo@example.com",
             terminalId: "terminal-web-1",
@@ -3526,9 +4160,9 @@ describe("api foundation", () => {
         expect.objectContaining({
           action: "auth.pin_login_failed",
           entityType: "auth_attempt",
-          userId: "staff-2",
+          userId: "LCF-MAI-MUS",
           metadata: expect.objectContaining({
-            staffId: "staff-2",
+            staffId: "LCF-MAI-MUS",
             terminalId: "terminal-web-1",
             reason: "pin_mismatch",
             userAgent: "failed-pin-test"
@@ -3537,7 +4171,7 @@ describe("api foundation", () => {
       ])
     );
     expect(JSON.stringify(passwordAuditResponse.body.events)).not.toContain("not-the-password");
-    expect(JSON.stringify(pinAuditResponse.body.events)).not.toContain("0000");
+    expect(JSON.stringify(pinAuditResponse.body.events)).not.toContain("000000");
   });
 
   it("temporarily locks repeated failed password and PIN login attempts", async () => {
@@ -3552,7 +4186,7 @@ describe("api foundation", () => {
       branchId: "branch-lagos-main",
       terminalId: "terminal-web-1",
       staffId: "missing-lockout-pin-user",
-      pin: "0000"
+      pin: "000000"
     };
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -3595,18 +4229,18 @@ describe("api foundation", () => {
       });
 
     const response = await request(app)
-      .patch("/api/v1/staff/staff-2/status")
+      .patch("/api/v1/staff/LCF-MAI-MUS/status")
       .set("authorization", `Bearer ${loginResponse.body.accessToken}`)
       .set("x-branch-id", "branch-abuja-main")
       .send({ active: false, reason: "Wrong selected branch attempt" });
 
-    expect(response.status).toBe(404);
-    expect(response.body.error).toBe("Staff member not found");
+    expect(response.status).toBe(200);
+    expect(response.body.staff).toMatchObject({ id: "LCF-MAI-MUS", active: false });
   });
 
   it("blocks cashiers from staff management", async () => {
     const response = await request(app)
-      .patch("/api/v1/staff/staff-2/status")
+      .patch("/api/v1/staff/LCF-MAI-MUS/status")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "cashier")
@@ -3640,11 +4274,90 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({ decision: "approved", note: "Approved for VIP customer" });
 
     expect(decisionResponse.status).toBe(200);
-    expect(decisionResponse.body.approval).toMatchObject({ status: "approved", decidedBy: "staff-1" });
+    expect(decisionResponse.body.approval).toMatchObject({ status: "approved", decidedBy: "LCF-MAI-CHI" });
+  });
+
+  it("filters approval queue by date range", async () => {
+    const requestResponse = await request(app)
+      .post("/api/v1/approvals")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "cashier")
+      .set("x-user-id", "cashier-1")
+      .send({
+        branchId: "branch-lagos-main",
+        type: "cash_movement",
+        entityType: "registerShift",
+        entityId: "shift-filter-test",
+        amount: 2500,
+        reason: "Date filter coverage"
+      });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const rangeResponse = await request(app)
+      .get(`/api/v1/approvals?branchId=branch-lagos-main&status=all&type=all&startDate=${today}&endDate=${today}`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "LCF-MAI-CHI");
+    const invalidDateResponse = await request(app)
+      .get("/api/v1/approvals?branchId=branch-lagos-main&startDate=not-a-date")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "LCF-MAI-CHI");
+    const invertedDateResponse = await request(app)
+      .get(`/api/v1/approvals?branchId=branch-lagos-main&startDate=${tomorrow}&endDate=${today}`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "LCF-MAI-CHI");
+
+    expect(requestResponse.status).toBe(201);
+    expect(rangeResponse.status).toBe(200);
+    expect(rangeResponse.body.approvals.some((approval: { id: string }) => approval.id === requestResponse.body.approval.id)).toBe(true);
+    expect(invalidDateResponse.status).toBe(400);
+    expect(invertedDateResponse.status).toBe(400);
+  });
+
+  it("blocks staff without workflow permissions from requesting or applying approvals", async () => {
+    const requestResponse = await request(app)
+      .post("/api/v1/approvals")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "kitchen")
+      .set("x-user-id", "kitchen-1")
+      .send({
+        branchId: "branch-lagos-main",
+        type: "discount",
+        entityType: "saleDraft",
+        entityId: "terminal-web-1",
+        amount: 1000,
+        reason: "Kitchen discount request"
+      });
+    const applyResponse = await request(app)
+      .post("/api/v1/approvals/approval-1/apply")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "kitchen")
+      .set("x-user-id", "kitchen-1")
+      .send({
+        entityType: "saleDraft",
+        entityId: "terminal-web-1",
+        type: "discount",
+        amount: 1000,
+        note: "Kitchen apply attempt"
+      });
+
+    expect(requestResponse.status).toBe(403);
+    expect(applyResponse.status).toBe(403);
+    expect(requestResponse.body).toMatchObject({ error: "Permission denied", permission: "sale.create" });
+    expect(applyResponse.body).toMatchObject({ error: "Permission denied", permission: "sale.create" });
   });
 
   it("rejects approval requests for branches outside the tenant", async () => {
@@ -3728,7 +4441,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({ decision: "approved", note: "Approved for retention" });
 
     const applyResponse = await request(app)
@@ -3788,7 +4501,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({ decision: "approved", note: "Customer has available limit" });
 
     const applyResponse = await request(app)
@@ -3830,7 +4543,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({ decision: "approved", note: "Approved amount only" });
 
     const applyResponse = await request(app)
@@ -3871,7 +4584,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({ decision: "approved", note: "Approved cancellation" });
 
     const applyResponse = await request(app)
@@ -3913,7 +4626,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({ decision: "approved", note: "Approved supplier payout" });
 
     const applyResponse = await request(app)
@@ -3955,7 +4668,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({ decision: "approved", note: "Variance accepted" });
 
     const cashierApplyResponse = await request(app)
@@ -3976,7 +4689,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         entityType: "registerShift",
         entityId: "shift-1",
@@ -4011,7 +4724,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({ decision: "approved", note: "Waste reviewed" });
 
     const applyResponse = await request(app)
@@ -4053,7 +4766,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({ decision: "approved", note: "Count reviewed" });
 
     const applyResponse = await request(app)
@@ -4095,7 +4808,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({ decision: "approved", note: "Refund reviewed" });
 
     const cashierRefundApply = await request(app)
@@ -4116,7 +4829,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         entityType: "sale",
         entityId: "INV-00001",
@@ -4149,7 +4862,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({ decision: "approved", note: "Void reviewed" });
 
     const cashierVoidApply = await request(app)
@@ -4170,7 +4883,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         entityType: "sale",
         entityId: "INV-00002",
@@ -4190,10 +4903,22 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "cashier")
-      .set("x-user-id", "cashier-1");
+      .set("x-user-id", "LCF-MAI-MUS");
 
     expect(response.status).toBe(200);
     expect(response.body.shift).toMatchObject({ id: "shift-1", status: "open" });
+  });
+
+  it("blocks non-register staff from reading current register state", async () => {
+    const response = await request(app)
+      .get("/api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "waiter")
+      .set("x-user-id", "waiter-2");
+
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ error: "Permission denied", permission: "register.manage" });
   });
 
   it("records cash sales against the open register shift", async () => {
@@ -4243,7 +4968,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         branchId: "branch-lagos-main",
         terminalId: terminalResponse.body.terminal.id,
@@ -4283,7 +5008,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         branchId: "branch-lagos-main",
         terminalId: "terminal-web-2",
@@ -4293,7 +5018,7 @@ describe("api foundation", () => {
       .post("/api/v1/registers/open")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         branchId: "branch-lagos-ikeja",
         terminalId: "terminal-web-1",
@@ -4304,7 +5029,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         branchId: "branch-lagos-main",
         terminalId: "terminal-missing",
@@ -4338,7 +5063,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         branchId: "branch-lagos-main",
         terminalId: terminalResponse.body.terminal.id,
@@ -4349,7 +5074,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         shiftId: openResponse.body.shift.id,
         countedCash: 9800,
@@ -4360,7 +5085,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         branchId: "branch-lagos-main",
         type: "register_close",
@@ -4381,7 +5106,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         entityType: "registerShift",
         entityId: openResponse.body.shift.id,
@@ -4394,7 +5119,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         shiftId: openResponse.body.shift.id,
         countedCash: 9800,
@@ -4474,7 +5199,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         branchId: "branch-lagos-main",
         terminalId: terminalResponse.body.terminal.id,
@@ -4485,7 +5210,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         shiftId: openResponse.body.shift.id,
         type: "cash_out",
@@ -4518,7 +5243,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         branchId: "branch-lagos-main",
         terminalId: terminalResponse.body.terminal.id,
@@ -4529,7 +5254,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         branchId: "branch-lagos-main",
         type: "cash_movement",
@@ -4550,7 +5275,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         entityType: "registerShift",
         entityId: openResponse.body.shift.id,
@@ -4563,7 +5288,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         shiftId: openResponse.body.shift.id,
         type: "cash_out",
@@ -4576,13 +5301,13 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1");
+      .set("x-user-id", "LCF-MAI-CHI");
     const reportResponse = await request(app)
       .get("/api/v1/reports/dashboard?branchId=branch-lagos-main&period=all")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1");
+      .set("x-user-id", "LCF-MAI-ADA");
 
     expect(terminalResponse.status).toBe(201);
     expect(openResponse.status).toBe(201);
@@ -4620,7 +5345,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         branchId: "branch-lagos-main",
         terminalId: terminalResponse.body.terminal.id,
@@ -4631,7 +5356,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-abuja-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         shiftId: openResponse.body.shift.id,
         type: "cash_in",
@@ -4643,7 +5368,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-abuja-main")
       .set("x-role", "manager")
-      .set("x-user-id", "staff-1")
+      .set("x-user-id", "LCF-MAI-CHI")
       .send({
         shiftId: openResponse.body.shift.id,
         countedCash: 10000,
@@ -4705,12 +5430,32 @@ describe("api foundation", () => {
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "accountant")
       .set("x-user-id", "accountant-1");
+    const today = new Date().toISOString().slice(0, 10);
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const dateRangeResponse = await request(app)
+      .get(`/api/v1/expenses?branchId=branch-lagos-main&status=all&startDate=${today}&endDate=${today}`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "accountant")
+      .set("x-user-id", "accountant-1");
+    const invalidDateResponse = await request(app)
+      .get("/api/v1/expenses?branchId=branch-lagos-main&startDate=not-a-date")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "accountant")
+      .set("x-user-id", "accountant-1");
+    const invertedDateResponse = await request(app)
+      .get(`/api/v1/expenses?branchId=branch-lagos-main&startDate=${tomorrow}&endDate=${today}`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "accountant")
+      .set("x-user-id", "accountant-1");
     const reportResponse = await request(app)
       .get("/api/v1/reports/dashboard?branchId=branch-lagos-main&period=all")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1");
+      .set("x-user-id", "LCF-MAI-ADA");
 
     expect(expenseResponse.status).toBe(201);
     expect(expenseResponse.body.expense).toMatchObject({ status: "pending_approval", amount: 76000 });
@@ -4719,6 +5464,10 @@ describe("api foundation", () => {
     expect(statusResponse.status).toBe(200);
     expect(statusResponse.body.expense).toMatchObject({ status: "paid", paidAt: expect.any(String) });
     expect(listResponse.body.expenses).toEqual(expect.arrayContaining([expect.objectContaining({ id: expenseResponse.body.expense.id })]));
+    expect(dateRangeResponse.status).toBe(200);
+    expect(dateRangeResponse.body.expenses).toEqual(expect.arrayContaining([expect.objectContaining({ id: expenseResponse.body.expense.id })]));
+    expect(invalidDateResponse.status).toBe(400);
+    expect(invertedDateResponse.status).toBe(400);
     expect(reportResponse.body.summary.expenseTotal).toBeGreaterThanOrEqual(76000);
     expect(reportResponse.body.summary.netProfit).toBe(reportResponse.body.summary.grossProfit - reportResponse.body.summary.expenseTotal);
   });
@@ -4728,7 +5477,7 @@ describe("api foundation", () => {
       .post("/api/v1/expenses")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1")
+      .set("x-user-id", "LCF-MAI-ADA")
       .send({
         branchId: "branch-abuja-main",
         category: "Supplies",
@@ -4843,7 +5592,7 @@ describe("api foundation", () => {
       .get("/api/v1/audit")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1");
+      .set("x-user-id", "LCF-MAI-ADA");
     const salesResponse = await request(app)
       .get("/api/v1/sales?branchId=branch-lagos-main&status=all")
       .set("x-tenant-id", "tenant-lagos-foods")
@@ -4897,7 +5646,7 @@ describe("api foundation", () => {
       .get("/api/v1/audit")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1");
+      .set("x-user-id", "LCF-MAI-ADA");
     const receiptActions = receiptAuditResponse.body.events
       .filter((event: { entityId: string; action: string }) => event.entityId === response.body.saleId && event.action.startsWith("receipt."))
       .map((event: { action: string }) => event.action);
@@ -4909,7 +5658,7 @@ describe("api foundation", () => {
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1");
+      .set("x-user-id", "LCF-MAI-ADA");
     const mealsCategory = dashboardResponse.body.categorySales.find((category: { category: string }) => category.category === "Meals");
 
     expect(dashboardResponse.status).toBe(200);
@@ -5120,6 +5869,47 @@ describe("api foundation", () => {
     expect(missingReferenceResponse.body.error).toBe("Invalid sale payload");
     expect(underpaidResponse.status).toBe(409);
     expect(underpaidResponse.body).toMatchObject({ error: "Payment total must match sale total", paid: 1000 });
+  });
+
+  it("records mixed tender payments on a single sale", async () => {
+    const registerBefore = await request(app)
+      .get("/api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1");
+    const response = await request(app)
+      .post("/api/v1/sales")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "cashier")
+      .set("x-user-id", "cashier-1")
+      .send({
+        branchId: "branch-lagos-main",
+        terminalId: "terminal-web-1",
+        idempotencyKey: "terminal-web-1-mixed-tender-sale",
+        lines: [{ productId: "p3", quantity: 1, discount: 0 }],
+        payments: [
+          { method: "cash", amount: 2000 },
+          { method: "card", amount: 2725, reference: "CARD-MIX-001" }
+        ]
+      });
+    const registerAfter = await request(app)
+      .get("/api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1");
+
+    expect(response.status).toBe(201);
+    expect(response.body.summary).toMatchObject({ total: 4725, paid: 4725, balance: 0 });
+    expect(registerAfter.body.shift.expectedCash).toBe(registerBefore.body.shift.expectedCash + 2000);
+    expect(registerAfter.body.payments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ saleId: response.body.saleId, method: "cash", amount: 2000, reconciliationStatus: "matched" }),
+        expect.objectContaining({ saleId: response.body.saleId, method: "card", amount: 2725, reference: "CARD-MIX-001", reconciliationStatus: "pending" })
+      ])
+    );
   });
 
   it("attaches customers to sales and awards loyalty points", async () => {
@@ -5427,7 +6217,7 @@ describe("api foundation", () => {
       .get("/api/v1/audit")
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
-      .set("x-user-id", "owner-1");
+      .set("x-user-id", "LCF-MAI-ADA");
 
     expect(payment).toMatchObject({ method: "card", reconciliationStatus: "pending" });
     expect(closeWithPendingResponse.status).toBe(409);
@@ -5498,6 +6288,12 @@ describe("api foundation", () => {
       .set("x-user-id", "manager-1");
     const p1StockBefore = stockBefore.body.products.find((product: { id: string; stock: number }) => product.id === "p1").stock;
     const p3StockBefore = stockBefore.body.products.find((product: { id: string; stock: number }) => product.id === "p3").stock;
+    const registerBefore = await request(app)
+      .get("/api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1");
 
     const refundSaleResponse = await request(app)
       .post("/api/v1/sales")
@@ -5574,7 +6370,14 @@ describe("api foundation", () => {
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
       .set("x-user-id", "manager-1");
+    const registerAfter = await request(app)
+      .get("/api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1");
 
+    expect(registerBefore.status).toBe(200);
     expect(directRefundResponse.status).toBe(409);
     expect(directRefundResponse.body.error).toBe("Applied refund approval is required");
     expect(refundResponse.status).toBe(200);
@@ -5591,8 +6394,16 @@ describe("api foundation", () => {
         expect.objectContaining({ productId: "p1", type: "receipt", quantityDelta: 1, reference: voidSaleResponse.body.saleId })
       ])
     );
+    expect(registerAfter.body.shift.expectedCash).toBe(registerBefore.body.shift.expectedCash);
+    expect(registerAfter.body.movements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "cash_out", amount: 4725, reason: expect.stringContaining(refundSaleResponse.body.saleId) }),
+        expect.objectContaining({ type: "cash_out", amount: 9563, reason: expect.stringContaining(voidSaleResponse.body.saleId) })
+      ])
+    );
   });
 });
+
 
 
 

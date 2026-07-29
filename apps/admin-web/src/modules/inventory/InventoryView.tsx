@@ -1,4 +1,4 @@
-import { ArrowDownUp, Check, ClipboardCheck, Download, FileText, Plus, RefreshCcw, Trash2, Upload, X } from "lucide-react";
+import { ArrowDownUp, Check, ClipboardCheck, Download, FileText, Plus, RefreshCcw, Search, Trash2, Upload, X } from "lucide-react";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyApproval,
@@ -190,12 +190,40 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
   const [countReason, setCountReason] = useState("Cycle count");
   const [countValues, setCountValues] = useState<Record<string, number>>({});
   const [countApprovalId, setCountApprovalId] = useState("");
+  const [stockQuery, setStockQuery] = useState("");
+  const [stockCategoryFilter, setStockCategoryFilter] = useState("");
+  const [stockStatusFilter, setStockStatusFilter] = useState("");
   const [status, setStatus] = useState("Ready");
   const { displayMoney } = useTenantSettings();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const handledApprovalIdRef = useRef<string | null>(null);
 
+  const productCategories = useMemo(() => Array.from(new Set(products.map((product) => product.category))).sort(), [products]);
   const stockTrackedProducts = useMemo(() => products.filter((product) => !isServiceCategory(product.category)), [products]);
+  const filteredStockProducts = useMemo(() => {
+    const normalizedQuery = stockQuery.trim().toLowerCase();
+    return products.filter((product) => {
+      const isService = isServiceCategory(product.category);
+      const isLowStock = !isService && product.stock <= product.reorderPoint;
+      const matchesQuery = !normalizedQuery || [
+        product.name,
+        product.sku,
+        product.barcode,
+        product.category,
+        String(product.stock),
+        String(product.reorderPoint)
+      ].some((value) => value.toLowerCase().includes(normalizedQuery));
+      const matchesCategory = !stockCategoryFilter || product.category === stockCategoryFilter;
+      const matchesStatus =
+        !stockStatusFilter ||
+        (stockStatusFilter === "tracked" && !isService) ||
+        (stockStatusFilter === "service" && isService) ||
+        (stockStatusFilter === "low" && isLowStock) ||
+        (stockStatusFilter === "healthy" && !isService && !isLowStock);
+
+      return matchesQuery && matchesCategory && matchesStatus;
+    });
+  }, [products, stockCategoryFilter, stockQuery, stockStatusFilter]);
   const inventoryValue = useMemo(() => stockTrackedProducts.reduce((sum, product) => sum + product.stock * product.cost, 0), [stockTrackedProducts]);
   const lowStockCount = useMemo(() => stockTrackedProducts.filter((product) => product.stock <= product.reorderPoint).length, [stockTrackedProducts]);
   const lowStockProducts = useMemo(
@@ -268,7 +296,9 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
     () => products.find((product) => product.id === supplierReturnDraft.productId) ?? null,
     [products, supplierReturnDraft.productId]
   );
-  const stockPage = usePaginatedRows(products, 10);
+  const stockPage = usePaginatedRows(filteredStockProducts, 10);
+  const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
+  const branchLocked = Boolean(branchId && branches.length === 1);
   const adjustmentValue = selectedAdjustmentProduct ? Math.abs(adjustment.quantityDelta) * selectedAdjustmentProduct.cost : 0;
   const countVarianceItems = useMemo(
     () => stockTrackedProducts.filter((product) => (countValues[product.id] ?? product.stock) !== product.stock).length,
@@ -570,7 +600,7 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
   function exportStockCsv() {
     const rows = [
       ["sku", "name", "category", "stock", "reorderPoint", "cost", "value"],
-      ...stockTrackedProducts.map((product) => [
+      ...filteredStockProducts.map((product) => [
         product.sku,
         product.name,
         product.category,
@@ -831,6 +861,12 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
     return branch ? `${branch.name} - ${branch.city}` : nextBranchId;
   }
 
+  function clearStockFilters() {
+    setStockQuery("");
+    setStockCategoryFilter("");
+    setStockStatusFilter("");
+  }
+
   async function openSupplierStatement(supplier: Supplier) {
     setStatus(`Loading ${supplier.name} statement...`);
 
@@ -954,12 +990,19 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
         <div className="button-group">
           <label className="toolbar-select">
             Branch
-            <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-              <option value="">Branch</option>
-              {branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
-              ))}
-            </select>
+            {branchLocked ? (
+              <span className="locked-select-value locked-select-value-compact">
+                <strong>{selectedBranch?.name ?? branchId}</strong>
+                <small>{selectedBranch?.city ?? "assigned"}</small>
+              </span>
+            ) : (
+              <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
+                <option value="">Branch</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
+                ))}
+              </select>
+            )}
           </label>
           <button className="secondary-button" onClick={() => importInputRef.current?.click()}><Upload size={18} /> Import CSV</button>
           <button className="secondary-button" onClick={() => void loadInventory()}><RefreshCcw size={18} /> Sync</button>
@@ -1007,14 +1050,14 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
             <label>
               Product
               <select value={adjustment.productId} onChange={(event) => updateAdjustment("productId", event.target.value)}>
-                <option value="" disabled>Product</option>
+                <option value="">Product</option>
                 {stockTrackedProducts.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
               </select>
             </label>
             <label>
               Type
               <select value={adjustment.type} onChange={(event) => updateAdjustment("type", event.target.value as StockMovement["type"])}>
-                <option value="" disabled>Type</option>
+                <option value="">Type</option>
                 <option value="receipt">Receipt</option>
                 <option value="issue">Issue</option>
                 <option value="adjustment">Adjustment</option>
@@ -1229,7 +1272,33 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
       <section className="panel">
         <div className="panel-header">
           <h2>Branch stock ledger</h2>
-          <button className="ghost-button" onClick={exportStockCsv}><Download size={16} /> Export</button>
+          <div className="button-group">
+            <span>{filteredStockProducts.length} of {products.length} records</span>
+            <button className="ghost-button" onClick={exportStockCsv}><Download size={16} /> Export</button>
+          </div>
+        </div>
+        <div className="table-toolbar inventory-stock-toolbar">
+          <div className="search-box compact-search">
+            <Search size={16} />
+            <input value={stockQuery} onChange={(event) => setStockQuery(event.target.value)} placeholder="Search product, SKU, barcode or stock" />
+            {stockQuery ? (
+              <button type="button" onClick={() => setStockQuery("")} aria-label="Clear stock search"><X size={14} /></button>
+            ) : null}
+          </div>
+          <select value={stockCategoryFilter} onChange={(event) => setStockCategoryFilter(event.target.value)}>
+            <option value="">Category</option>
+            {productCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+          </select>
+          <select value={stockStatusFilter} onChange={(event) => setStockStatusFilter(event.target.value)}>
+            <option value="">Stock status</option>
+            <option value="tracked">Stock-tracked</option>
+            <option value="service">Non-stock services</option>
+            <option value="low">Low stock</option>
+            <option value="healthy">Healthy</option>
+          </select>
+          {(stockQuery || stockCategoryFilter || stockStatusFilter) ? (
+            <button className="secondary-button" type="button" onClick={clearStockFilters}>Clear filters</button>
+          ) : null}
         </div>
         <div className="table-wrap">
           <table>
@@ -1436,7 +1505,7 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
               <label>
                 Status
                 <select value={supplierDraft.active ? "active" : "inactive"} onChange={(event) => updateSupplierDraft("active", event.target.value === "active")}>
-                  <option value="" disabled>Status</option>
+                  <option value="">Status</option>
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>

@@ -1,6 +1,7 @@
 import type { Prisma, CompletedSale as DbCompletedSale, Customer as DbCustomer, PaymentRecord as DbPaymentRecord, Product as DbProduct } from "@prisma/client";
 import {
   appendAudit,
+  appendCashMovement,
   appendCompletedSale,
   appendCustomerLedger,
   appendPaymentRecord,
@@ -65,6 +66,10 @@ function nextSaleIdFromCount(count: number) {
 
 function nextPaymentId() {
   return `payment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function nextCashMovementId() {
+  return `cash-move-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function nextStockMovementId() {
@@ -238,6 +243,47 @@ async function customerCreditPaidForDbSale(saleId: string) {
   return payments.reduce((sum, payment) => sum + payment.amount, 0);
 }
 
+function cashPaidForDemoSale(saleId: string) {
+  return paymentRecords.filter((payment) => payment.saleId === saleId && payment.method === "cash").reduce((sum, payment) => sum + payment.amount, 0);
+}
+
+async function cashPaidForDbSale(saleId: string) {
+  const payments = await prisma.paymentRecord.findMany({ where: { saleId, method: "cash" } });
+  return payments.reduce((sum, payment) => sum + payment.amount, 0);
+}
+
+function cashRefundDelta(previousRefundTotal: number, nextRefundTotal: number, cashPaid: number) {
+  return Math.max(0, Math.min(nextRefundTotal, cashPaid) - Math.min(previousRefundTotal, cashPaid));
+}
+
+function recordDemoRegisterCashOutForSale(sale: CompletedSale, amount: number, reason: string, action: SaleAction, userId: string) {
+  if (amount <= 0) return;
+
+  const shift = registerShifts.find((item) => item.tenantId === sale.tenantId && item.id === sale.shiftId && item.status === "open");
+  if (!shift) return;
+
+  shift.expectedCash -= amount;
+  const movement = appendCashMovement({
+    tenantId: sale.tenantId,
+    branchId: sale.branchId,
+    shiftId: shift.id,
+    type: "cash_out",
+    amount,
+    reason: `${action === "void" ? "Void" : "Refund"} ${sale.id}: ${reason}`,
+    createdBy: userId
+  });
+
+  appendAudit({
+    tenantId: sale.tenantId,
+    branchId: sale.branchId,
+    userId,
+    action: "register.cash_movement",
+    entityType: "cashMovement",
+    entityId: movement.id,
+    metadata: { type: movement.type, amount, expectedCash: shift.expectedCash, saleId: sale.id, source: action }
+  });
+}
+
 function applyDemoCustomerSaleReversal(
   sale: CompletedSale,
   reversal: { creditAmount: number; loyaltyPoints: number; reason: string; action: SaleAction; userId: string }
@@ -254,6 +300,7 @@ function applyDemoCustomerSaleReversal(
     customer.outstandingBalance -= creditReversal;
     appendCustomerLedger({
       tenantId: sale.tenantId,
+      branchId: sale.branchId,
       customerId: customer.id,
       type: "payment",
       amount: -creditReversal,
@@ -269,6 +316,7 @@ function applyDemoCustomerSaleReversal(
     customer.loyaltyPoints -= pointsReversal;
     appendCustomerLedger({
       tenantId: sale.tenantId,
+      branchId: sale.branchId,
       customerId: customer.id,
       type: "loyalty_adjustment",
       amount: 0,
@@ -394,6 +442,7 @@ async function applyDbCustomerSaleReversal(
       data: {
         id: nextLedgerId(),
         tenantId: sale.tenantId,
+        branchId: sale.branchId,
         customerId: customer.id,
         type: "payment",
         amount: -creditReversal,
@@ -413,6 +462,7 @@ async function applyDbCustomerSaleReversal(
       data: {
         id: nextLedgerId(),
         tenantId: sale.tenantId,
+        branchId: sale.branchId,
         customerId: customer.id,
         type: "loyalty_adjustment",
         amount: 0,
@@ -613,6 +663,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
         customer.outstandingBalance += creditAmount;
         appendCustomerLedger({
           tenantId,
+          branchId: input.branchId,
           customerId: customer.id,
           type: "credit_sale",
           amount: creditAmount,
@@ -628,6 +679,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
         customer.loyaltyPoints += loyaltyPoints;
         appendCustomerLedger({
           tenantId,
+          branchId: input.branchId,
           customerId: customer.id,
           type: "loyalty_adjustment",
           amount: 0,
@@ -852,6 +904,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
           data: {
             id: nextLedgerId(),
             tenantId,
+            branchId: input.branchId,
             customerId: customer.id,
             type: "credit_sale",
             amount: creditAmount,
@@ -870,6 +923,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
           data: {
             id: nextLedgerId(),
             tenantId,
+            branchId: input.branchId,
             customerId: customer.id,
             type: "loyalty_adjustment",
             amount: 0,
@@ -980,6 +1034,7 @@ export async function voidSale(tenantId: string, branchId: string | undefined, u
       action: "void",
       userId
     });
+    recordDemoRegisterCashOutForSale(sale, cashPaidForDemoSale(sale.id), reason, "void", userId);
     returnDemoSaleStock(sale, aggregateSaleQuantities(sale.summary.lines), reason, "void", userId);
     sale.status = "voided";
     sale.voidReason = reason;
@@ -1010,6 +1065,7 @@ export async function voidSale(tenantId: string, branchId: string | undefined, u
   });
   if (approvalValidation.status !== "valid") return approvalValidation;
   const creditAmount = await customerCreditPaidForDbSale(sale.id);
+  const cashAmount = await cashPaidForDbSale(sale.id);
 
   await prisma.$transaction(async (tx) => {
     await applyDbCustomerSaleReversal(tx, sale, {
@@ -1020,6 +1076,37 @@ export async function voidSale(tenantId: string, branchId: string | undefined, u
       userId
     });
     await returnDbSaleStock(tx, sale, aggregateSaleQuantities(sale.summary.lines), reason, "void", userId);
+    if (cashAmount > 0) {
+      const shift = await tx.registerShift.findFirst({ where: { tenantId, id: sale.shiftId, status: "open" } });
+      if (shift) {
+        const nextExpectedCash = shift.expectedCash - cashAmount;
+        const movement = await tx.cashMovement.create({
+          data: {
+            id: nextCashMovementId(),
+            tenantId,
+            branchId: sale.branchId,
+            shiftId: shift.id,
+            type: "cash_out",
+            amount: cashAmount,
+            reason: `Void ${sale.id}: ${reason}`,
+            createdBy: userId
+          }
+        });
+        await tx.registerShift.update({ where: { id: shift.id }, data: { expectedCash: nextExpectedCash } });
+        await tx.auditEvent.create({
+          data: {
+            id: nextAuditId(),
+            tenantId,
+            branchId: sale.branchId,
+            userId,
+            action: "register.cash_movement",
+            entityType: "cashMovement",
+            entityId: movement.id,
+            metadata: { type: movement.type, amount: cashAmount, expectedCash: nextExpectedCash, saleId: sale.id, source: "void" }
+          }
+        });
+      }
+    }
     await tx.completedSale.update({ where: { id: sale.id }, data: { status: "voided", voidReason: reason } });
     await tx.auditEvent.create({
       data: {
@@ -1073,6 +1160,13 @@ export async function refundSale(tenantId: string, branchId: string | undefined,
       action: "refund",
       userId
     });
+    recordDemoRegisterCashOutForSale(
+      sale,
+      cashRefundDelta(sale.refundTotal, nextRefundTotal, cashPaidForDemoSale(sale.id)),
+      reason,
+      "refund",
+      userId
+    );
     returnDemoSaleStock(sale, deltaReturnedQuantities, reason, "refund", userId);
     sale.refundTotal = nextRefundTotal;
     sale.refundReason = reason;
@@ -1108,6 +1202,8 @@ export async function refundSale(tenantId: string, branchId: string | undefined,
   if (approvalValidation.status !== "valid") return approvalValidation;
 
   const creditAmount = await customerCreditPaidForDbSale(sale.id);
+  const cashAmount = await cashPaidForDbSale(sale.id);
+  const cashRefundAmount = cashRefundDelta(sale.refundTotal, nextRefundTotal, cashAmount);
   const previousReturnedQuantities = refundedQuantitiesForSale(sale, sale.refundTotal);
   const nextReturnedQuantities = refundedQuantitiesForSale(sale, nextRefundTotal);
   const deltaReturnedQuantities = Object.fromEntries(
@@ -1126,6 +1222,37 @@ export async function refundSale(tenantId: string, branchId: string | undefined,
       userId
     });
     await returnDbSaleStock(tx, sale, deltaReturnedQuantities, reason, "refund", userId);
+    if (cashRefundAmount > 0) {
+      const shift = await tx.registerShift.findFirst({ where: { tenantId, id: sale.shiftId, status: "open" } });
+      if (shift) {
+        const nextExpectedCash = shift.expectedCash - cashRefundAmount;
+        const movement = await tx.cashMovement.create({
+          data: {
+            id: nextCashMovementId(),
+            tenantId,
+            branchId: sale.branchId,
+            shiftId: shift.id,
+            type: "cash_out",
+            amount: cashRefundAmount,
+            reason: `Refund ${sale.id}: ${reason}`,
+            createdBy: userId
+          }
+        });
+        await tx.registerShift.update({ where: { id: shift.id }, data: { expectedCash: nextExpectedCash } });
+        await tx.auditEvent.create({
+          data: {
+            id: nextAuditId(),
+            tenantId,
+            branchId: sale.branchId,
+            userId,
+            action: "register.cash_movement",
+            entityType: "cashMovement",
+            entityId: movement.id,
+            metadata: { type: movement.type, amount: cashRefundAmount, expectedCash: nextExpectedCash, saleId: sale.id, source: "refund" }
+          }
+        });
+      }
+    }
     await tx.completedSale.update({
       where: { id: sale.id },
       data: {

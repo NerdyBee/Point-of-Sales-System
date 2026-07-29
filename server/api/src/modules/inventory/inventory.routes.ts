@@ -1,6 +1,6 @@
 import { purchaseOrderInputSchema, purchaseOrderStatusSchema, stockAdjustmentSchema, stockCountSchema, stockTransferInputSchema, supplierInputSchema, supplierInvoiceInputSchema, supplierInvoicePaymentSchema, supplierReceiptSchema, supplierReturnInputSchema } from "@pos/validation";
-import { Router } from "express";
-import { canAccessAllBranches, resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { Router, type Request, type Response } from "express";
+import { canAccessAllBranches, resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import {
   appendInventoryAudit,
   applyInventoryAdjustment,
@@ -24,8 +24,29 @@ import {
 
 export const inventoryRouter = Router();
 
-inventoryRouter.get("/stock", requireTenant, requireAuthenticatedUser, async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
+function requestedBranch(req: Request) {
+  const requested = req.query.branchId?.toString() ?? req.header("x-branch-id");
+  if (requested) return requested;
+
+  if (!canAccessAllBranches(req.tenantContext!) && req.tenantContext!.branchId) {
+    return req.tenantContext!.branchId;
+  }
+
+  return undefined;
+}
+
+function resolveInventoryBranch(req: Request, res: Response) {
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
+    res.status(403).json({ error: "Branch access denied" });
+    return null;
+  }
+
+  return scope;
+}
+
+inventoryRouter.get("/stock", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
@@ -36,8 +57,8 @@ inventoryRouter.get("/stock", requireTenant, requireAuthenticatedUser, async (re
   res.json({ products, movements });
 });
 
-inventoryRouter.get("/transfers", requireTenant, requireAuthenticatedUser, async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
+inventoryRouter.get("/transfers", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
@@ -47,8 +68,8 @@ inventoryRouter.get("/transfers", requireTenant, requireAuthenticatedUser, async
   res.json({ transfers });
 });
 
-inventoryRouter.get("/suppliers", requireTenant, requireAuthenticatedUser, async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
+inventoryRouter.get("/suppliers", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
@@ -59,8 +80,8 @@ inventoryRouter.get("/suppliers", requireTenant, requireAuthenticatedUser, async
   res.json({ suppliers: tenantSuppliers });
 });
 
-inventoryRouter.get("/suppliers/:supplierId/statement", requireTenant, requireAuthenticatedUser, async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
+inventoryRouter.get("/suppliers/:supplierId/statement", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
@@ -75,8 +96,8 @@ inventoryRouter.get("/suppliers/:supplierId/statement", requireTenant, requireAu
   res.json({ statement: result.statement });
 });
 
-inventoryRouter.get("/purchase-orders", requireTenant, requireAuthenticatedUser, async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
+inventoryRouter.get("/purchase-orders", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
@@ -90,8 +111,8 @@ inventoryRouter.get("/purchase-orders", requireTenant, requireAuthenticatedUser,
   res.json({ purchaseOrders: orders });
 });
 
-inventoryRouter.get("/supplier-invoices", requireTenant, requireAuthenticatedUser, async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
+inventoryRouter.get("/supplier-invoices", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
@@ -106,8 +127,8 @@ inventoryRouter.get("/supplier-invoices", requireTenant, requireAuthenticatedUse
   res.json({ supplierInvoices: invoices });
 });
 
-inventoryRouter.get("/supplier-returns", requireTenant, requireAuthenticatedUser, async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
+inventoryRouter.get("/supplier-returns", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
@@ -135,7 +156,10 @@ inventoryRouter.post("/suppliers", requireTenant, requirePermission("inventory.a
     return;
   }
 
-  const result = await createInventorySupplier(req.tenantContext!.tenantId, parsed.data);
+  const result = await createInventorySupplier(req.tenantContext!.tenantId, {
+    ...parsed.data,
+    branchId: scope.branchId ?? parsed.data.branchId
+  });
 
   if (result.status === "branch_not_found") {
     res.status(404).json({ error: "Inventory branch not found for this tenant" });
@@ -179,7 +203,10 @@ inventoryRouter.post("/purchase-orders", requireTenant, requirePermission("inven
     return;
   }
 
-  const result = await createPurchaseOrder(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+  const result = await createPurchaseOrder(req.tenantContext!.tenantId, req.tenantContext!.userId, {
+    ...parsed.data,
+    branchId: scope.branchId ?? parsed.data.branchId
+  });
 
   if (result.status === "branch_not_found") {
     res.status(404).json({ error: "Inventory branch not found for this tenant" });
@@ -217,15 +244,12 @@ inventoryRouter.patch("/purchase-orders/:orderId/status", requireTenant, require
     return;
   }
 
-  const branchId = req.tenantContext!.branchId;
-  if (!canAccessAllBranches(req.tenantContext!) && !branchId) {
-    res.status(403).json({ error: "Branch access denied" });
-    return;
-  }
+  const scope = resolveInventoryBranch(req, res);
+  if (!scope) return;
 
   const result = await updatePurchaseOrderStatus(
     req.tenantContext!.tenantId,
-    branchId,
+    scope.branchId,
     req.tenantContext!.userId,
     String(req.params.orderId),
     parsed.data
@@ -258,7 +282,10 @@ inventoryRouter.post("/supplier-invoices", requireTenant, requirePermission("inv
     return;
   }
 
-  const result = await createSupplierInvoice(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+  const result = await createSupplierInvoice(req.tenantContext!.tenantId, req.tenantContext!.userId, {
+    ...parsed.data,
+    branchId: scope.branchId ?? parsed.data.branchId
+  });
 
   if (result.status === "branch_not_found") {
     res.status(404).json({ error: "Inventory branch not found for this tenant" });
@@ -291,13 +318,10 @@ inventoryRouter.post("/supplier-invoices/:invoiceId/payments", requireTenant, re
     return;
   }
 
-  const branchId = req.tenantContext!.branchId;
-  if (!canAccessAllBranches(req.tenantContext!) && !branchId) {
-    res.status(403).json({ error: "Branch access denied" });
-    return;
-  }
+  const scope = resolveInventoryBranch(req, res);
+  if (!scope) return;
 
-  const result = await recordSupplierInvoicePayment(req.tenantContext!.tenantId, branchId, req.tenantContext!.userId, String(req.params.invoiceId), parsed.data);
+  const result = await recordSupplierInvoicePayment(req.tenantContext!.tenantId, scope.branchId, req.tenantContext!.userId, String(req.params.invoiceId), parsed.data);
 
   if (result.status === "invoice_not_found") {
     res.status(404).json({ error: "Supplier invoice not found" });
@@ -331,7 +355,10 @@ inventoryRouter.post("/supplier-returns", requireTenant, requirePermission("inve
     return;
   }
 
-  const result = await createSupplierReturn(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+  const result = await createSupplierReturn(req.tenantContext!.tenantId, req.tenantContext!.userId, {
+    ...parsed.data,
+    branchId: scope.branchId ?? parsed.data.branchId
+  });
 
   if (result.status === "branch_not_found") {
     res.status(404).json({ error: "Inventory branch not found for this tenant" });
@@ -383,7 +410,8 @@ inventoryRouter.post("/purchase-receipts", requireTenant, requirePermission("inv
     return;
   }
 
-  const result = await receiveSupplierPurchase(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+  const scopedReceipt = { ...parsed.data, branchId: scope.branchId ?? parsed.data.branchId };
+  const result = await receiveSupplierPurchase(req.tenantContext!.tenantId, req.tenantContext!.userId, scopedReceipt);
 
   if (result.status === "branch_not_found") {
     res.status(404).json({ error: "Inventory branch not found for this tenant" });
@@ -432,12 +460,12 @@ inventoryRouter.post("/purchase-receipts", requireTenant, requirePermission("inv
 
   await appendInventoryAudit({
     tenantId: req.tenantContext!.tenantId,
-    branchId: parsed.data.branchId,
+    branchId: scopedReceipt.branchId,
     userId: req.tenantContext!.userId,
     action: "inventory.purchase_received",
     entityType: "stockMovement",
     entityId: result.movement.id,
-    metadata: { supplierId: result.supplier.id, productId: result.product.id, quantity: parsed.data.quantity, reference: parsed.data.reference }
+    metadata: { supplierId: result.supplier.id, productId: result.product.id, quantity: scopedReceipt.quantity, reference: scopedReceipt.reference }
   });
 
   res.status(201).json({ product: result.product, movement: result.movement, supplier: result.supplier, purchaseOrder: result.purchaseOrder });
@@ -458,7 +486,11 @@ inventoryRouter.post("/transfers", requireTenant, requirePermission("inventory.a
     return;
   }
 
-  const result = await createInventoryTransfer(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+  const result = await createInventoryTransfer(req.tenantContext!.tenantId, req.tenantContext!.userId, {
+    ...parsed.data,
+    sourceBranchId: sourceScope.branchId ?? parsed.data.sourceBranchId,
+    destinationBranchId: destinationScope.branchId ?? parsed.data.destinationBranchId
+  });
 
   if (result.status === "same_branch") {
     res.status(400).json({ error: "Destination branch must be different" });
@@ -523,7 +555,8 @@ inventoryRouter.post("/adjustments", requireTenant, requirePermission("inventory
     return;
   }
 
-  const result = await applyInventoryAdjustment(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+  const scopedAdjustment = { ...parsed.data, branchId: scope.branchId ?? parsed.data.branchId };
+  const result = await applyInventoryAdjustment(req.tenantContext!.tenantId, req.tenantContext!.userId, scopedAdjustment);
 
   if (result.status === "branch_not_found") {
     res.status(404).json({ error: "Inventory branch not found for this tenant" });
@@ -547,16 +580,16 @@ inventoryRouter.post("/adjustments", requireTenant, requirePermission("inventory
 
   await appendInventoryAudit({
     tenantId: req.tenantContext!.tenantId,
-    branchId: parsed.data.branchId,
+    branchId: scopedAdjustment.branchId,
     userId: req.tenantContext!.userId,
     action: "inventory.adjust",
     entityType: "stockMovement",
     entityId: result.movement.id,
     metadata: {
       productId: result.product.id,
-      quantityDelta: parsed.data.quantityDelta,
+      quantityDelta: scopedAdjustment.quantityDelta,
       balanceAfter: result.product.stock,
-      reason: parsed.data.reason
+      reason: scopedAdjustment.reason
     }
   });
 
@@ -577,7 +610,8 @@ inventoryRouter.post("/counts", requireTenant, requirePermission("inventory.adju
     return;
   }
 
-  const result = await postInventoryCount(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+  const scopedCount = { ...parsed.data, branchId: scope.branchId ?? parsed.data.branchId };
+  const result = await postInventoryCount(req.tenantContext!.tenantId, req.tenantContext!.userId, scopedCount);
 
   if (result.status === "branch_not_found") {
     res.status(404).json({ error: "Inventory branch not found for this tenant" });
@@ -596,15 +630,15 @@ inventoryRouter.post("/counts", requireTenant, requirePermission("inventory.adju
 
   await appendInventoryAudit({
     tenantId: req.tenantContext!.tenantId,
-    branchId: parsed.data.branchId,
+    branchId: scopedCount.branchId,
     userId: req.tenantContext!.userId,
     action: "inventory.count_posted",
     entityType: "stockCount",
-    entityId: parsed.data.reference,
+    entityId: scopedCount.reference,
     metadata: {
-      countedItems: parsed.data.counts.length,
+      countedItems: scopedCount.counts.length,
       varianceItems: result.movements.length,
-      reference: parsed.data.reference
+      reference: scopedCount.reference
     }
   });
 

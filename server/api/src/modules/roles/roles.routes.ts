@@ -1,17 +1,26 @@
 import { roleInputSchema, rolePermissionUpdateSchema, staffRoleAssignmentSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
-import { canAccessAllBranches, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, requirePermission, requireTenant, resolveBranchScope } from "../../shared/http/tenantContext";
 import { assignStaffRole, createRole, listPermissionCatalog, listRoleOptions, listRoles, updateRole, updateRolePermissions } from "./roles.repository";
 
 export const rolesRouter = Router();
 
-function requireBranchContext(req: Request, res: Response) {
-  if (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId) {
-    res.status(403).json({ error: "Branch access denied" });
-    return false;
+function requestedBranch(req: Request) {
+  if (!canAccessAllBranches(req.tenantContext!) && req.tenantContext!.branchId) {
+    return req.tenantContext!.branchId;
   }
 
-  return true;
+  return req.query.branchId?.toString() ?? req.header("x-branch-id") ?? req.tenantContext!.branchId;
+}
+
+function resolveRoleBranch(req: Request, res: Response) {
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
+    res.status(403).json({ error: "Branch access denied" });
+    return null;
+  }
+
+  return scope;
 }
 
 rolesRouter.get("/", requireTenant, requirePermission("roles.manage"), async (req, res) => {
@@ -74,10 +83,11 @@ rolesRouter.post("/assign-staff", requireTenant, requirePermission("roles.manage
     res.status(400).json({ error: "Invalid staff role payload", issues: parsed.error.flatten() });
     return;
   }
-  if (!requireBranchContext(req, res)) return;
+  const scope = resolveRoleBranch(req, res);
+  if (!scope) return;
   const result = await assignStaffRole(
     req.tenantContext!.tenantId,
-    req.tenantContext!.branchId,
+    scope.branchId,
     req.tenantContext!.userId,
     parsed.data.staffId,
     parsed.data.role

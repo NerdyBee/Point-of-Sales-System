@@ -398,6 +398,7 @@ export interface Customer {
 export interface CustomerLedgerEntry {
   id: string;
   tenantId: string;
+  branchId: string;
   customerId: string;
   type: "credit_sale" | "payment" | "loyalty_adjustment" | "voucher";
   amount: number;
@@ -847,7 +848,7 @@ export const syncQueueRecords: SyncQueueRecord[] = [
     payload: { lines: 2, total: 21300, source: "offline terminal" },
     status: "queued",
     attempts: 0,
-    createdBy: "cashier-1",
+    createdBy: "LCF-MAI-MUS",
     createdAt: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
     updatedAt: new Date(Date.now() - 1000 * 60 * 18).toISOString()
   },
@@ -864,7 +865,7 @@ export const syncQueueRecords: SyncQueueRecord[] = [
     attempts: 2,
     error: "Server already has a newer payment state",
     lastAttemptAt: new Date(Date.now() - 1000 * 60 * 8).toISOString(),
-    createdBy: "cashier-1",
+    createdBy: "LCF-MAI-MUS",
     createdAt: new Date(Date.now() - 1000 * 60 * 24).toISOString(),
     updatedAt: new Date(Date.now() - 1000 * 60 * 8).toISOString()
   },
@@ -881,7 +882,7 @@ export const syncQueueRecords: SyncQueueRecord[] = [
     attempts: 1,
     error: "Printer service unavailable during reconnect",
     lastAttemptAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-    createdBy: "cashier-1",
+    createdBy: "LCF-MAI-MUS",
     createdAt: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
     updatedAt: new Date(Date.now() - 1000 * 60 * 5).toISOString()
   }
@@ -1631,7 +1632,7 @@ export const tableReservations: TableReservation[] = [
     status: "booked",
     note: "Private room preferred",
     createdAt: new Date().toISOString(),
-    createdBy: "manager-1"
+    createdBy: "LCF-MAI-CHI"
   }
 ];
 export const prepTickets: PrepTicket[] = [
@@ -1675,7 +1676,7 @@ export const prepTickets: PrepTicket[] = [
     branchId: "branch-lagos-main",
     station: "Counter",
     tableLabel: "Takeaway",
-    waiterId: "cashier-1",
+    waiterId: "LCF-MAI-MUS",
     serviceType: "takeaway",
     priority: "normal",
     status: "ready",
@@ -1733,6 +1734,7 @@ export const customerLedger: CustomerLedgerEntry[] = [
   {
     id: "cust-ledger-1",
     tenantId: "tenant-lagos-foods",
+    branchId: "branch-lagos-main",
     customerId: "cust-2",
     type: "credit_sale",
     amount: 38500,
@@ -1741,12 +1743,12 @@ export const customerLedger: CustomerLedgerEntry[] = [
     pointsAfter: 920,
     note: "Opening credit sale",
     createdAt: new Date().toISOString(),
-    createdBy: "manager-1"
+    createdBy: "LCF-MAI-CHI"
   }
 ];
 export const staffMembers: StaffMember[] = [
   {
-    id: "owner-1",
+    id: "LCF-MAI-ADA",
     tenantId: "tenant-lagos-foods",
     branchId: "branch-lagos-main",
     name: "Adaeze Okafor",
@@ -1754,7 +1756,7 @@ export const staffMembers: StaffMember[] = [
     phone: "+2348033333333",
     role: "owner",
     passwordHash: demoSecretHash("Password123!"),
-    pinHash: demoSecretHash("1234"),
+    pinHash: demoSecretHash("123456"),
     pinEnabled: true,
     active: true,
     salesTotal: 0,
@@ -1763,7 +1765,7 @@ export const staffMembers: StaffMember[] = [
     createdAt: new Date().toISOString()
   },
   {
-    id: "staff-1",
+    id: "LCF-MAI-CHI",
     tenantId: "tenant-lagos-foods",
     branchId: "branch-lagos-main",
     name: "Chinelo Okafor",
@@ -1771,7 +1773,7 @@ export const staffMembers: StaffMember[] = [
     phone: "+2348044444444",
     role: "manager",
     passwordHash: demoSecretHash("Password123!"),
-    pinHash: demoSecretHash("1234"),
+    pinHash: demoSecretHash("123456"),
     pinEnabled: true,
     active: true,
     salesTotal: 425000,
@@ -1780,7 +1782,7 @@ export const staffMembers: StaffMember[] = [
     createdAt: new Date().toISOString()
   },
   {
-    id: "staff-2",
+    id: "LCF-MAI-MUS",
     tenantId: "tenant-lagos-foods",
     branchId: "branch-lagos-main",
     name: "Musa Ibrahim",
@@ -1788,7 +1790,7 @@ export const staffMembers: StaffMember[] = [
     phone: "+2348055555555",
     role: "cashier",
     passwordHash: demoSecretHash("Password123!"),
-    pinHash: demoSecretHash("1234"),
+    pinHash: demoSecretHash("123456"),
     pinEnabled: true,
     active: true,
     salesTotal: 318200,
@@ -1797,7 +1799,7 @@ export const staffMembers: StaffMember[] = [
     createdAt: new Date().toISOString()
   },
   {
-    id: "staff-3",
+    id: "LCF-MAI-SAR",
     tenantId: "tenant-lagos-foods",
     branchId: "branch-lagos-main",
     name: "Sarah Johnson",
@@ -1813,7 +1815,7 @@ export const staffMembers: StaffMember[] = [
     createdAt: new Date().toISOString()
   },
   {
-    id: "staff-4",
+    id: "LCF-MAI-TUN",
     tenantId: "tenant-lagos-foods",
     branchId: "branch-lagos-main",
     name: "Tunde Balogun",
@@ -1821,7 +1823,7 @@ export const staffMembers: StaffMember[] = [
     phone: "+2348077777777",
     role: "state_manager",
     passwordHash: demoSecretHash("Password123!"),
-    pinHash: demoSecretHash("1234"),
+    pinHash: demoSecretHash("123456"),
     pinEnabled: true,
     active: true,
     salesTotal: 0,
@@ -1838,7 +1840,7 @@ export const registerShifts: RegisterShift[] = [
     tenantId: "tenant-lagos-foods",
     branchId: "branch-lagos-main",
     terminalId: "terminal-web-1",
-    cashierId: "cashier-1",
+    cashierId: "LCF-MAI-MUS",
     status: "open",
     openingBalance: 50000,
     expectedCash: 50000,
@@ -1860,11 +1862,11 @@ export const expenses: Expense[] = [
     reference: "EXP-DIESEL-001",
     status: "paid",
     spentAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-    approvedBy: "manager-1",
+    approvedBy: "LCF-MAI-CHI",
     approvedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
     paidAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
     note: "Evening operations supply",
-    createdBy: "manager-1",
+    createdBy: "LCF-MAI-CHI",
     createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
     updatedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
   },
@@ -1880,10 +1882,10 @@ export const expenses: Expense[] = [
     reference: "EXP-PRINTER-002",
     status: "approved",
     spentAt: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
-    approvedBy: "manager-1",
+    approvedBy: "LCF-MAI-CHI",
     approvedAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
     note: "Print head cleaning and test roll",
-    createdBy: "staff-1",
+    createdBy: "LCF-MAI-CHI",
     createdAt: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
     updatedAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString()
   }
@@ -1899,7 +1901,7 @@ export const approvalRequests: ApprovalRequest[] = [
     amount: 62000,
     reason: "Corporate customer discount above cashier threshold",
     status: "pending",
-    requestedBy: "cashier-1",
+    requestedBy: "LCF-MAI-MUS",
     createdAt: new Date(Date.now() - 8 * 60 * 1000).toISOString()
   }
 ];

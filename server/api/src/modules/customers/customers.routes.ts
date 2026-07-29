@@ -1,20 +1,31 @@
 import { customerInputSchema, customerLedgerInputSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
-import { canAccessAllBranches, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, requireAnyPermission, requirePermission, requireTenant, resolveBranchScope } from "../../shared/http/tenantContext";
 import { createCustomer, listCustomerLedger, listCustomers, postCustomerLedger, updateCustomer } from "./customers.repository";
 
 export const customersRouter = Router();
 
-function requireBranchContext(req: Request, res: Response) {
-  if (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId) {
-    res.status(403).json({ error: "Branch access denied" });
-    return false;
-  }
-
-  return true;
+function parseCustomerLedgerDate(value: string | undefined, endOfDay = false) {
+  if (!value) return null;
+  const date = new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}`);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
-customersRouter.get("/", requireTenant, requireAuthenticatedUser, async (req, res) => {
+function requestedBranch(req: Request) {
+  return req.query.branchId?.toString() ?? req.header("x-branch-id") ?? req.tenantContext!.branchId;
+}
+
+function resolveCustomerBranch(req: Request, res: Response, requireBranch = false) {
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId) || (requireBranch && !scope.branchId)) {
+    res.status(403).json({ error: "Branch access denied" });
+    return null;
+  }
+
+  return scope;
+}
+
+customersRouter.get("/", requireTenant, requireAnyPermission(["sale.create", "customer.manage"]), async (req, res) => {
   const query = req.query.q?.toString().toLowerCase() ?? "";
   const customers = await listCustomers(req.tenantContext!.tenantId, query);
 
@@ -29,9 +40,10 @@ customersRouter.post("/", requireTenant, requirePermission("customer.manage"), a
     return;
   }
 
-  if (!requireBranchContext(req, res)) return;
+  const scope = resolveCustomerBranch(req, res);
+  if (!scope) return;
 
-  const result = await createCustomer(req.tenantContext!.tenantId, req.tenantContext!.branchId, req.tenantContext!.userId, parsed.data);
+  const result = await createCustomer(req.tenantContext!.tenantId, scope.branchId, req.tenantContext!.userId, parsed.data);
 
   if (result.status === "duplicate_phone") {
     res.status(409).json({ error: "Customer phone already exists for this tenant" });
@@ -49,11 +61,12 @@ customersRouter.patch("/:customerId", requireTenant, requirePermission("customer
     return;
   }
 
-  if (!requireBranchContext(req, res)) return;
+  const scope = resolveCustomerBranch(req, res);
+  if (!scope) return;
 
   const result = await updateCustomer(
     req.tenantContext!.tenantId,
-    req.tenantContext!.branchId,
+    scope.branchId,
     req.tenantContext!.userId,
     req.params.customerId.toString(),
     parsed.data
@@ -72,8 +85,31 @@ customersRouter.patch("/:customerId", requireTenant, requirePermission("customer
   res.json({ customer: result.customer });
 });
 
-customersRouter.get("/:customerId/ledger", requireTenant, requireAuthenticatedUser, async (req, res) => {
-  const result = await listCustomerLedger(req.tenantContext!.tenantId, req.params.customerId.toString());
+customersRouter.get("/:customerId/ledger", requireTenant, requirePermission("customer.manage"), async (req, res) => {
+  const scope = resolveCustomerBranch(req, res);
+  if (!scope) return;
+
+  const startDateValue = req.query.startDate?.toString();
+  const endDateValue = req.query.endDate?.toString();
+  const startDate = parseCustomerLedgerDate(startDateValue);
+  const endDate = parseCustomerLedgerDate(endDateValue, true);
+
+  if ((startDateValue && !startDate) || (endDateValue && !endDate)) {
+    res.status(400).json({ error: "Invalid customer ledger date range" });
+    return;
+  }
+
+  if (startDate && endDate && startDate.getTime() > endDate.getTime()) {
+    res.status(400).json({ error: "Start date must be before end date" });
+    return;
+  }
+
+  const result = await listCustomerLedger(
+    req.tenantContext!.tenantId,
+    req.params.customerId.toString(),
+    scope.branchId,
+    { startDate: startDate ?? undefined, endDate: endDate ?? undefined }
+  );
 
   if (result.status === "not_found") {
     res.status(404).json({ error: "Customer not found" });
@@ -91,11 +127,12 @@ customersRouter.post("/:customerId/ledger", requireTenant, requirePermission("cu
     return;
   }
 
-  if (!requireBranchContext(req, res)) return;
+  const scope = resolveCustomerBranch(req, res, true);
+  if (!scope) return;
 
   const result = await postCustomerLedger(
     req.tenantContext!.tenantId,
-    req.tenantContext!.branchId,
+    scope.branchId,
     req.tenantContext!.userId,
     req.params.customerId.toString(),
     parsed.data
@@ -106,8 +143,18 @@ customersRouter.post("/:customerId/ledger", requireTenant, requirePermission("cu
     return;
   }
 
+  if (result.status === "shift_not_found") {
+    res.status(409).json({ error: "Open register shift not found for this cash customer payment" });
+    return;
+  }
+
   if (result.status === "credit_limit_exceeded") {
     res.status(409).json({ error: "Credit limit would be exceeded" });
+    return;
+  }
+
+  if (result.status === "overpayment") {
+    res.status(409).json({ error: "Customer payment exceeds outstanding balance" });
     return;
   }
 
@@ -116,5 +163,5 @@ customersRouter.post("/:customerId/ledger", requireTenant, requirePermission("cu
     return;
   }
 
-  res.status(201).json({ customer: result.customer, entry: result.entry });
+  res.status(201).json({ customer: result.customer, entry: result.entry, movement: result.movement });
 });

@@ -1,7 +1,8 @@
-import { ArrowRight, Check, Eye, EyeOff, KeyRound, LockKeyhole, RefreshCcw, ShieldCheck, Smartphone, Store, X } from "lucide-react";
+import { ArrowRight, Check, Eye, EyeOff, KeyRound, LockKeyhole, RefreshCcw, Search, ShieldCheck, Smartphone, Store, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   fetchAuthBootstrap,
+  fetchAuthBootstrapByStaffId,
   fetchAuthSessions,
   fetchBranchOptions,
   fetchStaff,
@@ -67,11 +68,41 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
   const [pinForm, setPinForm] = useState({ staffId: "", terminalId: "", pin: "" });
   const [rememberDevice, setRememberDevice] = useState(true);
   const [passwordVisible, setPasswordVisible] = useState(false);
+  const [sessionQuery, setSessionQuery] = useState("");
+  const [sessionStatusFilter, setSessionStatusFilter] = useState("");
   const [status, setStatus] = useState("Ready");
 
   const activeSessions = useMemo(() => sessions.filter((session) => sessionLabel(session) === "active").length, [sessions]);
   const pinEnabledStaff = useMemo(() => staff.filter((member) => member.pinEnabled && member.active).length, [staff]);
-  const sessionsPage = usePaginatedRows(sessions, 10);
+  const staffById = useMemo(() => new Map(staff.map((member) => [member.id, member])), [staff]);
+  const filteredSessions = useMemo(() => {
+    const normalizedQuery = sessionQuery.trim().toLowerCase();
+
+    return sessions.filter((session) => {
+      const label = sessionLabel(session);
+      const sessionStaff = staffById.get(session.staffId);
+      const haystack = [
+        session.id,
+        session.staffId,
+        sessionStaff?.name,
+        sessionStaff?.email,
+        session.role,
+        session.terminalId,
+        session.branchId,
+        session.userAgent,
+        session.ipAddress,
+        label
+      ].filter(Boolean).join(" ").toLowerCase();
+
+      const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
+      const matchesStatus = !sessionStatusFilter || label === sessionStatusFilter;
+
+      return matchesQuery && matchesStatus;
+    });
+  }, [sessionQuery, sessionStatusFilter, sessions, staffById]);
+  const sessionsPage = usePaginatedRows(filteredSessions, 10);
+  const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
+  const branchLocked = Boolean(branchId && branches.length === 1);
 
   function preferredBranchId(branchOptions: BranchOption[], terminalOptions: TerminalOption[], requestedBranchId?: string) {
     if (requestedBranchId && branchOptions.some((branch) => branch.id === requestedBranchId)) return requestedBranchId;
@@ -154,7 +185,7 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
           staffId: "",
           terminalId: branchTerminals.some((terminal) => terminal.id === current.terminalId) ? current.terminalId : effectiveTerminalId
         }));
-        setStatus(effectiveBranchId ? "Enter staff ID and PIN" : "Select a branch");
+        setStatus("Enter staff ID and 6-digit PIN");
         return;
       }
 
@@ -217,8 +248,43 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
     setPinForm((current) => ({ ...current, staffId: "", terminalId: "" }));
   }
 
+  async function loadPinBootstrapForStaffId(staffId: string) {
+    const submittedStaffId = normalizeLoginText(staffId).toUpperCase();
+    if (!submittedStaffId) return null;
+
+    try {
+      setStatus("Resolving staff terminal...");
+      const bootstrap = await fetchAuthBootstrapByStaffId(submittedStaffId);
+      const member = bootstrap.staff[0];
+      const staffBranchId = member?.branchId ?? bootstrap.branches[0]?.id ?? "";
+      const branchTerminals = bootstrap.terminals.filter((terminal) => terminal.branchId === staffBranchId);
+      const terminalId = preferredTerminalId(branchTerminals, pinForm.terminalId || loginForm.terminalId);
+
+      setTenantId(member?.tenantId ?? bootstrap.branches[0]?.tenantId ?? tenantId);
+      if (member?.tenantId) rememberTenantId(member.tenantId);
+      setBranches(bootstrap.branches);
+      setAllLoginTerminals(bootstrap.terminals);
+      setStaff(bootstrap.staff);
+      setBranchId(staffBranchId);
+      setTerminals(branchTerminals);
+      setPinForm((current) => ({ ...current, staffId: submittedStaffId, terminalId }));
+      setLoginForm((current) => ({ ...current, terminalId }));
+      setStatus(member ? `Ready for ${member.name}` : "Staff terminal ready");
+      return { branchId: staffBranchId, terminalId, tenantId: member?.tenantId ?? bootstrap.branches[0]?.tenantId ?? "", terminals: branchTerminals };
+    } catch (error) {
+      setTerminals([]);
+      setStatus(error instanceof Error ? error.message : "Unable to resolve staff terminal");
+      return null;
+    }
+  }
+
+  function clearSessionFilters() {
+    setSessionQuery("");
+    setSessionStatusFilter("");
+  }
+
   function appendPinDigit(digit: string) {
-    setPinForm((current) => current.pin.length >= 4 ? current : { ...current, pin: `${current.pin}${digit}` });
+    setPinForm((current) => current.pin.length >= 6 ? current : { ...current, pin: `${current.pin}${digit}` });
   }
 
   function clearPin() {
@@ -242,16 +308,13 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
   async function submitPasswordLogin(event: FormEvent) {
     event.preventDefault();
 
-    const submittedTenantId = normalizeLoginText(tenantId);
-    const submittedIdentifier = normalizeLoginText(loginForm.identifier).toLowerCase();
+    const rawIdentifier = normalizeLoginText(loginForm.identifier);
+    const submittedIdentifier = rawIdentifier.toLowerCase();
     const submittedPassword = normalizeLoginText(loginForm.password).replace(/^["'](.+)["']$/, "$1");
     const inferredContext = loginContextForStaff(submittedIdentifier, loginForm.terminalId || pinForm.terminalId);
-    const submittedTerminalId = inferredContext.terminalId || loginForm.terminalId || pinForm.terminalId || undefined;
-
-    if (!submittedTenantId) {
-      setStatus("Enter tenant ID");
-      return;
-    }
+    const resolvedContext = inferredContext.terminalId || rawIdentifier.includes("@") ? null : await loadPinBootstrapForStaffId(rawIdentifier);
+    const submittedTenantId = normalizeLoginText(tenantId) || resolvedContext?.tenantId;
+    const submittedTerminalId = inferredContext.terminalId || resolvedContext?.terminalId || loginForm.terminalId || pinForm.terminalId || undefined;
 
     if (!submittedIdentifier || !submittedPassword) {
       setStatus("Enter user ID and password");
@@ -262,13 +325,13 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
 
     try {
       const response = await loginWithPassword({
-        tenantId: submittedTenantId,
+        tenantId: submittedTenantId || undefined,
         identifier: submittedIdentifier,
         password: submittedPassword,
         terminalId: submittedTerminalId
       });
-      if (inferredContext.branchId) setBranchId(inferredContext.branchId);
-      if (inferredContext.terminals.length > 0) setTerminals(inferredContext.terminals);
+      if (inferredContext.branchId || resolvedContext?.branchId) setBranchId(inferredContext.branchId || resolvedContext?.branchId || "");
+      if (inferredContext.terminals.length > 0 || resolvedContext?.terminals.length) setTerminals(inferredContext.terminals.length > 0 ? inferredContext.terminals : resolvedContext?.terminals ?? []);
       if (submittedTerminalId) {
         setLoginForm((current) => ({ ...current, terminalId: submittedTerminalId }));
         setPinForm((current) => ({ ...current, terminalId: submittedTerminalId }));
@@ -286,18 +349,15 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
   async function submitPinLogin(event: FormEvent) {
     event.preventDefault();
 
-    if (!tenantId.trim()) {
-      setStatus("Enter tenant ID");
-      return;
-    }
-
-    const submittedStaffId = normalizeLoginText(pinForm.staffId);
+    const submittedStaffId = normalizeLoginText(pinForm.staffId).toUpperCase();
     const inferredContext = loginContextForStaff(submittedStaffId, pinForm.terminalId);
+    const resolvedContext = inferredContext.terminalId ? null : await loadPinBootstrapForStaffId(submittedStaffId);
     const submittedBranchId = inferredContext.branchId || branchId;
-    const submittedTerminalId = inferredContext.terminalId || pinForm.terminalId;
+    const submittedTerminalId = inferredContext.terminalId || resolvedContext?.terminalId || pinForm.terminalId;
+    const submittedTenantId = normalizeLoginText(tenantId) || resolvedContext?.tenantId;
 
-    if (!submittedBranchId || !submittedTerminalId || !submittedStaffId) {
-      setStatus("Enter branch, terminal, staff ID, and PIN");
+    if (!submittedTerminalId || !submittedStaffId || pinForm.pin.length !== 6) {
+      setStatus("Enter staff ID, terminal, and 6-digit PIN");
       return;
     }
 
@@ -305,13 +365,13 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
 
     try {
       const response = await loginWithPin({
-        tenantId: normalizeLoginText(tenantId),
-        branchId: normalizeLoginText(submittedBranchId),
+        tenantId: submittedTenantId || undefined,
+        branchId: (submittedBranchId || resolvedContext?.branchId) ? normalizeLoginText(submittedBranchId || resolvedContext?.branchId || "") : undefined,
         terminalId: normalizeLoginText(submittedTerminalId),
         staffId: submittedStaffId,
         pin: normalizeLoginText(pinForm.pin)
       });
-      setBranchId(submittedBranchId);
+      setBranchId(response.session.branchId ?? response.staff.branchId);
       if (inferredContext.terminals.length > 0) setTerminals(inferredContext.terminals);
       setPinForm((current) => ({ ...current, staffId: submittedStaffId, terminalId: submittedTerminalId }));
       setLoginForm((current) => ({ ...current, terminalId: submittedTerminalId }));
@@ -361,7 +421,7 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
   }
 
   if (!auth) {
-    const pinReady = Boolean(tenantId.trim() && branchId && pinForm.terminalId && pinForm.staffId && pinForm.pin.length >= 4);
+    const pinReady = Boolean(pinForm.terminalId && pinForm.staffId && pinForm.pin.length === 6);
     const keypadDigits = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
     return (
@@ -416,16 +476,22 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
               <form className="auth-pin-terminal" onSubmit={submitPinLogin}>
                 <div className="auth-pin-heading">
                   <h1>PIN Login</h1>
-                  <span>Enter staff ID and security PIN</span>
+                  <span>Enter staff ID and 6-digit security PIN</span>
                 </div>
 
                 <label className="auth-pin-id">
                   Staff ID
-                  <input value={pinForm.staffId} onChange={(event) => changePinStaffId(event.target.value)} placeholder="staff-2" required />
+                  <input
+                    value={pinForm.staffId}
+                    onBlur={(event) => void loadPinBootstrapForStaffId(event.target.value)}
+                    onChange={(event) => changePinStaffId(event.target.value.toUpperCase())}
+                    placeholder="LCF-MAI-MUS"
+                    required
+                  />
                 </label>
 
                 <div className="auth-pin-dots" aria-label={`${pinForm.pin.length} PIN digits entered`}>
-                  {[0, 1, 2, 3].map((index) => <span className={index < pinForm.pin.length ? "is-filled" : ""} key={index} />)}
+                  {[0, 1, 2, 3, 4, 5].map((index) => <span className={index < pinForm.pin.length ? "is-filled" : ""} key={index} />)}
                 </div>
 
                 <div className="auth-keypad">
@@ -445,20 +511,6 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
           </div>
 
           <footer className="samba-login-footer">
-            <label>
-              Tenant
-              <div className="auth-terminal-inline">
-                <input value={tenantId} onChange={(event) => changeTenant(event.target.value)} onBlur={() => void loadSecurity("", tenantId)} required />
-                <button type="button" onClick={() => void loadSecurity("", tenantId)}><RefreshCcw size={16} /></button>
-              </div>
-            </label>
-            <label>
-              Branch
-              <select value={branchId} onChange={(event) => changeBranch(event.target.value)} required>
-                <option value="">Branch</option>
-                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-              </select>
-            </label>
             <label>
               Terminal
               <select value={pinForm.terminalId} onChange={(event) => {
@@ -518,10 +570,17 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
             </label>
             <label className="wide-field">
               Branch
-              <select value={branchId} onChange={(event) => changeBranch(event.target.value)} required>
-                <option value="">Branch</option>
-                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-              </select>
+              {branchLocked ? (
+                <span className="locked-select-value">
+                  <strong>{selectedBranch?.name ?? branchId}</strong>
+                  <small>{selectedBranch?.city ?? "assigned"}</small>
+                </span>
+              ) : (
+                <select value={branchId} onChange={(event) => changeBranch(event.target.value)} required>
+                  <option value="">Branch</option>
+                  {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                </select>
+              )}
             </label>
             <label className="wide-field">
               Terminal
@@ -547,19 +606,9 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
             <Smartphone size={20} />
           </div>
           <div className="settings-form">
-            <label>
-              Branch
-              <select value={branchId} onChange={(event) => changeBranch(event.target.value)} required>
-                <option value="">Branch</option>
-                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-              </select>
-            </label>
-            <label>
-              Staff
-              <select value={pinForm.staffId} onChange={(event) => setPinForm((current) => ({ ...current, staffId: event.target.value }))} required>
-                <option value="">Staff</option>
-                {staff.filter((member) => member.pinEnabled).map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
-              </select>
+            <label className="wide-field">
+              Staff ID
+              <input value={pinForm.staffId} onChange={(event) => changePinStaffId(event.target.value.toUpperCase())} placeholder="LCF-MAI-MUS" required />
             </label>
             <label>
               Terminal
@@ -569,8 +618,16 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
               </select>
             </label>
             <label className="wide-field">
-              PIN
-              <input type="password" value={pinForm.pin} onChange={(event) => setPinForm((current) => ({ ...current, pin: event.target.value }))} required />
+              6-digit PIN
+              <input
+                inputMode="numeric"
+                maxLength={6}
+                pattern="[0-9]{6}"
+                type="password"
+                value={pinForm.pin}
+                onChange={(event) => setPinForm((current) => ({ ...current, pin: event.target.value.replace(/\D/g, "").slice(0, 6) }))}
+                required
+              />
             </label>
             <label className="toggle-line wide-field">
               <input type="checkbox" checked={rememberDevice} onChange={(event) => setRememberDevice(event.target.checked)} />
@@ -587,7 +644,29 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
       <section className="panel">
         <div className="panel-header">
           <h2>Sessions</h2>
-          <span>{sessions.length} records</span>
+          <span>{filteredSessions.length} of {sessions.length} records</span>
+        </div>
+        <div className="table-toolbar security-session-toolbar">
+          <div className="search-box compact-search">
+            <Search size={16} />
+            <input
+              value={sessionQuery}
+              onChange={(event) => setSessionQuery(event.target.value)}
+              placeholder="Search session, staff, role or terminal"
+            />
+            {sessionQuery ? (
+              <button type="button" onClick={() => setSessionQuery("")} aria-label="Clear session search"><X size={14} /></button>
+            ) : null}
+          </div>
+          <select value={sessionStatusFilter} onChange={(event) => setSessionStatusFilter(event.target.value)}>
+            <option value="">Session status</option>
+            <option value="active">Active</option>
+            <option value="expired">Expired</option>
+            <option value="revoked">Revoked</option>
+          </select>
+          {(sessionQuery || sessionStatusFilter) ? (
+            <button className="secondary-button" type="button" onClick={clearSessionFilters}>Clear filters</button>
+          ) : null}
         </div>
         <div className="table-wrap">
           <table>
@@ -595,20 +674,29 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
             <tbody>
               {sessionsPage.pageRows.length === 0 ? (
                 <tr><td colSpan={8}>No sessions created.</td></tr>
-              ) : sessionsPage.pageRows.map((session, index) => (
-                <tr key={session.id}>
-                  <td className="number-cell">{sessionsPage.startIndex + index + 1}</td>
-                  <td>{new Date(session.createdAt).toLocaleString()}</td>
-                  <td>{session.staffId}</td>
-                  <td>{session.role}</td>
-                  <td>{session.terminalId ?? "None"}</td>
-                  <td>{new Date(session.expiresAt).toLocaleDateString()}</td>
-                  <td><StatusBadge label={sessionLabel(session)} tone={sessionTone(session)} /></td>
-                  <td className="row-actions">
-                    <button disabled={Boolean(session.revokedAt)} onClick={() => revokeSession(session)}><X size={14} /> Revoke</button>
-                  </td>
-                </tr>
-              ))}
+              ) : sessionsPage.pageRows.map((session, index) => {
+                const sessionStaff = staffById.get(session.staffId);
+
+                return (
+                  <tr key={session.id}>
+                    <td className="number-cell">{sessionsPage.startIndex + index + 1}</td>
+                    <td>{new Date(session.createdAt).toLocaleString()}</td>
+                    <td>
+                      <span className="table-cell-stack">
+                        <strong>{sessionStaff?.name ?? session.staffId}</strong>
+                        <small>{session.staffId}</small>
+                      </span>
+                    </td>
+                    <td>{session.role}</td>
+                    <td>{session.terminalId ?? "None"}</td>
+                    <td>{new Date(session.expiresAt).toLocaleDateString()}</td>
+                    <td><StatusBadge label={sessionLabel(session)} tone={sessionTone(session)} /></td>
+                    <td className="row-actions">
+                      <button disabled={Boolean(session.revokedAt)} onClick={() => revokeSession(session)}><X size={14} /> Revoke</button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

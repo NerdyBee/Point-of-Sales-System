@@ -628,11 +628,15 @@ export interface CustomerLedgerPayload {
   amount: number;
   pointsDelta: number;
   note: string;
+  paymentMethod?: Exclude<PaymentMethodCode, "customer_credit">;
+  paymentReference?: string;
+  terminalId?: string;
 }
 
 export interface CustomerLedgerEntry {
   id: string;
   tenantId: string;
+  branchId: string;
   customerId: string;
   type: CustomerLedgerPayload["type"];
   amount: number;
@@ -809,6 +813,18 @@ function branchHeaders(branchId?: string) {
   return branchId ? { "x-branch-id": branchId } : undefined;
 }
 
+function queryString(params: Record<string, string | number | undefined | null>) {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    const stringValue = value === undefined || value === null ? "" : String(value).trim();
+    if (stringValue) query.set(key, stringValue);
+  });
+
+  const text = query.toString();
+  return text ? `?${text}` : "";
+}
+
 async function refreshStoredAuth() {
   const auth = readStoredAuth();
   if (!auth?.refreshToken) return null;
@@ -828,6 +844,10 @@ async function refreshStoredAuth() {
   authStorage().setItem(authStorageKey, JSON.stringify(nextAuth));
   window.dispatchEvent(new CustomEvent("naijapos-auth-changed", { detail: nextAuth }));
   return nextAuth;
+}
+
+export async function refreshCurrentAuth() {
+  return refreshStoredAuth();
 }
 
 export interface StaffPayload {
@@ -972,6 +992,14 @@ export interface SubscriptionUpdatePayload {
   notes?: string;
 }
 
+export interface SubscriptionInvoiceCreatePayload {
+  plan: SubscriptionPlan;
+  amount?: number;
+  status: SubscriptionInvoiceStatus;
+  issuedAt: string;
+  dueAt: string;
+}
+
 export type BranchStatus = "active" | "paused";
 
 export interface BranchProfile {
@@ -1055,6 +1083,10 @@ export interface DashboardReport {
   periodLabel: string;
   summary: {
     totalSales: number;
+    taxableSales: number;
+    discountTotal: number;
+    serviceChargeTotal: number;
+    vatTotal: number;
     orderCount: number;
     averageTransaction: number;
     grossProfit: number;
@@ -1065,6 +1097,12 @@ export interface DashboardReport {
     cashMovementIn: number;
     cashMovementOut: number;
     cashMovementNet: number;
+    customerCount: number;
+    customerOutstandingBalance: number;
+    customerCreditLimit: number;
+    customerLoyaltyPoints: number;
+    customerAccountPayments: number;
+    customerAccountCreditIssued: number;
     auditEventCount: number;
     pendingApprovalCount: number;
     pendingApprovalValue: number;
@@ -1139,9 +1177,8 @@ async function requestPublicJson<T>(path: string, init?: RequestInit): Promise<T
 }
 
 export async function fetchCatalogProducts(branchId?: string) {
-  const params = branchId ? `?${new URLSearchParams({ branchId }).toString()}` : "";
-  return requestJson<{ products: Product[] }>(`/api/v1/catalog/products${params}`, {
-    headers: branchId ? { "x-branch-id": branchId } : undefined
+  return requestJson<{ products: Product[] }>(`/api/v1/catalog/products${queryString({ branchId })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 
@@ -1177,10 +1214,9 @@ export async function fetchCurrentTenant(userId = "", branchId?: string) {
   });
 }
 
-export async function fetchDashboardReport(branchId = "", period: ReportPeriod = "today", userId = "") {
-  const params = new URLSearchParams({ branchId, period });
-  return requestJson<DashboardReport>(`/api/v1/reports/dashboard?${params.toString()}`, {
-    headers: { "x-branch-id": branchId }
+export async function fetchDashboardReport(branchId = "", period: ReportPeriod = "today", userId = "", filters: { startDate?: string; endDate?: string } = {}) {
+  return requestJson<DashboardReport>(`/api/v1/reports/dashboard${queryString({ branchId, period, startDate: filters.startDate, endDate: filters.endDate })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 
@@ -1214,6 +1250,14 @@ export async function updateSubscription(payload: SubscriptionUpdatePayload, bra
   });
 }
 
+export async function createSubscriptionInvoice(payload: SubscriptionInvoiceCreatePayload, branchId = "") {
+  return requestJson<{ invoice: SubscriptionInvoice }>("/api/v1/subscriptions/invoices", {
+    method: "POST",
+    headers: branchHeaders(branchId),
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function updateSubscriptionInvoice(invoiceId: string, status: SubscriptionInvoiceStatus, paymentReference?: string, branchId = "") {
   return requestJson<{ invoice: SubscriptionInvoice }>(`/api/v1/subscriptions/invoices/${invoiceId}`, {
     method: "PATCH",
@@ -1238,6 +1282,14 @@ export async function fetchAuthBootstrap(tenantId: string, branchId?: string) {
     terminals: TerminalOption[];
     staff: Array<Pick<StaffMember, "id" | "tenantId" | "branchId" | "name" | "email" | "role" | "pinEnabled" | "active">>;
   }>(`/api/v1/auth/bootstrap?${params.toString()}`);
+}
+
+export async function fetchAuthBootstrapByStaffId(staffId: string) {
+  return requestJson<{
+    branches: BranchOption[];
+    terminals: TerminalOption[];
+    staff: Array<Pick<StaffMember, "id" | "tenantId" | "branchId" | "name" | "email" | "role" | "pinEnabled" | "active">>;
+  }>(`/api/v1/auth/bootstrap/staff/${encodeURIComponent(staffId)}`);
 }
 
 export async function createBranch(payload: BranchPayload, branchId = "") {
@@ -1272,11 +1324,9 @@ export async function updateTerminal(terminalId: string, payload: Partial<Termin
   });
 }
 
-export async function fetchSyncQueue(branchId = "", status = "all", terminalId = "", userId = "") {
-  const params = new URLSearchParams({ branchId, status });
-  if (terminalId) params.set("terminalId", terminalId);
-  return requestJson<{ records: SyncQueueRecord[] }>(`/api/v1/sync/queue?${params.toString()}`, {
-    headers: { "x-branch-id": branchId }
+export async function fetchSyncQueue(branchId = "", status = "all", terminalId = "", userId = "", startDate = "", endDate = "") {
+  return requestJson<{ records: SyncQueueRecord[] }>(`/api/v1/sync/queue${queryString({ branchId, status, terminalId, startDate, endDate })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 
@@ -1320,9 +1370,8 @@ export async function createSale(payload: CreateSalePayload) {
 }
 
 export async function fetchSales(branchId = "", status = "all", userId = "") {
-  const params = new URLSearchParams({ branchId, status });
-  return requestJson<{ sales: CompletedSale[] }>(`/api/v1/sales?${params.toString()}`, {
-    headers: { "x-branch-id": branchId }
+  return requestJson<{ sales: CompletedSale[] }>(`/api/v1/sales${queryString({ branchId, status })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 
@@ -1354,9 +1403,8 @@ export async function queueReceiptDelivery(saleId: string, channel: "print" | "w
 }
 
 export async function fetchCurrentRegister(branchId = "", terminalId = "") {
-  const params = new URLSearchParams({ branchId, terminalId });
   return requestJson<{ shift: RegisterShift | null; payments: PaymentRecord[]; movements: CashMovement[] }>(
-    `/api/v1/registers/current?${params.toString()}`,
+    `/api/v1/registers/current${queryString({ branchId, terminalId })}`,
     { headers: branchHeaders(branchId) }
   );
 }
@@ -1393,9 +1441,9 @@ export async function closeRegisterShift(payload: CloseRegisterPayload, branchId
   });
 }
 
-export async function fetchExpenses(branchId = "", status = "all", userId = "") {
-  return requestJson<{ expenses: Expense[] }>(`/api/v1/expenses?branchId=${branchId}&status=${status}`, {
-    headers: { "x-branch-id": branchId }
+export async function fetchExpenses(branchId = "", status = "all", userId = "", startDate = "", endDate = "") {
+  return requestJson<{ expenses: Expense[] }>(`/api/v1/expenses${queryString({ branchId, status, startDate, endDate })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 
@@ -1422,44 +1470,44 @@ export async function updateExpenseStatus(
 }
 
 export async function fetchInventoryStock(branchId = "", userId = "") {
-  return requestJson<{ products: Product[]; movements: StockMovement[] }>(`/api/v1/inventory/stock?branchId=${branchId}`, {
-    headers: { "x-branch-id": branchId }
+  return requestJson<{ products: Product[]; movements: StockMovement[] }>(`/api/v1/inventory/stock${queryString({ branchId })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 
 export async function fetchInventoryTransfers(branchId = "", userId = "") {
-  return requestJson<{ transfers: InventoryTransfer[] }>(`/api/v1/inventory/transfers?branchId=${branchId}`, {
-    headers: { "x-branch-id": branchId }
+  return requestJson<{ transfers: InventoryTransfer[] }>(`/api/v1/inventory/transfers${queryString({ branchId })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 
 export async function fetchSuppliers(branchId = "", userId = "") {
-  return requestJson<{ suppliers: Supplier[] }>(`/api/v1/inventory/suppliers?branchId=${branchId}`, {
-    headers: { "x-branch-id": branchId }
+  return requestJson<{ suppliers: Supplier[] }>(`/api/v1/inventory/suppliers${queryString({ branchId })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 
 export async function fetchPurchaseOrders(branchId = "", status = "all", userId = "") {
-  return requestJson<{ purchaseOrders: PurchaseOrder[] }>(`/api/v1/inventory/purchase-orders?branchId=${branchId}&status=${status}`, {
-    headers: { "x-branch-id": branchId }
+  return requestJson<{ purchaseOrders: PurchaseOrder[] }>(`/api/v1/inventory/purchase-orders${queryString({ branchId, status })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 
 export async function fetchSupplierInvoices(branchId = "", status = "all", supplierId = "", userId = "") {
-  return requestJson<{ supplierInvoices: SupplierInvoice[] }>(`/api/v1/inventory/supplier-invoices?branchId=${branchId}&status=${status}&supplierId=${supplierId}`, {
-    headers: { "x-branch-id": branchId }
+  return requestJson<{ supplierInvoices: SupplierInvoice[] }>(`/api/v1/inventory/supplier-invoices${queryString({ branchId, status, supplierId })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 
 export async function fetchSupplierReturns(branchId = "", supplierId = "", userId = "") {
-  return requestJson<{ supplierReturns: SupplierReturn[] }>(`/api/v1/inventory/supplier-returns?branchId=${branchId}&supplierId=${supplierId}`, {
-    headers: { "x-branch-id": branchId }
+  return requestJson<{ supplierReturns: SupplierReturn[] }>(`/api/v1/inventory/supplier-returns${queryString({ branchId, supplierId })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 
 export async function fetchSupplierStatement(branchId: string, supplierId: string, userId = "") {
-  return requestJson<{ statement: SupplierStatement }>(`/api/v1/inventory/suppliers/${supplierId}/statement?branchId=${branchId}`, {
-    headers: { "x-branch-id": branchId }
+  return requestJson<{ statement: SupplierStatement }>(`/api/v1/inventory/suppliers/${supplierId}/statement${queryString({ branchId })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 
@@ -1550,8 +1598,14 @@ export async function createStockCount(payload: StockCountPayload, userId = "") 
 }
 
 export async function fetchRestaurantTables(branchId = "", userId = "") {
-  return requestJson<{ tables: RestaurantTable[]; openOrders: TableOrder[]; reservations: TableReservation[] }>(`/api/v1/restaurant/tables?branchId=${branchId}`, {
-    headers: { "x-branch-id": branchId }
+  return requestJson<{ tables: RestaurantTable[]; openOrders: TableOrder[]; reservations: TableReservation[] }>(`/api/v1/restaurant/tables${queryString({ branchId })}`, {
+    headers: branchHeaders(branchId)
+  });
+}
+
+export async function fetchRestaurantStaffOptions(branchId = "") {
+  return requestJson<{ staff: Array<Pick<StaffMember, "id" | "tenantId" | "branchId" | "name" | "email" | "role" | "pinEnabled" | "active">> }>(`/api/v1/restaurant/staff-options${queryString({ branchId })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 
@@ -1635,10 +1689,8 @@ export async function updateTableReservationStatus(reservationId: string, payloa
 }
 
 export async function fetchPrepTickets(branchId = "", station: PrepStation | "All" = "All", userId = "", status = "") {
-  const params = new URLSearchParams({ branchId, station });
-  if (status) params.set("status", status);
-  return requestJson<{ tickets: PrepTicket[] }>(`/api/v1/kitchen/tickets?${params.toString()}`, {
-    headers: { "x-branch-id": branchId }
+  return requestJson<{ tickets: PrepTicket[] }>(`/api/v1/kitchen/tickets${queryString({ branchId, station, status })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 
@@ -1688,22 +1740,22 @@ export async function updateCustomer(customerId: string, payload: Partial<Custom
 }
 
 export async function postCustomerLedger(customerId: string, payload: CustomerLedgerPayload, branchId = "", userId = "") {
-  return requestJson<{ customer: Customer; entry: CustomerLedgerEntry }>(`/api/v1/customers/${customerId}/ledger`, {
+  return requestJson<{ customer: Customer; entry: CustomerLedgerEntry; movement?: CashMovement }>(`/api/v1/customers/${customerId}/ledger`, {
     method: "POST",
     headers: { "x-branch-id": branchId },
     body: JSON.stringify(payload)
   });
 }
 
-export async function fetchCustomerLedger(customerId: string, branchId = "", userId = "") {
-  return requestJson<{ entries: CustomerLedgerEntry[] }>(`/api/v1/customers/${customerId}/ledger`, {
+export async function fetchCustomerLedger(customerId: string, branchId = "", userId = "", startDate = "", endDate = "") {
+  return requestJson<{ entries: CustomerLedgerEntry[] }>(`/api/v1/customers/${customerId}/ledger${queryString({ startDate, endDate })}`, {
     headers: { "x-branch-id": branchId }
   });
 }
 
 export async function fetchStaff(branchId = "", userId = "") {
-  return requestJson<{ staff: StaffMember[] }>(`/api/v1/staff?branchId=${branchId}`, {
-    headers: { "x-branch-id": branchId }
+  return requestJson<{ staff: StaffMember[] }>(`/api/v1/staff${queryString({ branchId })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 
@@ -1713,6 +1765,14 @@ export async function fetchMyProfile() {
 
 export async function updateMyProfile(payload: Pick<StaffPayload, "name" | "email" | "phone">) {
   return requestJson<{ staff: StaffMember }>("/api/v1/staff/me", {
+    method: "PATCH",
+    headers: { "x-branch-id": readStoredAuth()?.session.branchId ?? readStoredAuth()?.staff.branchId ?? "" },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateMySecurity(payload: { currentPassword: string; newPassword?: string; newPin?: string; pinEnabled?: boolean }) {
+  return requestJson<{ staff: StaffMember }>("/api/v1/staff/me/security", {
     method: "PATCH",
     headers: { "x-branch-id": readStoredAuth()?.session.branchId ?? readStoredAuth()?.staff.branchId ?? "" },
     body: JSON.stringify(payload)
@@ -1756,14 +1816,14 @@ export async function assignStaffRole(staffId: string, role: string, branchId = 
   });
 }
 
-export async function loginWithPassword(payload: { tenantId: string; identifier: string; password: string; terminalId?: string }) {
+export async function loginWithPassword(payload: { tenantId?: string; identifier: string; password: string; terminalId?: string }) {
   return requestPublicJson<AuthResponse>("/api/v1/auth/login", {
     method: "POST",
     body: JSON.stringify(payload)
   });
 }
 
-export async function loginWithPin(payload: { tenantId: string; branchId: string; terminalId: string; staffId: string; pin: string }) {
+export async function loginWithPin(payload: { tenantId?: string; branchId?: string; terminalId: string; staffId: string; pin: string }) {
   return requestPublicJson<AuthResponse>("/api/v1/auth/pin-login", {
     method: "POST",
     body: JSON.stringify(payload)
@@ -1784,21 +1844,15 @@ export async function logoutAuthSession() {
 }
 
 export async function fetchAuthSessions(userId = "", branchId = "") {
-  const params = new URLSearchParams();
-  if (branchId) params.set("branchId", branchId);
-  const query = params.toString();
-  return requestJson<{ sessions: AuthSession[] }>(`/api/v1/auth/sessions${query ? `?${query}` : ""}`, {
-    headers: { "x-branch-id": branchId }
+  return requestJson<{ sessions: AuthSession[] }>(`/api/v1/auth/sessions${queryString({ branchId })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 
 export async function revokeAuthSession(sessionId: string, userId = "", branchId = "") {
-  const params = new URLSearchParams();
-  if (branchId) params.set("branchId", branchId);
-  const query = params.toString();
-  return requestJson<{ session: AuthSession }>(`/api/v1/auth/sessions/${sessionId}/revoke${query ? `?${query}` : ""}`, {
+  return requestJson<{ session: AuthSession }>(`/api/v1/auth/sessions/${sessionId}/revoke${queryString({ branchId })}`, {
     method: "POST",
-    headers: { "x-branch-id": branchId }
+    headers: branchHeaders(branchId)
   });
 }
 
@@ -1826,6 +1880,14 @@ export async function updateStaffStatus(staffId: string, active: boolean, reason
   });
 }
 
+export async function updateStaffSecurity(staffId: string, payload: { temporaryPassword?: string; pin?: string; pinEnabled?: boolean; reason: string }, branchId = "") {
+  return requestJson<{ staff: StaffMember }>(`/api/v1/staff/${staffId}/security`, {
+    method: "PATCH",
+    headers: { "x-branch-id": branchId },
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function resendStaffInvite(staffId: string, branchId = "", userId = "") {
   return requestJson<{ staff: StaffMember }>(`/api/v1/staff/${staffId}/invite/resend`, {
     method: "POST",
@@ -1840,20 +1902,15 @@ export async function revokeStaffInvite(staffId: string, branchId = "", userId =
   });
 }
 
-export async function fetchAuditEvents(userId = "", branchId = "", action = "") {
-  const params = new URLSearchParams();
-  if (branchId) params.set("branchId", branchId);
-  if (userId) params.set("userId", userId);
-  if (action) params.set("action", action);
-  const query = params.toString();
-  return requestJson<{ events: AuditEvent[] }>(`/api/v1/audit${query ? `?${query}` : ""}`, {
-    headers: { "x-branch-id": branchId }
+export async function fetchAuditEvents(userId = "", branchId = "", action = "", startDate = "", endDate = "") {
+  return requestJson<{ events: AuditEvent[] }>(`/api/v1/audit${queryString({ branchId, userId, action, startDate, endDate })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 
-export async function fetchApprovals(status = "all", type = "all", branchId = "", userId = "") {
-  return requestJson<{ approvals: ApprovalRequest[] }>(`/api/v1/approvals?branchId=${branchId}&status=${status}&type=${type}`, {
-    headers: { "x-branch-id": branchId }
+export async function fetchApprovals(status = "all", type = "all", branchId = "", userId = "", startDate = "", endDate = "") {
+  return requestJson<{ approvals: ApprovalRequest[] }>(`/api/v1/approvals${queryString({ branchId, status, type, startDate, endDate })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 

@@ -55,14 +55,15 @@ export function TablePagination({
 }: TablePaginationProps) {
   const from = totalRows === 0 ? 0 : startIndex + 1;
   const to = Math.min(totalRows, startIndex + visibleCount);
+  const sizeOptions = [...new Set([pageSize, ...pageSizes])].sort((left, right) => left - right);
 
   return (
     <div className="table-pagination">
-      <span>{from}-{to} of {totalRows}</span>
+      <span aria-live="polite">{from}-{to} of {totalRows}</span>
       <label>
         Rows
         <select value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
-          {pageSizes.map((size) => <option key={size} value={size}>{size}</option>)}
+          {sizeOptions.map((size) => <option key={size} value={size}>{size}</option>)}
         </select>
       </label>
       <div className="pagination-actions">

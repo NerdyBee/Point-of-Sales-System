@@ -1,4 +1,4 @@
-import { Banknote, Check, Clock3, LockKeyhole, Plus, Printer, RefreshCcw, WalletCards } from "lucide-react";
+import { Banknote, Check, Clock3, LockKeyhole, Plus, Printer, RefreshCcw, Search, WalletCards, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyApproval,
@@ -54,6 +54,11 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
   const [countedCash, setCountedCash] = useState(0);
   const [managerNote, setManagerNote] = useState("");
   const [closeApprovalId, setCloseApprovalId] = useState("");
+  const [paymentQuery, setPaymentQuery] = useState("");
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<PaymentRecord["reconciliationStatus"] | "">("");
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<PaymentRecord["method"] | "">("");
+  const [movementQuery, setMovementQuery] = useState("");
+  const [movementTypeFilter, setMovementTypeFilter] = useState<CashMovement["type"] | "">("");
   const [status, setStatus] = useState("Ready");
   const { settings, displayMoney } = useTenantSettings();
   const handledApprovalIdRef = useRef<string | null>(null);
@@ -77,9 +82,30 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
   const printerReady = Boolean(hardware?.printer.trim());
   const drawerReady = Boolean(hardware?.cashDrawer);
   const branchTerminals = useMemo(() => terminals.filter((terminal) => terminal.branchId === branchId), [branchId, terminals]);
+  const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
+  const branchLocked = Boolean(branchId && branches.length === 1);
   const selectedTerminal = useMemo(() => terminals.find((terminal) => terminal.id === terminalId), [terminalId, terminals]);
-  const paymentsPage = usePaginatedRows(payments, 10);
-  const movementsPage = usePaginatedRows(movements, 10);
+  const filteredPayments = useMemo(() => {
+    const query = paymentQuery.trim().toLowerCase();
+    return payments
+      .filter((payment) => !paymentStatusFilter || payment.reconciliationStatus === paymentStatusFilter)
+      .filter((payment) => !paymentMethodFilter || payment.method === paymentMethodFilter)
+      .filter((payment) => {
+        if (!query) return true;
+        return [payment.saleId, payment.method, payment.reference ?? "", payment.reconciliationStatus].some((value) => value.toLowerCase().includes(query));
+      });
+  }, [paymentMethodFilter, paymentQuery, paymentStatusFilter, payments]);
+  const filteredMovements = useMemo(() => {
+    const query = movementQuery.trim().toLowerCase();
+    return movements
+      .filter((item) => !movementTypeFilter || item.type === movementTypeFilter)
+      .filter((item) => {
+        if (!query) return true;
+        return [item.type, item.reason, item.createdBy].some((value) => value.toLowerCase().includes(query));
+      });
+  }, [movementQuery, movementTypeFilter, movements]);
+  const paymentsPage = usePaginatedRows(filteredPayments, 10);
+  const movementsPage = usePaginatedRows(filteredMovements, 10);
 
   function movementSign(type: CashMovement["type"]) {
     return type === "cash_in" || type === "paid_in" ? "+" : "-";
@@ -104,6 +130,17 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
   function updateManagerNote(value: string) {
     setManagerNote(value);
     setCloseApprovalId("");
+  }
+
+  function clearPaymentFilters() {
+    setPaymentQuery("");
+    setPaymentMethodFilter("");
+    setPaymentStatusFilter("");
+  }
+
+  function clearMovementFilters() {
+    setMovementQuery("");
+    setMovementTypeFilter("");
   }
 
   async function loadRegister(nextTerminalId = terminalId, nextBranchId = branchId) {
@@ -421,6 +458,34 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
     }
   }
 
+  async function matchPendingPayments() {
+    if (!branchId) {
+      setStatus("Select a branch before reconciling payments");
+      return;
+    }
+
+    if (pendingNonCashPayments.length === 0) {
+      setStatus("No pending non-cash payments to match");
+      return;
+    }
+
+    setStatus(`Reconciling ${pendingNonCashPayments.length} pending payments...`);
+
+    try {
+      const responses = await Promise.all(
+        pendingNonCashPayments.map((payment) =>
+          reconcilePayment(payment.id, "Matched in batch settlement", branchId, activeUserId)
+        )
+      );
+      const matchedPayments = new Map(responses.map((response) => [response.payment.id, response.payment]));
+      setPayments((current) => current.map((payment) => matchedPayments.get(payment.id) ?? payment));
+      setStatus(`${responses.length} payments matched`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to reconcile pending payments");
+      void loadRegister();
+    }
+  }
+
   return (
     <div className="module-view">
       <div className="module-heading">
@@ -431,12 +496,19 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
         <div className="button-group">
           <label className="toolbar-select">
             Branch
-            <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-              <option value="">Branch</option>
-              {branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
-              ))}
-            </select>
+            {branchLocked ? (
+              <span className="locked-select-value locked-select-value-compact">
+                <strong>{selectedBranch?.name ?? branchId}</strong>
+                <small>{selectedBranch?.city ?? "assigned"}</small>
+              </span>
+            ) : (
+              <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
+                <option value="">Branch</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
+                ))}
+              </select>
+            )}
           </label>
           <button className="secondary-button" onClick={() => loadRegister()}><RefreshCcw size={18} /> Sync</button>
         </div>
@@ -505,7 +577,7 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
             <label>
               Type
               <select value={movement.type} onChange={(event) => updateMovementForm("type", event.target.value as CashMovement["type"])}>
-                <option value="" disabled>Type</option>
+                <option value="">Type</option>
                 <option value="cash_in">Cash in</option>
                 <option value="cash_out">Cash out</option>
                 <option value="paid_in">Paid in</option>
@@ -569,7 +641,38 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
         <section className="panel">
           <div className="panel-header">
             <h2>Payment reconciliation</h2>
-            <span>{payments.length} payments</span>
+            <div className="button-group">
+              <span>{filteredPayments.length} of {payments.length} payments</span>
+              <button className="secondary-button" disabled={pendingNonCashPayments.length === 0} onClick={matchPendingPayments}>
+                <Check size={16} /> Match pending
+              </button>
+            </div>
+          </div>
+          <div className="table-toolbar register-payment-toolbar">
+            <div className="search-box compact-search">
+              <Search size={16} />
+              <input value={paymentQuery} onChange={(event) => setPaymentQuery(event.target.value)} placeholder="Search sale, method or reference" />
+              {paymentQuery ? (
+                <button type="button" onClick={() => setPaymentQuery("")} aria-label="Clear payment search"><X size={14} /></button>
+              ) : null}
+            </div>
+            <select value={paymentMethodFilter} onChange={(event) => setPaymentMethodFilter(event.target.value as PaymentRecord["method"] | "")}>
+              <option value="">Payment method</option>
+              <option value="cash">Cash</option>
+              <option value="card">Card</option>
+              <option value="bank_transfer">Bank transfer</option>
+              <option value="mobile_money">Mobile money</option>
+              <option value="customer_credit">Customer credit</option>
+              <option value="voucher">Voucher</option>
+            </select>
+            <select value={paymentStatusFilter} onChange={(event) => setPaymentStatusFilter(event.target.value as PaymentRecord["reconciliationStatus"] | "")}>
+              <option value="">Reconciliation status</option>
+              <option value="pending">Pending</option>
+              <option value="matched">Matched</option>
+            </select>
+            {(paymentQuery || paymentMethodFilter || paymentStatusFilter) ? (
+              <button className="secondary-button" type="button" onClick={clearPaymentFilters}>Clear filters</button>
+            ) : null}
           </div>
           <div className="table-wrap">
             <table>
@@ -614,7 +717,26 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
 
           <div className="panel-header register-history-header">
             <h2>Drawer movements</h2>
-            <span>{movements.length} records</span>
+            <span>{filteredMovements.length} of {movements.length} records</span>
+          </div>
+          <div className="table-toolbar register-movement-toolbar">
+            <div className="search-box compact-search">
+              <Search size={16} />
+              <input value={movementQuery} onChange={(event) => setMovementQuery(event.target.value)} placeholder="Search movement reason or user" />
+              {movementQuery ? (
+                <button type="button" onClick={() => setMovementQuery("")} aria-label="Clear movement search"><X size={14} /></button>
+              ) : null}
+            </div>
+            <select value={movementTypeFilter} onChange={(event) => setMovementTypeFilter(event.target.value as CashMovement["type"] | "")}>
+              <option value="">Movement type</option>
+              <option value="cash_in">Cash in</option>
+              <option value="cash_out">Cash out</option>
+              <option value="paid_in">Paid in</option>
+              <option value="paid_out">Paid out</option>
+            </select>
+            {(movementQuery || movementTypeFilter) ? (
+              <button className="secondary-button" type="button" onClick={clearMovementFilters}>Clear filters</button>
+            ) : null}
           </div>
           <div className="table-wrap">
             <table>

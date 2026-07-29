@@ -1,12 +1,12 @@
-import { ClipboardList, Download, RefreshCcw, Search, ShieldAlert, UserRound } from "lucide-react";
+import { ClipboardList, Download, RefreshCcw, Search, ShieldAlert, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { fetchAuditEvents, readStoredAuth, type AuditEvent } from "../../shared/api/client";
 import { StatusBadge } from "../../shared/components/StatusBadge";
 import { TablePagination, usePaginatedRows } from "../../shared/components/TablePagination";
 
 function actionTone(action: string) {
-  if (action.includes("void") || action.includes("closed") || action.includes("status_changed")) return "danger";
-  if (action.includes("refund") || action.includes("cash_movement") || action.includes("updated")) return "warning";
+  if (action.includes("void") || action.includes("closed") || action.includes("status_changed") || action.includes("login_failed") || action.includes("security_reset")) return "danger";
+  if (action.includes("refund") || action.includes("cash_movement") || action.includes("updated") || action.includes("security_updated")) return "warning";
   if (action.includes("created") || action.includes("opened") || action.includes("recorded")) return "success";
   return "info";
 }
@@ -30,22 +30,46 @@ export function AuditLogView() {
   const [query, setQuery] = useState("");
   const [actionFilter, setActionFilter] = useState("");
   const [actorFilter, setActorFilter] = useState("");
+  const [entityFilter, setEntityFilter] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [status, setStatus] = useState("Ready");
 
-  const actionOptions = useMemo(() => ["all", ...Array.from(new Set(events.map((event) => event.action))).sort()], [events]);
-  const actorOptions = useMemo(() => ["all", ...Array.from(new Set(events.map((event) => event.userId))).sort()], [events]);
+  const actionOptions = useMemo(() => Array.from(new Set(events.map((event) => event.action))).sort(), [events]);
+  const actorOptions = useMemo(() => Array.from(new Set(events.map((event) => event.userId))).sort(), [events]);
+  const entityOptions = useMemo(() => Array.from(new Set(events.map((event) => event.entityType))).sort(), [events]);
   const filteredEvents = useMemo(() => {
     const needle = query.toLowerCase();
     return events
-      .filter((event) => `${event.action} ${event.entityType} ${event.entityId} ${event.userId}`.toLowerCase().includes(needle));
-  }, [events, query]);
+      .filter((event) => {
+        const haystack = [
+          event.action,
+          event.entityType,
+          event.entityId,
+          event.userId,
+          event.branchId,
+          formatMetadata(event.metadata)
+        ].filter(Boolean).join(" ").toLowerCase();
+        const matchesQuery = !needle || haystack.includes(needle);
+        const matchesAction = !actionFilter || event.action === actionFilter;
+        const matchesActor = !actorFilter || event.userId === actorFilter;
+        const matchesEntity = !entityFilter || entityFilter === "all" || event.entityType === entityFilter;
+        return matchesQuery && matchesAction && matchesActor && matchesEntity;
+      });
+  }, [actionFilter, actorFilter, entityFilter, events, query]);
   const eventPage = usePaginatedRows(filteredEvents, 10);
   const sensitiveEvents = useMemo(
-    () => events.filter((event) => event.action.includes("void") || event.action.includes("refund") || event.action.includes("closed")).length,
+    () => events.filter((event) =>
+      event.action.includes("void") ||
+      event.action.includes("refund") ||
+      event.action.includes("closed") ||
+      event.action.includes("login_failed") ||
+      event.action.includes("security_")
+    ).length,
     [events]
   );
 
-  async function loadEvents(nextActionFilter = actionFilter, nextActorFilter = actorFilter) {
+  async function loadEvents(nextStartDate = startDate, nextEndDate = endDate) {
     setStatus("Syncing audit trail...");
 
     if (!activeUserId || !activeBranchId) {
@@ -56,7 +80,7 @@ export function AuditLogView() {
     }
 
     try {
-      const response = await fetchAuditEvents(nextActorFilter, activeBranchId, nextActionFilter);
+      const response = await fetchAuditEvents("", activeBranchId, "", nextStartDate, nextEndDate);
       setEvents(response.events);
       setSelectedEvent((current) => response.events.find((event) => event.id === current?.id) ?? response.events[0] ?? null);
       setStatus("Audit trail synced");
@@ -69,12 +93,20 @@ export function AuditLogView() {
 
   function changeActionFilter(nextActionFilter: string) {
     setActionFilter(nextActionFilter);
-    void loadEvents(nextActionFilter, actorFilter);
   }
 
   function changeActorFilter(nextActorFilter: string) {
     setActorFilter(nextActorFilter);
-    void loadEvents(actionFilter, nextActorFilter);
+  }
+
+  function clearEventFilters() {
+    setQuery("");
+    setActionFilter("");
+    setActorFilter("");
+    setEntityFilter("");
+    setStartDate("");
+    setEndDate("");
+    void loadEvents("", "");
   }
 
   function exportCsv() {
@@ -95,7 +127,7 @@ export function AuditLogView() {
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a");
     link.href = url;
-    link.download = `naijapos-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `naijapos-audit-${startDate || "all"}-to-${endDate || new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
     setStatus("Audit trail exported");
@@ -104,6 +136,10 @@ export function AuditLogView() {
   useEffect(() => {
     void loadEvents();
   }, []);
+
+  useEffect(() => {
+    setSelectedEvent((current) => filteredEvents.find((event) => event.id === current?.id) ?? filteredEvents[0] ?? null);
+  }, [filteredEvents]);
 
   return (
     <div className="module-view">
@@ -135,11 +171,11 @@ export function AuditLogView() {
         <article className="stat-card">
           <div className="stat-card-top"><span>Sensitive events</span><ShieldAlert size={20} /></div>
           <strong>{sensitiveEvents}</strong>
-          <small>Refunds, voids and closures</small>
+          <small>Security, refunds, voids and closures</small>
         </article>
         <article className="stat-card">
           <div className="stat-card-top"><span>Actors</span><UserRound size={20} /></div>
-          <strong>{actorOptions.length > 1 ? actorOptions.length - 1 : 0}</strong>
+          <strong>{actorOptions.length}</strong>
           <small>{!actorFilter || actorFilter === "all" ? "All users" : actorFilter}</small>
         </article>
         <article className="stat-card">
@@ -153,10 +189,33 @@ export function AuditLogView() {
         <section className="panel">
           <div className="panel-header">
             <h2>Event stream</h2>
-            <div className="search-box compact-search">
-              <Search size={16} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search events" />
+          <div className="search-box compact-search">
+            <Search size={16} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search events" />
+            {query ? (
+              <button type="button" onClick={() => setQuery("")} aria-label="Clear event search"><X size={14} /></button>
+            ) : null}
+          </div>
+          </div>
+          <div className="table-toolbar audit-filter-toolbar">
+            <select value={entityFilter} onChange={(event) => setEntityFilter(event.target.value)}>
+              <option value="">Entity type</option>
+              {entityOptions.map((entity) => <option key={entity} value={entity}>{entity.replace("_", " ")}</option>)}
+            </select>
+            <div className="date-range-filter audit-date-range-filter">
+              <label>
+                <span>Start</span>
+                <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+              </label>
+              <label>
+                <span>End</span>
+                <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+              </label>
             </div>
+            <button className="secondary-button" type="button" onClick={() => loadEvents(startDate, endDate)}>Apply dates</button>
+            {(query || actionFilter || actorFilter || entityFilter || startDate || endDate) ? (
+              <button className="secondary-button" type="button" onClick={clearEventFilters}>Clear filters</button>
+            ) : null}
           </div>
           <div className="audit-stream">
             {eventPage.pageRows.length === 0 ? (

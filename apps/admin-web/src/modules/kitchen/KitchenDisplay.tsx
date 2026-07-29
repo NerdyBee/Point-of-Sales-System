@@ -1,4 +1,4 @@
-import { BellRing, CheckCircle2, Clock, RefreshCcw, X, Zap } from "lucide-react";
+import { BellRing, CheckCircle2, Clock, RefreshCcw, Search, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   fetchBranchOptions,
@@ -47,6 +47,8 @@ export function KitchenDisplay() {
   const [branchId, setBranchId] = useState(storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "");
   const [station, setStation] = useState<PrepStation | "All">("All");
   const [ticketStatusFilter, setTicketStatusFilter] = useState<PrepTicketStatus | "">("");
+  const [ticketQuery, setTicketQuery] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState<PrepTicket["priority"] | "">("");
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [status, setStatus] = useState("Ready");
 
@@ -76,13 +78,36 @@ export function KitchenDisplay() {
       }),
     [tickets]
   );
+  const filteredTickets = useMemo(() => {
+    const normalizedQuery = ticketQuery.trim().toLowerCase();
+
+    return sortedTickets.filter((ticket) => {
+      const haystack = [
+        ticket.id,
+        ticket.tableLabel,
+        ticket.tableOrderId,
+        ticket.station,
+        ticket.serviceType,
+        ticket.status,
+        ...ticket.items.map((item) => `${item.productName} ${item.modifiers.join(" ")} ${item.note ?? ""}`)
+      ].filter(Boolean).join(" ").toLowerCase();
+
+      const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
+      const matchesPriority = !priorityFilter || ticket.priority === priorityFilter;
+
+      return matchesQuery && matchesPriority;
+    });
+  }, [priorityFilter, sortedTickets, ticketQuery]);
   const rushCount = useMemo(() => tickets.filter((ticket) => ticket.priority === "rush" && ticket.status !== "served" && ticket.status !== "cancelled").length, [tickets]);
   const alertTickets = useMemo(
     () => tickets.filter((ticket) => ticket.status === "ready" || elapsedMinutes(ticket.createdAt) >= 15),
     [tickets]
   );
-  const ticketPage = usePaginatedRows(sortedTickets, 8);
+  const ticketPage = usePaginatedRows(filteredTickets, 8);
   const alertPage = usePaginatedRows(alertTickets, 8);
+  const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
+  const branchLocked = Boolean(branchId && branches.length === 1);
+  const hasTicketFilters = Boolean(ticketQuery || priorityFilter);
 
   async function loadTickets(nextStation = station, nextBranchId = branchId, nextStatusFilter = ticketStatusFilter) {
     try {
@@ -178,6 +203,11 @@ export function KitchenDisplay() {
     void loadTickets(station, branchId, nextStatus);
   }
 
+  function clearTicketFilters() {
+    setTicketQuery("");
+    setPriorityFilter("");
+  }
+
   return (
     <div className="module-view">
       <div className="module-heading">
@@ -188,12 +218,19 @@ export function KitchenDisplay() {
         <div className="button-group">
           <label className="toolbar-select">
             Branch
-            <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-              <option value="">Branch</option>
-              {branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
-              ))}
-            </select>
+            {branchLocked ? (
+              <span className="locked-select-value locked-select-value-compact">
+                <strong>{selectedBranch?.name ?? branchId}</strong>
+                <small>{selectedBranch?.city ?? "assigned"}</small>
+              </span>
+            ) : (
+              <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
+                <option value="">Branch</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
+                ))}
+              </select>
+            )}
           </label>
           <label className="toolbar-select">
             Status
@@ -242,9 +279,40 @@ export function KitchenDisplay() {
           </button>
         ))}
       </div>
+      <section className="table-toolbar kitchen-filter-toolbar" aria-label="Kitchen ticket filters">
+        <div className="search-box compact-search">
+          <Search size={16} />
+          <input
+            value={ticketQuery}
+            onChange={(event) => setTicketQuery(event.target.value)}
+            placeholder="Search ticket, table, item or order"
+          />
+          {ticketQuery ? (
+            <button type="button" onClick={() => setTicketQuery("")} aria-label="Clear ticket search"><X size={14} /></button>
+          ) : null}
+        </div>
+        <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as PrepTicket["priority"] | "")}>
+          <option value="">Priority</option>
+          <option value="rush">Rush</option>
+          <option value="normal">Normal</option>
+        </select>
+        {hasTicketFilters ? (
+          <button className="secondary-button" type="button" onClick={clearTicketFilters}>Clear filters</button>
+        ) : null}
+      </section>
       <section className="ticket-grid">
         {tickets.length === 0 ? (
-          <div className="empty-state">No prep tickets for this station.</div>
+          <div className="empty-state">
+            <span>{ticketStatusFilter ? `No ${statusLabel[ticketStatusFilter].toLowerCase()} prep tickets for this station.` : "No prep tickets for this station."}</span>
+            {ticketStatusFilter ? (
+              <button className="secondary-button" onClick={() => changeStatusFilter("")}>Clear status</button>
+            ) : null}
+          </div>
+        ) : filteredTickets.length === 0 ? (
+          <div className="empty-state">
+            <span>No tickets match the current filters.</span>
+            <button className="secondary-button" onClick={clearTicketFilters}>Clear filters</button>
+          </div>
         ) : ticketPage.pageRows.map((ticket, index) => (
           <article className={`ticket-card ${ticket.priority === "rush" ? "ticket-rush" : ""}`} key={ticket.id}>
             <div className="panel-header">
@@ -299,7 +367,7 @@ export function KitchenDisplay() {
           </article>
         ))}
       </section>
-      {tickets.length > 0 ? (
+      {filteredTickets.length > 0 ? (
         <TablePagination
           page={ticketPage.page}
           pageCount={ticketPage.pageCount}

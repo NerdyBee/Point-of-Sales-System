@@ -21,6 +21,33 @@ export const profileUpdateSchema = z.object({
   phone: z.string().min(7).max(24)
 });
 
+export const profileSecurityUpdateSchema = z.object({
+  currentPassword: z.string().min(6).max(120),
+  newPassword: z.string().min(8).max(120).optional().or(z.literal("")),
+  newPin: z.string().regex(/^\d{6}$/, "PIN must be 6 digits").optional().or(z.literal("")),
+  pinEnabled: z.boolean().optional()
+}).superRefine((payload, ctx) => {
+  const hasPassword = Boolean(payload.newPassword?.trim());
+  const hasPin = Boolean(payload.newPin?.trim());
+  const togglesPin = typeof payload.pinEnabled === "boolean";
+
+  if (!hasPassword && !hasPin && !togglesPin) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Enter a new password, new PIN, or PIN access setting",
+      path: ["newPassword"]
+    });
+  }
+
+  if (payload.pinEnabled === true && !hasPin) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Enter a 6-digit PIN to enable PIN login",
+      path: ["newPin"]
+    });
+  }
+});
+
 export const productInputSchema = z.object({
   branchId: z.string().min(1),
   name: z.string().min(2).max(120),
@@ -232,7 +259,37 @@ export const customerLedgerInputSchema = z.object({
   type: z.enum(["credit_sale", "payment", "loyalty_adjustment", "voucher"]),
   amount: z.number().int(),
   pointsDelta: z.number().int().default(0),
-  note: z.string().min(3).max(160)
+  note: z.string().min(3).max(160),
+  paymentMethod: z.enum(["cash", "card", "bank_transfer", "mobile_money", "voucher"]).optional(),
+  paymentReference: z.string().max(120).optional().or(z.literal("")),
+  terminalId: z.string().max(80).optional().or(z.literal(""))
+}).superRefine((entry, ctx) => {
+  const receivesPayment = entry.type === "payment" || entry.type === "voucher";
+  if (!receivesPayment) return;
+
+  if (!entry.paymentMethod) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Payment method is required",
+      path: ["paymentMethod"]
+    });
+  }
+
+  if (entry.paymentMethod === "cash" && !entry.terminalId?.trim()) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Terminal is required for cash customer payments",
+      path: ["terminalId"]
+    });
+  }
+
+  if ((entry.paymentMethod === "card" || entry.paymentMethod === "bank_transfer" || entry.paymentMethod === "mobile_money") && !entry.paymentReference?.trim()) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Payment reference is required for this method",
+      path: ["paymentReference"]
+    });
+  }
 });
 
 export const staffRoleSchema = z.string().min(2).max(60).regex(/^[a-z][a-z0-9_-]*$/, "Use a lowercase role slug");
@@ -252,6 +309,33 @@ export const staffStatusSchema = z.object({
   reason: z.string().min(3).max(160)
 });
 
+export const staffSecurityUpdateSchema = z.object({
+  temporaryPassword: z.string().min(8).max(120).optional().or(z.literal("")),
+  pin: z.string().regex(/^\d{6}$/, "PIN must be 6 digits").optional().or(z.literal("")),
+  pinEnabled: z.boolean().optional(),
+  reason: z.string().min(3).max(160)
+}).superRefine((payload, ctx) => {
+  const hasPassword = Boolean(payload.temporaryPassword?.trim());
+  const hasPin = Boolean(payload.pin?.trim());
+  const togglesPin = typeof payload.pinEnabled === "boolean";
+
+  if (!hasPassword && !hasPin && !togglesPin) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Enter a temporary password, PIN, or PIN access setting",
+      path: ["temporaryPassword"]
+    });
+  }
+
+  if (payload.pinEnabled === true && !hasPin) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Enter a 6-digit PIN to enable PIN login",
+      path: ["pin"]
+    });
+  }
+});
+
 export const roleInputSchema = z.object({
   name: z.string().min(2).max(60).regex(/^[a-z][a-z0-9_-]*$/, "Use a lowercase slug, for example floor_manager"),
   label: z.string().min(2).max(120),
@@ -268,7 +352,7 @@ export const staffRoleAssignmentSchema = z.object({
 });
 
 export const authLoginSchema = z.object({
-  tenantId: z.string().min(1),
+  tenantId: z.string().min(1).optional().or(z.literal("")),
   identifier: z.string().min(1).max(160).optional(),
   email: z.string().min(1).max(160).optional(),
   password: z.string().min(6).max(120),
@@ -282,11 +366,11 @@ export const authLoginSchema = z.object({
 });
 
 export const authPinLoginSchema = z.object({
-  tenantId: z.string().min(1),
-  branchId: z.string().min(1),
+  tenantId: z.string().min(1).optional().or(z.literal("")),
+  branchId: z.string().min(1).optional().or(z.literal("")),
   terminalId: z.string().min(1).max(80),
   staffId: z.string().min(1).max(80),
-  pin: z.string().min(4).max(12)
+  pin: z.string().regex(/^\d{6}$/, "PIN must be 6 digits")
 });
 
 export const authRefreshSchema = z.object({
@@ -446,6 +530,17 @@ export const subscriptionInvoiceStatusSchema = z.enum(["draft", "open", "paid", 
 export const subscriptionInvoiceUpdateSchema = z.object({
   status: subscriptionInvoiceStatusSchema,
   paymentReference: z.string().max(100).optional().or(z.literal(""))
+});
+
+export const subscriptionInvoiceCreateSchema = z.object({
+  plan: subscriptionPlanSchema,
+  amount: z.number().int().nonnegative().optional(),
+  status: subscriptionInvoiceStatusSchema.default("open"),
+  issuedAt: z.string().datetime(),
+  dueAt: z.string().datetime()
+}).refine((payload) => new Date(payload.dueAt).getTime() >= new Date(payload.issuedAt).getTime(), {
+  message: "Due date must be on or after issue date",
+  path: ["dueAt"]
 });
 
 export const syncRecordStatusSchema = z.enum(["queued", "processing", "synced", "failed", "conflict"]);

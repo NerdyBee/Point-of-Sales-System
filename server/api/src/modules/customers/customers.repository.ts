@@ -1,5 +1,5 @@
 import type { Customer as DbCustomer, CustomerLedgerEntry as DbCustomerLedgerEntry, Prisma } from "@prisma/client";
-import { appendAudit, appendCustomerLedger, customerLedger, customers } from "../../shared/data/demoStore";
+import { appendAudit, appendCashMovement, appendCustomerLedger, customerLedger, customers, registerShifts } from "../../shared/data/demoStore";
 import type { Customer, CustomerLedgerEntry } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
 
@@ -21,6 +21,9 @@ type LedgerInput = {
   amount: number;
   pointsDelta: number;
   note: string;
+  paymentMethod?: "cash" | "card" | "bank_transfer" | "mobile_money" | "voucher";
+  paymentReference?: string;
+  terminalId?: string;
 };
 
 function nextCustomerId() {
@@ -29,6 +32,10 @@ function nextCustomerId() {
 
 function nextLedgerId() {
   return `cust-ledger-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function nextCashMovementId() {
+  return `cash-move-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function nextAuditId() {
@@ -56,6 +63,7 @@ function toApiLedgerEntry(entry: DbCustomerLedgerEntry): CustomerLedgerEntry {
   return {
     id: entry.id,
     tenantId: entry.tenantId,
+    branchId: entry.branchId,
     customerId: entry.customerId,
     type: entry.type as CustomerLedgerEntry["type"],
     amount: entry.amount,
@@ -261,7 +269,12 @@ export async function updateCustomer(
   return { status: "updated" as const, customer: toApiCustomer(customer) };
 }
 
-export async function listCustomerLedger(tenantId: string, customerId: string) {
+export async function listCustomerLedger(
+  tenantId: string,
+  customerId: string,
+  branchId?: string,
+  filters: { startDate?: Date; endDate?: Date } = {}
+) {
   if (useDemoStore) {
     const customer = customers.find((item) => item.tenantId === tenantId && item.id === customerId);
 
@@ -269,7 +282,10 @@ export async function listCustomerLedger(tenantId: string, customerId: string) {
 
     return {
       status: "found" as const,
-      entries: customerLedger.filter((entry) => entry.tenantId === tenantId && entry.customerId === customerId)
+      entries: customerLedger
+        .filter((entry) => entry.tenantId === tenantId && entry.customerId === customerId && (!branchId || entry.branchId === branchId))
+        .filter((entry) => (filters.startDate ? new Date(entry.createdAt).getTime() >= filters.startDate.getTime() : true))
+        .filter((entry) => (filters.endDate ? new Date(entry.createdAt).getTime() <= filters.endDate.getTime() : true))
     };
   }
 
@@ -277,8 +293,15 @@ export async function listCustomerLedger(tenantId: string, customerId: string) {
 
   if (!customer) return { status: "not_found" as const };
 
+  const createdAt = filters.startDate || filters.endDate
+    ? {
+        ...(filters.startDate ? { gte: filters.startDate } : {}),
+        ...(filters.endDate ? { lte: filters.endDate } : {})
+      }
+    : undefined;
+
   const entries = await prisma.customerLedgerEntry.findMany({
-    where: { tenantId, customerId },
+    where: { tenantId, customerId, branchId: branchId ? branchId : undefined, createdAt },
     orderBy: { createdAt: "desc" }
   });
 
@@ -292,15 +315,25 @@ export async function postCustomerLedger(
   customerId: string,
   input: LedgerInput
 ) {
+  const paymentMethod = input.paymentMethod;
+  const isCustomerPayment = input.type === "payment" || input.type === "voucher";
+  const cashPaymentAmount = isCustomerPayment && paymentMethod === "cash" ? Math.abs(input.amount) : 0;
+
   if (useDemoStore) {
     const customer = customers.find((item) => item.tenantId === tenantId && item.id === customerId);
 
     if (!customer) return { status: "not_found" as const };
 
+    const shift = cashPaymentAmount > 0
+      ? registerShifts.find((item) => item.tenantId === tenantId && item.branchId === branchId && item.terminalId === input.terminalId && item.status === "open")
+      : undefined;
+    if (cashPaymentAmount > 0 && !shift) return { status: "shift_not_found" as const };
+
     const nextBalance = customer.outstandingBalance + input.amount;
     const nextPoints = customer.loyaltyPoints + input.pointsDelta;
 
     if (nextBalance > customer.creditLimit) return { status: "credit_limit_exceeded" as const };
+    if (nextBalance < 0) return { status: "overpayment" as const };
     if (nextPoints < 0) return { status: "negative_points" as const };
 
     customer.outstandingBalance = nextBalance;
@@ -309,6 +342,7 @@ export async function postCustomerLedger(
 
     const entry = appendCustomerLedger({
       tenantId,
+      branchId: branchId!,
       customerId: customer.id,
       type: input.type,
       amount: input.amount,
@@ -319,6 +353,21 @@ export async function postCustomerLedger(
       createdBy: userId
     });
 
+    const movement = shift
+      ? appendCashMovement({
+          tenantId,
+          branchId: shift.branchId,
+          shiftId: shift.id,
+          type: "cash_in",
+          amount: cashPaymentAmount,
+          reason: `Customer payment ${customer.name}`,
+          createdBy: userId
+        })
+      : undefined;
+    if (shift && movement) {
+      shift.expectedCash += cashPaymentAmount;
+    }
+
     appendAudit({
       tenantId,
       branchId,
@@ -326,10 +375,22 @@ export async function postCustomerLedger(
       action: "customer.ledger_posted",
       entityType: "customerLedger",
       entityId: entry.id,
-      metadata: { customerId: customer.id, amount: entry.amount, pointsDelta: entry.pointsDelta }
+      metadata: { customerId: customer.id, amount: entry.amount, pointsDelta: entry.pointsDelta, paymentMethod, paymentReference: input.paymentReference?.trim() }
     });
 
-    return { status: "posted" as const, customer, entry };
+    if (movement && shift) {
+      appendAudit({
+        tenantId,
+        branchId: shift.branchId,
+        userId,
+        action: "register.cash_movement",
+        entityType: "cashMovement",
+        entityId: movement.id,
+        metadata: { type: movement.type, amount: movement.amount, expectedCash: shift.expectedCash, customerId: customer.id, ledgerEntryId: entry.id, source: "customer_payment" }
+      });
+    }
+
+    return { status: "posted" as const, customer, entry, movement: movement && shift ? { ...movement, expectedCashAfter: shift.expectedCash } : undefined };
   }
 
   return prisma.$transaction(async (tx) => {
@@ -337,10 +398,16 @@ export async function postCustomerLedger(
 
     if (!customer) return { status: "not_found" as const };
 
+    const shift = cashPaymentAmount > 0
+      ? await tx.registerShift.findFirst({ where: { tenantId, branchId: branchId ? branchId : undefined, terminalId: input.terminalId, status: "open" } })
+      : null;
+    if (cashPaymentAmount > 0 && !shift) return { status: "shift_not_found" as const };
+
     const nextBalance = customer.outstandingBalance + input.amount;
     const nextPoints = customer.loyaltyPoints + input.pointsDelta;
 
     if (nextBalance > customer.creditLimit) return { status: "credit_limit_exceeded" as const };
+    if (nextBalance < 0) return { status: "overpayment" as const };
     if (nextPoints < 0) return { status: "negative_points" as const };
 
     const [updatedCustomer, entry] = await Promise.all([
@@ -356,6 +423,7 @@ export async function postCustomerLedger(
         data: {
           id: nextLedgerId(),
           tenantId,
+          branchId: branchId!,
           customerId: customer.id,
           type: input.type,
           amount: input.amount,
@@ -368,6 +436,29 @@ export async function postCustomerLedger(
       })
     ]);
 
+    let movement: Awaited<ReturnType<typeof tx.cashMovement.create>> | null = null;
+    let expectedCashAfter: number | undefined;
+
+    if (shift && cashPaymentAmount > 0) {
+      expectedCashAfter = shift.expectedCash + cashPaymentAmount;
+      const [createdMovement] = await Promise.all([
+        tx.cashMovement.create({
+          data: {
+            id: nextCashMovementId(),
+            tenantId,
+            branchId: shift.branchId,
+            shiftId: shift.id,
+            type: "cash_in",
+            amount: cashPaymentAmount,
+            reason: `Customer payment ${customer.name}`,
+            createdBy: userId
+          }
+        }),
+        tx.registerShift.update({ where: { id: shift.id }, data: { expectedCash: expectedCashAfter } })
+      ]);
+      movement = createdMovement;
+    }
+
     await tx.auditEvent.create({
       data: {
         id: nextAuditId(),
@@ -377,10 +468,43 @@ export async function postCustomerLedger(
         action: "customer.ledger_posted",
         entityType: "customerLedger",
         entityId: entry.id,
-        metadata: { customerId: customer.id, amount: entry.amount, pointsDelta: entry.pointsDelta }
+        metadata: { customerId: customer.id, amount: entry.amount, pointsDelta: entry.pointsDelta, paymentMethod, paymentReference: input.paymentReference?.trim() }
       }
     });
 
-    return { status: "posted" as const, customer: toApiCustomer(updatedCustomer), entry: toApiLedgerEntry(entry) };
+    if (movement && expectedCashAfter !== undefined) {
+      await tx.auditEvent.create({
+        data: {
+          id: nextAuditId(),
+          tenantId,
+          branchId: movement.branchId,
+          userId,
+          action: "register.cash_movement",
+          entityType: "cashMovement",
+          entityId: movement.id,
+          metadata: { type: movement.type, amount: movement.amount, expectedCash: expectedCashAfter, customerId: customer.id, ledgerEntryId: entry.id, source: "customer_payment" }
+        }
+      });
+    }
+
+    return {
+      status: "posted" as const,
+      customer: toApiCustomer(updatedCustomer),
+      entry: toApiLedgerEntry(entry),
+      movement: movement && expectedCashAfter !== undefined
+        ? {
+            id: movement.id,
+            tenantId: movement.tenantId,
+            branchId: movement.branchId,
+            shiftId: movement.shiftId,
+            type: movement.type,
+            amount: movement.amount,
+            reason: movement.reason,
+            createdBy: movement.createdBy,
+            createdAt: movement.createdAt.toISOString(),
+            expectedCashAfter
+          }
+        : undefined
+    };
   });
 }

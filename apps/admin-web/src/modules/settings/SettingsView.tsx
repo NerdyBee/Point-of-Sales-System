@@ -1,4 +1,4 @@
-import { Building2, Check, CreditCard, Pencil, Plus, Printer, ReceiptText, RefreshCcw, Tag, Trash2, X } from "lucide-react";
+import { Building2, Check, CreditCard, Pencil, Plus, Printer, ReceiptText, RefreshCcw, Search, Tag, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { fetchBranchOptions, fetchCatalogProducts, fetchCurrentTenant, readStoredAuth, renameProductCategory, updateTenantSettings, type BranchOption, type TenantProfile, type TenantSettings } from "../../shared/api/client";
 import { notifyTenantSettingsUpdated } from "../../shared/hooks/useTenantSettings";
@@ -20,6 +20,12 @@ const emptySettings: TenantSettings = {
 };
 
 const emptyBranches: BranchOption[] = [];
+const paymentMethodLabels: Record<keyof TenantSettings["paymentMethods"], string> = {
+  cash: "Cash",
+  card: "Card",
+  bankTransfer: "Bank transfer",
+  mobileMoney: "Mobile money"
+};
 
 function decimalToPercent(rate: number) {
   return Math.round(rate * 10000) / 100;
@@ -43,6 +49,7 @@ export function SettingsView() {
   const [branches, setBranches] = useState<BranchOption[]>(emptyBranches);
   const [categoryUsage, setCategoryUsage] = useState<Record<string, number>>({});
   const [newCategory, setNewCategory] = useState("");
+  const [categoryQuery, setCategoryQuery] = useState("");
   const [renameCategory, setRenameCategory] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [status, setStatus] = useState("Ready");
@@ -50,6 +57,13 @@ export function SettingsView() {
   const enabledPaymentCount = useMemo(() => Object.values(settings.paymentMethods).filter(Boolean).length, [settings.paymentMethods]);
   const hasEnabledPaymentMethod = enabledPaymentCount > 0;
   const categoryCount = settings.productCategories.length;
+  const filteredCategories = useMemo(() => {
+    const normalizedQuery = categoryQuery.trim().toLowerCase();
+    return settings.productCategories.filter((category) => {
+      const usage = categoryUsage[category] ?? 0;
+      return !normalizedQuery || `${category} ${usage} items`.toLowerCase().includes(normalizedQuery);
+    });
+  }, [categoryQuery, categoryUsage, settings.productCategories]);
 
   async function loadSettings() {
     setStatus("Syncing settings...");
@@ -158,6 +172,21 @@ export function SettingsView() {
 
     if (!renameCategory) return;
 
+    const nextCategory = normalizeCategoryName(renameValue);
+
+    if (!nextCategory) {
+      setStatus("Enter a category name");
+      return;
+    }
+
+    if (
+      nextCategory.toLowerCase() !== renameCategory.toLowerCase() &&
+      settings.productCategories.some((category) => category.toLowerCase() === nextCategory.toLowerCase())
+    ) {
+      setStatus("Category already exists");
+      return;
+    }
+
     const branchId = settings.defaultBranchId || activeBranchId;
 
     if (!branchId) {
@@ -168,7 +197,6 @@ export function SettingsView() {
     setStatus("Renaming category...");
 
     try {
-      const nextCategory = normalizeCategoryName(renameValue);
       const response = await renameProductCategory(renameCategory, nextCategory, activeUserId, branchId);
       setTenant(response.tenant);
       setSettings(response.tenant.settings);
@@ -272,7 +300,7 @@ export function SettingsView() {
             <label>
               Currency
               <select value={settings.currency} onChange={(event) => updateSetting("currency", event.target.value as TenantSettings["currency"])}>
-                <option value="" disabled>Currency</option>
+                <option value="">Currency</option>
                 <option value="NGN">NGN</option>
                 <option value="USD">USD</option>
                 <option value="GHS">GHS</option>
@@ -330,7 +358,7 @@ export function SettingsView() {
                   checked={value}
                   onChange={(event) => updatePaymentMethod(key as keyof TenantSettings["paymentMethods"], event.target.checked)}
                 />
-                {key.replace(/([A-Z])/g, " $1")}
+                {paymentMethodLabels[key as keyof TenantSettings["paymentMethods"]]}
               </label>
             ))}
             {!hasEnabledPaymentMethod ? (
@@ -354,8 +382,18 @@ export function SettingsView() {
                 <button className="secondary-button" type="button" onClick={addProductCategory}><Plus size={18} /> Add</button>
               </div>
             </label>
+            <div className="search-box compact-search wide-field">
+              <Search size={16} />
+              <input value={categoryQuery} onChange={(event) => setCategoryQuery(event.target.value)} placeholder="Search categories" />
+              {categoryQuery ? <button type="button" onClick={() => setCategoryQuery("")} aria-label="Clear category search"><X size={14} /></button> : null}
+            </div>
             <div className="settings-chip-list wide-field">
-              {settings.productCategories.map((category) => (
+              {filteredCategories.length === 0 ? (
+                <span>
+                  <strong>No categories found</strong>
+                  <small>{categoryQuery ? "Clear search to view all categories" : "Add the first category above"}</small>
+                </span>
+              ) : filteredCategories.map((category) => (
                 <span key={category}>
                   <strong>{category}</strong>
                   <small>{categoryUsage[category] ?? 0} items</small>

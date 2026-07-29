@@ -80,19 +80,32 @@ async function appendExpenseAudit(event: Parameters<typeof appendAudit>[0]) {
   });
 }
 
-export async function listExpenses(tenantId: string, filters: { branchId?: string; status?: string }) {
+export async function listExpenses(
+  tenantId: string,
+  filters: { branchId?: string; status?: string; startDate?: Date; endDate?: Date }
+) {
   if (useDemoStore) {
     return expenses
       .filter((expense) => expense.tenantId === tenantId)
       .filter((expense) => !filters.branchId || expense.branchId === filters.branchId)
-      .filter((expense) => !filters.status || filters.status === "all" || expense.status === filters.status);
+      .filter((expense) => !filters.status || filters.status === "all" || expense.status === filters.status)
+      .filter((expense) => (filters.startDate ? new Date(expense.spentAt).getTime() >= filters.startDate.getTime() : true))
+      .filter((expense) => (filters.endDate ? new Date(expense.spentAt).getTime() <= filters.endDate.getTime() : true));
   }
+
+  const spentAt = filters.startDate || filters.endDate
+    ? {
+        ...(filters.startDate ? { gte: filters.startDate } : {}),
+        ...(filters.endDate ? { lte: filters.endDate } : {})
+      }
+    : undefined;
 
   const records = await prisma.expense.findMany({
     where: {
       tenantId,
       branchId: filters.branchId ? filters.branchId : undefined,
-      status: filters.status && filters.status !== "all" ? filters.status : undefined
+      status: filters.status && filters.status !== "all" ? filters.status : undefined,
+      spentAt
     },
     orderBy: { spentAt: "desc" }
   });

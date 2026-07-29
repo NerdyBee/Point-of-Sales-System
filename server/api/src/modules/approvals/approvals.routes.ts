@@ -1,12 +1,22 @@
 import { approvalApplySchema, approvalDecisionSchema, approvalRequestSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
-import { canAccessAllBranches, resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, resolveBranchScope, requireAnyPermission, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import { applyApproval, decideApproval, listApprovals, requestApproval } from "./approvals.repository";
 
 export const approvalsRouter = Router();
+const approvalWorkflowPermissions = ["sale.create", "register.manage", "inventory.adjust", "customer.manage", "expense.manage", "approval.manage"] as const;
+
+function parseApprovalDate(value: string | undefined, endOfDay = false) {
+  if (!value) return null;
+  const date = new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 
 function requireBranchContext(req: Request, res: Response) {
-  const scope = resolveBranchScope(req.tenantContext!, req.tenantContext!.branchId);
+  const requestedBranchId = req.query.branchId?.toString() ?? req.header("x-branch-id") ?? (
+    canAccessAllBranches(req.tenantContext!) ? undefined : req.tenantContext!.branchId
+  );
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranchId);
   if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return null;
@@ -16,22 +26,36 @@ function requireBranchContext(req: Request, res: Response) {
 }
 
 approvalsRouter.get("/", requireTenant, requirePermission("approval.manage"), async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
-    res.status(403).json({ error: "Branch access denied" });
+  const scope = requireBranchContext(req, res);
+  if (!scope) return;
+
+  const startDateValue = req.query.startDate?.toString();
+  const endDateValue = req.query.endDate?.toString();
+  const startDate = parseApprovalDate(startDateValue);
+  const endDate = parseApprovalDate(endDateValue, true);
+
+  if ((startDateValue && !startDate) || (endDateValue && !endDate)) {
+    res.status(400).json({ error: "Invalid approval date range" });
+    return;
+  }
+
+  if (startDate && endDate && startDate.getTime() > endDate.getTime()) {
+    res.status(400).json({ error: "Start date must be before end date" });
     return;
   }
 
   const approvals = await listApprovals(req.tenantContext!.tenantId, {
     status: req.query.status?.toString() ?? "all",
     type: req.query.type?.toString() ?? "all",
-    branchId: scope.branchId
+    branchId: scope.branchId,
+    startDate: startDate ?? undefined,
+    endDate: endDate ?? undefined
   });
 
   res.json({ approvals });
 });
 
-approvalsRouter.post("/", requireTenant, requireAuthenticatedUser, async (req, res) => {
+approvalsRouter.post("/", requireTenant, requireAnyPermission([...approvalWorkflowPermissions]), async (req, res) => {
   const parsed = approvalRequestSchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -47,6 +71,7 @@ approvalsRouter.post("/", requireTenant, requireAuthenticatedUser, async (req, r
 
   const result = await requestApproval(req.tenantContext!.tenantId, req.tenantContext!.userId, {
     ...parsed.data,
+    branchId: scope.branchId ?? parsed.data.branchId,
     requestedBy: req.tenantContext!.userId
   });
 
@@ -90,7 +115,7 @@ approvalsRouter.patch("/:approvalId/decision", requireTenant, requirePermission(
   res.json({ approval: result.approval });
 });
 
-approvalsRouter.post("/:approvalId/apply", requireTenant, requireAuthenticatedUser, async (req, res) => {
+approvalsRouter.post("/:approvalId/apply", requireTenant, requireAnyPermission([...approvalWorkflowPermissions]), async (req, res) => {
   const parsed = approvalApplySchema.safeParse(req.body);
 
   if (!parsed.success) {

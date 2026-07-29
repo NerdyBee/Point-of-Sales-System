@@ -24,7 +24,7 @@ import {
   Users,
   WalletCards
 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { AuditLogView } from "../modules/audit/AuditLogView";
 import { ApprovalsView } from "../modules/approvals/ApprovalsView";
 import { BranchesView } from "../modules/branches/BranchesView";
@@ -87,8 +87,10 @@ export function App() {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [auth, setAuth] = useState<AuthResponse | null>(() => readStoredAuth());
   const [branches, setBranches] = useState<BranchOption[]>([]);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const activeBranchId = auth?.session.branchId ?? auth?.staff.branchId ?? "";
   const activeBranch = branches.find((branch) => branch.id === activeBranchId);
+  const authModuleKey = auth ? `${auth.staff.id}:${activeBranchId}:${auth.staff.role}:${auth.staff.permissions.join("|")}` : "signed-out";
   const currentUser = { name: auth?.staff.name ?? "", role: auth?.staff.role ?? "", email: auth?.staff.email ?? "", phone: auth?.staff.phone ?? "", branch: activeBranch?.name ?? activeBranchId };
   const currentUserInitials = currentUser.name
     .split(" ")
@@ -113,6 +115,7 @@ export function App() {
   const displayedModule = auth && activeModule !== "profile" && !canAccess(modulePermissions[activeModule]) ? firstPermittedModule : activeModule;
 
   function navigateToModule(module: ModuleKey) {
+    setAccountMenuOpen(false);
     if (module === "profile" || canAccess(modulePermissions[module])) {
       setActiveModule(module);
       return;
@@ -131,6 +134,26 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (!accountMenuOpen) return;
+
+    function closeAccountMenu(event: MouseEvent) {
+      if (accountMenuRef.current?.contains(event.target as Node)) return;
+      setAccountMenuOpen(false);
+    }
+
+    function closeAccountMenuOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setAccountMenuOpen(false);
+    }
+
+    document.addEventListener("mousedown", closeAccountMenu);
+    document.addEventListener("keydown", closeAccountMenuOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeAccountMenu);
+      document.removeEventListener("keydown", closeAccountMenuOnEscape);
+    };
+  }, [accountMenuOpen]);
+
+  useEffect(() => {
     const storedAuth = readStoredAuth();
     if (!storedAuth?.refreshToken) return;
 
@@ -139,7 +162,10 @@ export function App() {
         storeAuth(response);
         handleAuthChange(response);
       })
-      .catch(() => clearStoredAuth());
+      .catch(() => {
+        clearStoredAuth();
+        handleAuthChange(null);
+      });
   }, []);
 
   useEffect(() => {
@@ -287,7 +313,7 @@ export function App() {
           </div>
           <div className="top-actions">
             {canAccess("reports.profit.view") ? <button onClick={() => navigateToModule("dashboard")}><BarChart3 size={18} /> Today</button> : null}
-            <div className="user-menu">
+            <div className="user-menu" ref={accountMenuRef}>
               <button
                 className="user-menu-trigger"
                 aria-expanded={accountMenuOpen}
@@ -319,7 +345,7 @@ export function App() {
             </div>
           </div>
         </header>
-        <main>{moduleViews[displayedModule]}</main>
+        <main key={`${displayedModule}:${authModuleKey}`}>{moduleViews[displayedModule]}</main>
       </div>
     </div>
   );

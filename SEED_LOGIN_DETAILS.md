@@ -19,26 +19,27 @@ Password123!
 
 | # | Staff ID | Name | Email | Role | Branch | PIN Enabled | PIN |
 |---:|---|---|---|---|---|---|---|
-| 1 | `owner-1` | Adaeze Okafor | `adaeze@example.com` | `owner` | `branch-lagos-main` | Yes | `1234` |
-| 2 | `staff-1` | Chinelo Okafor | `chinelo@example.com` | `manager` | `branch-lagos-main` | Yes | `1234` |
-| 3 | `staff-2` | Musa Ibrahim | `musa@example.com` | `cashier / teller` | `branch-lagos-main` | Yes | `1234` |
-| 4 | `staff-3` | Sarah Johnson | `sarah@example.com` | `inventory` | `branch-lagos-main` | No | N/A |
-| 5 | `staff-4` | Tunde Balogun | `tunde@example.com` | `state_manager` | `branch-lagos-main` | Yes | `1234` |
+| 1 | `LCF-MAI-ADA` | Adaeze Okafor | `adaeze@example.com` | `owner` | `branch-lagos-main` | Yes | `123456` |
+| 2 | `LCF-MAI-CHI` | Chinelo Okafor | `chinelo@example.com` | `manager` | `branch-lagos-main` | Yes | `123456` |
+| 3 | `LCF-MAI-MUS` | Musa Ibrahim | `musa@example.com` | `cashier / teller` | `branch-lagos-main` | Yes | `123456` |
+| 4 | `LCF-MAI-SAR` | Sarah Johnson | `sarah@example.com` | `inventory` | `branch-lagos-main` | No | N/A |
+| 5 | `LCF-MAI-TUN` | Tunde Balogun | `tunde@example.com` | `state_manager` | `branch-lagos-main` | Yes | `123456` |
 
 ## PIN Login
 
 For terminal PIN login, use:
 
 - Tenant ID: `tenant-lagos-foods`
-- Branch ID: `branch-lagos-main`
 - Terminal ID: `terminal-web-1`
-- Staff ID: one of `owner-1`, `staff-1`, `staff-2`, or `staff-4`
-- PIN: `1234`
+- Staff ID: one of `LCF-MAI-ADA`, `LCF-MAI-CHI`, `LCF-MAI-MUS`, or `LCF-MAI-TUN`
+- PIN: `123456`
+
+The staff ID uses the compact `vendor-branch-user` format. For example, `LCF-MAI-MUS` means Lagos Central Foods, Main Branch, Musa. The API resolves the branch from this ID, so cashiers do not need to select a branch during PIN login.
 
 Cashier/teller quick test:
 
-- Select `Musa Ibrahim`
-- Enter PIN `1234`
+- Staff ID: `LCF-MAI-MUS`
+- Enter PIN `123456`
 - The app should open the POS/Register workflow with sales and register permissions only.
 
 State manager quick test:

@@ -3,7 +3,9 @@ import { type Request, Router } from "express";
 import { listBranchOptions } from "../branches/branches.repository";
 import { listStaff } from "../staff/staff.repository";
 import { canAccessAllBranches, requireAuthenticatedUser, requirePermission, requireTenant, resolveBranchScope } from "../../shared/http/tenantContext";
-import { listAuthSessions, loginWithPassword, loginWithPin, refreshAuthSession, revokeAuthSession } from "./auth.repository";
+import { branches, staffMembers, terminals } from "../../shared/data/demoStore";
+import { prisma } from "../../shared/db/prisma";
+import { findOrCreateSeededStaff, listAuthSessions, loginWithPassword, loginWithPin, refreshAuthSession, revokeAuthSession } from "./auth.repository";
 
 export const authRouter = Router();
 
@@ -11,6 +13,107 @@ function requestMeta(req: Request) {
   return {
     userAgent: req.header("user-agent") ?? undefined,
     ipAddress: req.ip
+  };
+}
+
+function requestedBranch(req: Request) {
+  return req.query.branchId?.toString() ?? req.header("x-branch-id") ?? (canAccessAllBranches(req.tenantContext!) ? undefined : req.tenantContext!.branchId);
+}
+
+const useDemoStore = process.env.NODE_ENV === "test";
+
+function normalizeStaffId(value: string) {
+  return value.normalize("NFKC").replace(/[\u200B-\u200D\uFEFF]/g, "").trim().toUpperCase();
+}
+
+async function pinBootstrapForStaffId(staffId: string) {
+  const normalizedStaffId = normalizeStaffId(staffId);
+  if (!normalizedStaffId) return null;
+
+  if (useDemoStore) {
+    const staff = staffMembers.find((member) => member.id.toUpperCase() === normalizedStaffId && member.active && member.pinEnabled);
+    if (!staff) return null;
+    const branch = branches.find((item) => item.tenantId === staff.tenantId && item.id === staff.branchId);
+    if (!branch) return null;
+
+    return {
+      branches: [{
+        id: branch.id,
+        tenantId: branch.tenantId,
+        name: branch.name,
+        city: branch.city,
+        status: branch.status
+      }],
+      terminals: terminals
+        .filter((terminal) => terminal.tenantId === staff.tenantId && terminal.branchId === staff.branchId)
+        .map((terminal) => ({
+          id: terminal.id,
+          tenantId: terminal.tenantId,
+          branchId: terminal.branchId,
+          name: terminal.name,
+          deviceCode: terminal.deviceCode,
+          status: terminal.status,
+          appVersion: terminal.appVersion,
+          lastSeenAt: terminal.lastSeenAt
+        })),
+      staff: [{
+        id: staff.id,
+        tenantId: staff.tenantId,
+        branchId: staff.branchId,
+        name: staff.name,
+        email: staff.email,
+        role: staff.role,
+        pinEnabled: staff.pinEnabled,
+        active: staff.active
+      }]
+    };
+  }
+
+  const staffRecord = await prisma.staffMember.findFirst({
+    where: {
+      id: normalizedStaffId,
+      active: true,
+      pinEnabled: true,
+      inviteStatus: "accepted"
+    }
+  });
+  const staff = staffRecord ?? await findOrCreateSeededStaff(undefined, normalizedStaffId);
+  if (!staff) return null;
+
+  const [branch, dbTerminals] = await Promise.all([
+    prisma.branch.findFirst({ where: { tenantId: staff.tenantId, id: staff.branchId } }),
+    prisma.terminal.findMany({ where: { tenantId: staff.tenantId, branchId: staff.branchId }, orderBy: { name: "asc" } })
+  ]);
+  if (!branch) return null;
+
+  return {
+    branches: [{
+      id: branch.id,
+      tenantId: branch.tenantId,
+      name: branch.name,
+      city: branch.city,
+      status: branch.status
+    }],
+    terminals: dbTerminals.map((terminal) => ({
+      id: terminal.id,
+      tenantId: terminal.tenantId,
+      branchId: terminal.branchId,
+      name: terminal.name,
+      deviceCode: terminal.deviceCode,
+      status: terminal.status,
+      appVersion: terminal.appVersion,
+      lastSeenAt: terminal.lastSeenAt?.toISOString()
+    })),
+    staff: [{
+      id: staff.id,
+      tenantId: staff.tenantId,
+      branchId: staff.branchId,
+      name: staff.name,
+      email: staff.email,
+      role: staff.role,
+      pinEnabled: staff.pinEnabled,
+      active: staff.active
+    }]
   };
 }
 
@@ -62,6 +165,17 @@ authRouter.get("/bootstrap", async (req, res) => {
         active: member.active
       }))
   });
+});
+
+authRouter.get("/bootstrap/staff/:staffId", async (req, res) => {
+  const bootstrap = await pinBootstrapForStaffId(req.params.staffId);
+
+  if (!bootstrap) {
+    res.status(404).json({ error: "PIN-enabled staff not found" });
+    return;
+  }
+
+  res.json(bootstrap);
 });
 
 authRouter.post("/pin-login", async (req, res) => {
@@ -128,7 +242,7 @@ authRouter.post("/logout", requireTenant, requireAuthenticatedUser, async (req, 
 });
 
 authRouter.get("/sessions", requireTenant, requirePermission("staff.manage"), async (req, res) => {
-  const requestedBranchId = req.query.branchId?.toString() ?? req.tenantContext!.branchId;
+  const requestedBranchId = requestedBranch(req);
   const scope = resolveBranchScope(req.tenantContext!, requestedBranchId);
   if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
@@ -140,7 +254,7 @@ authRouter.get("/sessions", requireTenant, requirePermission("staff.manage"), as
 });
 
 authRouter.post("/sessions/:sessionId/revoke", requireTenant, requirePermission("staff.manage"), async (req, res) => {
-  const requestedBranchId = req.query.branchId?.toString() ?? req.tenantContext!.branchId;
+  const requestedBranchId = requestedBranch(req);
   const scope = resolveBranchScope(req.tenantContext!, requestedBranchId);
   if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
     res.status(403).json({ error: "Branch access denied" });

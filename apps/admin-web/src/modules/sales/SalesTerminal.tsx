@@ -42,6 +42,13 @@ interface HeldOrder {
 
 type LastSaleReceipt = PrintableReceipt;
 
+interface TenderPayment {
+  id: string;
+  method: PaymentMethodCode;
+  amount: number;
+  reference?: string;
+}
+
 export interface TerminalTableContext {
   tableId: string;
   tableLabel: string;
@@ -88,6 +95,8 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
   const [syncState, setSyncState] = useState<SaleSyncState>({ status: "idle" });
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodCode>("cash");
   const [paymentReference, setPaymentReference] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState(0);
+  const [tenderPayments, setTenderPayments] = useState<TenderPayment[]>([]);
   const [registerShift, setRegisterShift] = useState<RegisterShift | null>(null);
   const [registerMessage, setRegisterMessage] = useState("Checking register shift...");
   const [discountModalOpen, setDiscountModalOpen] = useState(false);
@@ -106,6 +115,21 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
   const [lastSaleReceipt, setLastSaleReceipt] = useState<LastSaleReceipt | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const handledApprovalIdRef = useRef<string | null>(null);
+
+  async function refreshCustomers(clearOnError = true) {
+    if (!online) {
+      return;
+    }
+
+    try {
+      const response = await fetchCustomers();
+      setCustomers(response.customers);
+    } catch {
+      if (clearOnError) {
+        setCustomers([]);
+      }
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -321,6 +345,8 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
   const scannerReady = Boolean(hardware?.barcodeScanner);
   const drawerReady = Boolean(hardware?.cashDrawer);
   const branchTerminals = useMemo(() => terminals.filter((terminal) => terminal.branchId === branchId), [branchId, terminals]);
+  const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
+  const branchLocked = Boolean(branchId && branches.length === 1);
   const selectedTerminal = useMemo(() => terminals.find((terminal) => terminal.id === terminalId) ?? null, [terminalId, terminals]);
   const selectedDiscountItem = useMemo(
     () => (discountProductId ? cart.find((item) => item.product.id === discountProductId) ?? null : null),
@@ -337,6 +363,14 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
   const orderTitle = tableContext ? tableContext.tableLabel : "Walk-in";
   const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId) ?? null;
   const creditAvailable = selectedCustomer ? Math.max(selectedCustomer.creditLimit - selectedCustomer.outstandingBalance, 0) : 0;
+  const tenderTotal = tenderPayments.reduce((sum, payment) => sum + payment.amount, 0);
+  const tenderVariance = summary.total - tenderTotal;
+  const tenderBalance = Math.max(tenderVariance, 0);
+  const tenderOverpay = Math.max(-tenderVariance, 0);
+  const selectedTenderAmount = paymentAmount > 0 ? paymentAmount : tenderBalance;
+  const tenderCreditTotal = tenderPayments
+    .filter((payment) => payment.method === "customer_credit")
+    .reduce((sum, payment) => sum + payment.amount, 0);
   const paymentReferenceRequired = referenceRequiredMethods.has(paymentMethod);
   const paymentMethods = useMemo(
     () =>
@@ -347,6 +381,13 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
         return true;
       }),
     [creditAvailable, paymentSettings, selectedCustomer]
+  );
+  const visiblePaymentMethods = useMemo(
+    () => allPaymentMethods.filter((item) => {
+      const key = paymentSettingKey[item.method];
+      return key ? paymentSettings[key] : true;
+    }),
+    [paymentSettings]
   );
 
   useEffect(() => {
@@ -362,6 +403,8 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
     setRegisterMessage("Select a terminal");
     setCart([]);
     setPaymentReference("");
+    setPaymentAmount(0);
+    setTenderPayments([]);
     setSaleDiscountApprovalId("");
     setLastSaleReceipt(null);
     setLastSettledReceipt(null);
@@ -369,21 +412,96 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
   }
 
   function addProduct(product: Product) {
+    if (!isServiceCategory(product.category) && product.stock <= 0) {
+      setSyncState({ status: "error", message: `${product.name} is out of stock` });
+      return;
+    }
+
     setCart((items) => {
       const existing = items.find((item) => item.product.id === product.id);
       if (existing) {
+        if (!isServiceCategory(product.category) && existing.quantity >= product.stock) {
+          setSyncState({ status: "error", message: `${product.name} has only ${product.stock} available` });
+          return items;
+        }
         return items.map((item) => (item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item));
       }
+      setSyncState({ status: "success", message: `${product.name} added`, saleId: product.id });
       return [...items, { product, quantity: 1, discount: 0 }];
     });
   }
 
+  function addTenderPayment() {
+    if (cart.length === 0) {
+      setSyncState({ status: "error", message: "Add items before adding a payment" });
+      return;
+    }
+
+    const amount = Math.min(Math.round(selectedTenderAmount), tenderBalance);
+
+    if (amount <= 0) {
+      setSyncState({ status: "error", message: "Enter a payment amount" });
+      return;
+    }
+
+    if (paymentReferenceRequired && !paymentReference.trim()) {
+      setSyncState({ status: "error", message: "Enter the payment reference before adding this payment" });
+      return;
+    }
+
+    if (paymentMethod === "customer_credit" && !selectedCustomer) {
+      setSyncState({ status: "error", message: "Select a customer before adding customer credit" });
+      return;
+    }
+
+    if (paymentMethod === "customer_credit" && selectedCustomer && tenderCreditTotal + amount > creditAvailable) {
+      setSyncState({ status: "error", message: "Customer credit limit is not enough for this payment" });
+      return;
+    }
+
+    setTenderPayments((current) => [
+      ...current,
+      {
+        id: `tender-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        method: paymentMethod,
+        amount,
+        reference: paymentReference.trim() || undefined
+      }
+    ]);
+    setPaymentReference("");
+    setPaymentAmount(0);
+    setSyncState({ status: "success", message: `${displayMoney(amount)} payment added`, saleId: "tender" });
+  }
+
+  function removeTenderPayment(paymentId: string) {
+    setTenderPayments((current) => current.filter((payment) => payment.id !== paymentId));
+  }
+
+  function paymentMethodLabel(method: PaymentMethodCode) {
+    return allPaymentMethods.find((item) => item.method === method)?.label ?? method.replace("_", " ");
+  }
+
   function updateQuantity(productId: string, delta: number) {
-    setCart((items) =>
-      items
-        .map((item) => (item.product.id === productId ? { ...item, quantity: Math.max(item.quantity + delta, 0) } : item))
-        .filter((item) => item.quantity > 0)
-    );
+    setCart((items) => {
+      let stockMessage = "";
+      const nextItems = items
+        .map((item) => {
+          if (item.product.id !== productId) return item;
+          const nextQuantity = Math.max(item.quantity + delta, 0);
+          if (!isServiceCategory(item.product.category) && nextQuantity > item.product.stock) {
+            stockMessage = `${item.product.name} has only ${item.product.stock} available`;
+            return item;
+          }
+          return { ...item, quantity: nextQuantity };
+        })
+        .filter((item) => item.quantity > 0);
+
+      if (stockMessage) {
+        setSyncState({ status: "error", message: stockMessage });
+      }
+
+      return nextItems;
+    });
   }
 
   function openDiscountModal() {
@@ -671,17 +789,34 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
       return;
     }
 
-    if (paymentMethod === "customer_credit" && !selectedCustomer) {
+    const salePayments = tenderPayments.length > 0
+      ? tenderPayments.map((payment) => ({ method: payment.method, amount: payment.amount, reference: payment.reference }))
+      : [{ method: paymentMethod, amount: summary.total, reference: paymentReference || undefined }];
+    const creditPaymentTotal = salePayments
+      .filter((payment) => payment.method === "customer_credit")
+      .reduce((sum, payment) => sum + payment.amount, 0);
+
+    if (tenderPayments.length > 0 && tenderVariance !== 0) {
+      setSyncState({
+        status: "error",
+        message: tenderVariance > 0
+          ? `Add ${displayMoney(tenderBalance)} more to settle this sale`
+          : `Remove ${displayMoney(tenderOverpay)} from payments before settling`
+      });
+      return;
+    }
+
+    if (creditPaymentTotal > 0 && !selectedCustomer) {
       setSyncState({ status: "error", message: "Select a customer before using customer credit" });
       return;
     }
 
-    if (paymentMethod === "customer_credit" && selectedCustomer && summary.total > creditAvailable) {
+    if (selectedCustomer && creditPaymentTotal > creditAvailable) {
       setSyncState({ status: "error", message: "Customer credit limit is not enough for this sale" });
       return;
     }
 
-    if (paymentReferenceRequired && !paymentReference.trim()) {
+    if (tenderPayments.length === 0 && paymentReferenceRequired && !paymentReference.trim()) {
       setSyncState({ status: "error", message: "Enter the payment reference before posting this sale" });
       return;
     }
@@ -703,10 +838,11 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
           discount: item.discount,
           note: item.note
         })),
-        payments: [{ method: paymentMethod, amount: summary.total, reference: paymentReference || undefined }]
+        payments: salePayments
       });
       const registerResponse = await fetchCurrentRegister(branchId, terminalId);
-      const paidWith = [{ method: paymentMethod, amount: response.summary.total, reference: paymentReference || undefined }];
+      await refreshCustomers(false);
+      const paidWith = salePayments;
       const settledReceipt = tableContext?.tableOrderId
         ? {
             saleId: response.saleId,
@@ -720,6 +856,8 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
 
       setCart([]);
       setPaymentReference("");
+      setPaymentAmount(0);
+      setTenderPayments([]);
       setSelectedCustomerId("");
       setSaleDiscountApprovalId("");
       setLastSaleReceipt({
@@ -815,6 +953,7 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
         payments: [{ method: paymentMethod, amount: splitSummary.total, reference: paymentReference || undefined }]
       });
       const registerResponse = await fetchCurrentRegister(branchId, terminalId);
+      await refreshCustomers(false);
       const paidWith = [{ method: paymentMethod, amount: response.summary.total, reference: paymentReference || undefined }];
 
       setCart((items) =>
@@ -852,6 +991,9 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
         <div className="search-box">
           {scannerReady ? <ScanBarcode size={18} /> : <Search size={18} />}
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={scannerReady ? "Scan barcode or search" : "Search name or SKU"} />
+          {query ? (
+            <button type="button" onClick={() => setQuery("")} aria-label="Clear product search"><X size={14} /></button>
+          ) : null}
         </div>
         <div className="category-list">
           {categories.map((item) => (
@@ -862,14 +1004,21 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
         </div>
         <label className="terminal-selector">
           Branch
-          <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-            <option value="">Branch</option>
-            {branches.map((branch) => (
-              <option key={branch.id} value={branch.id} disabled={branch.status !== "active"}>
-                {branch.name} - {branch.status}
-              </option>
-            ))}
-          </select>
+          {branchLocked ? (
+            <span className="locked-select-value">
+              <strong>{selectedBranch?.name ?? branchId}</strong>
+              <small>{selectedBranch?.status ?? "assigned"}</small>
+            </span>
+          ) : (
+            <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
+              <option value="">Branch</option>
+              {branches.map((branch) => (
+                <option key={branch.id} value={branch.id} disabled={branch.status !== "active"}>
+                  {branch.name} - {branch.status}
+                </option>
+              ))}
+            </select>
+          )}
         </label>
         <label className="terminal-selector">
           Terminal
@@ -911,22 +1060,27 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
       </aside>
 
       <section className="product-grid">
-        {filteredProducts.map((product) => (
-          <button className="product-card" key={product.id} onClick={() => addProduct(product)}>
-            <div className="product-image-wrap">
-              <img src={resolveMediaUrl(product.image)} alt="" />
-              <span>{product.category}</span>
-            </div>
-            <div className="product-card-body">
-              <strong>{product.name}</strong>
-              <small>{product.station}</small>
-              <footer>
-                <b>{displayMoney(product.price)}</b>
-                <em>{isServiceCategory(product.category) ? "Service" : `${product.stock} left`}</em>
-              </footer>
-            </div>
-          </button>
-        ))}
+        {filteredProducts.map((product) => {
+          const isService = isServiceCategory(product.category);
+          const outOfStock = !isService && product.stock <= 0;
+          const lowStock = !isService && product.stock > 0 && product.stock <= product.reorderPoint;
+          return (
+            <button className={`product-card ${outOfStock ? "product-card-disabled" : ""}`} disabled={outOfStock} key={product.id} onClick={() => addProduct(product)}>
+              <div className="product-image-wrap">
+                <img src={resolveMediaUrl(product.image)} alt="" />
+                <span>{product.category}</span>
+              </div>
+              <div className="product-card-body">
+                <strong>{product.name}</strong>
+                <small>{product.station}</small>
+                <footer>
+                  <b>{displayMoney(product.price)}</b>
+                  <em className={outOfStock ? "stock-empty-pill" : lowStock ? "stock-low-pill" : ""}>{isService ? "Service" : outOfStock ? "Out of stock" : `${product.stock} left`}</em>
+                </footer>
+              </div>
+            </button>
+          );
+        })}
       </section>
 
       <aside className="cart-panel">
@@ -997,16 +1151,19 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
 
         <div className="payment-box">
           <div className="payment-methods">
-            {paymentMethods.length === 0 ? (
+            {visiblePaymentMethods.length === 0 ? (
               <span className="payment-method-empty">No enabled payment method</span>
-            ) : paymentMethods.map((item) => {
+            ) : visiblePaymentMethods.map((item) => {
               const Icon = item.icon;
+              const creditDisabled = item.method === "customer_credit" && (!selectedCustomer || creditAvailable <= 0);
+              const disabledReason = !selectedCustomer ? "Select a customer first" : "No credit available";
               return (
                 <button
                   className={paymentMethod === item.method ? "active" : ""}
+                  disabled={creditDisabled}
                   key={item.method}
                   onClick={() => setPaymentMethod(item.method)}
-                  title={item.label}
+                  title={creditDisabled ? disabledReason : item.label}
                 >
                   <Icon size={16} />
                   {item.label}
@@ -1014,11 +1171,55 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
               );
             })}
           </div>
+          {selectedCustomer ? (
+            <small className="payment-guidance">Customer credit available: {displayMoney(creditAvailable)}</small>
+          ) : (
+            <small className="payment-guidance">Select a customer to enable credit sale.</small>
+          )}
+          <div className="payment-reference">
+            <span>Amount</span>
+            <div className="payment-amount-row">
+              <input
+                min="0"
+                max={tenderBalance}
+                type="number"
+                value={paymentAmount || ""}
+                onChange={(event) => setPaymentAmount(Number(event.target.value))}
+                placeholder={displayMoney(tenderBalance)}
+              />
+              <button className="secondary-button" disabled={paymentMethods.length === 0 || tenderBalance <= 0} onClick={addTenderPayment}>
+                <Plus size={16} /> Add
+              </button>
+            </div>
+          </div>
           {paymentMethod !== "cash" ? (
             <label className="payment-reference">
               {paymentReferenceRequired ? "Reference required" : "Reference"}
               <input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder="Approval or transfer ID" required={paymentReferenceRequired} />
             </label>
+          ) : null}
+          {tenderPayments.length > 0 ? (
+            <div className="tender-list">
+              {tenderPayments.map((payment) => (
+                <div className="list-row" key={payment.id}>
+                  <div>
+                    <strong>{paymentMethodLabel(payment.method)}</strong>
+                    <span>{payment.reference ?? "No reference"}</span>
+                  </div>
+                  <b>{displayMoney(payment.amount)}</b>
+                  <button className="icon-danger" onClick={() => removeTenderPayment(payment.id)} aria-label={`Remove ${paymentMethodLabel(payment.method)} payment`}>
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+              <div className="list-row">
+                <div>
+                  <strong>{tenderOverpay > 0 ? "Overpaid" : "Remaining"}</strong>
+                  <span>{tenderBalance > 0 ? "Add another tender" : tenderOverpay > 0 ? "Remove a tender" : "Ready to settle"}</span>
+                </div>
+                <b>{displayMoney(tenderOverpay || tenderBalance)}</b>
+              </div>
+            </div>
           ) : null}
         </div>
 
@@ -1028,9 +1229,20 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
           <button onClick={openDiscountModal}><BadgePercent size={16} /> Discount</button>
           <button className="danger-button" onClick={openVoidModal}><Ban size={16} /> Void</button>
         </div>
-        <button className="pay-button" disabled={cart.length === 0 || paymentMethods.length === 0 || syncState.status === "loading" || (online && !registerShift) || (paymentReferenceRequired && !paymentReference.trim())} onClick={completeSale}>
+        <button
+          className="pay-button"
+          disabled={
+            cart.length === 0 ||
+            paymentMethods.length === 0 ||
+            syncState.status === "loading" ||
+            (online && !registerShift) ||
+            (tenderPayments.length === 0 && paymentReferenceRequired && !paymentReference.trim()) ||
+            (tenderPayments.length > 0 && tenderVariance !== 0)
+          }
+          onClick={completeSale}
+        >
           {syncState.status === "loading" ? "Processing..." : "Pay now"}
-          <b>{displayMoney(summary.total)}</b>
+          <b>{displayMoney(tenderPayments.length > 0 ? tenderTotal : summary.total)}</b>
         </button>
         {lastSettledReceipt ? (
           <div className="settlement-receipt">

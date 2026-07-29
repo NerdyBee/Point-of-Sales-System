@@ -1,7 +1,7 @@
-import { subscriptionInvoiceUpdateSchema, subscriptionUpdateSchema } from "@pos/validation";
+import { subscriptionInvoiceCreateSchema, subscriptionInvoiceUpdateSchema, subscriptionUpdateSchema } from "@pos/validation";
 import { Router } from "express";
 import { requirePermission, requireTenant } from "../../shared/http/tenantContext";
-import { getSubscriptionOverview, updateSubscriptionInvoiceStatus, updateTenantSubscription } from "./subscriptions.repository";
+import { createSubscriptionInvoice, getSubscriptionOverview, updateSubscriptionInvoiceStatus, updateTenantSubscription } from "./subscriptions.repository";
 
 export const subscriptionsRouter = Router();
 
@@ -20,6 +20,18 @@ subscriptionsRouter.patch("/current", requireTenant, requirePermission("subscrip
 
   const result = await updateTenantSubscription(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
   res.json({ subscription: result.subscription });
+});
+
+subscriptionsRouter.post("/invoices", requireTenant, requirePermission("subscription.manage"), async (req, res) => {
+  const parsed = subscriptionInvoiceCreateSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid invoice payload", issues: parsed.error.flatten() });
+    return;
+  }
+
+  const result = await createSubscriptionInvoice(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+  res.status(201).json({ invoice: result.invoice });
 });
 
 subscriptionsRouter.patch("/invoices/:invoiceId", requireTenant, requirePermission("subscription.manage"), async (req, res) => {

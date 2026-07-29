@@ -1,4 +1,4 @@
-import { Ban, Check, Eye, MailPlus, Pencil, RefreshCcw, ShieldCheck, UserPlus, X } from "lucide-react";
+import { Ban, Check, Eye, KeyRound, MailPlus, Pencil, RefreshCcw, Search, ShieldCheck, UserPlus, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   createStaff,
@@ -9,6 +9,7 @@ import {
   resendStaffInvite,
   revokeStaffInvite,
   updateStaff,
+  updateStaffSecurity,
   updateStaffStatus,
   type BranchOption,
   type StaffMember,
@@ -55,6 +56,16 @@ export function StaffView() {
   const [form, setForm] = useState<StaffPayload>(blankStaff(initialBranchId));
   const [roles, setRoles] = useState<AccessRole[]>(fallbackRoles);
   const [modalOpen, setModalOpen] = useState(false);
+  const [staffQuery, setStaffQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [inviteFilter, setInviteFilter] = useState("");
+  const [accessFilter, setAccessFilter] = useState("");
+  const [securityForm, setSecurityForm] = useState({
+    temporaryPassword: "",
+    pin: "",
+    pinEnabled: true,
+    reason: "Manager credential reset"
+  });
   const [status, setStatus] = useState("Ready");
   const { displayMoney } = useTenantSettings();
 
@@ -62,8 +73,38 @@ export function StaffView() {
   const pinCount = useMemo(() => staff.filter((member) => member.pinEnabled).length, [staff]);
   const pendingInviteCount = useMemo(() => staff.filter((member) => member.inviteStatus === "pending").length, [staff]);
   const branchNameById = useMemo(() => new Map(branches.map((branch) => [branch.id, `${branch.name}, ${branch.city}`])), [branches]);
-  const staffPage = usePaginatedRows(staff, 10);
+  const roleLabelByName = useMemo(() => new Map(roles.map((role) => [role.name, role.label])), [roles]);
+  const filteredStaff = useMemo(() => {
+    const normalizedQuery = staffQuery.trim().toLowerCase();
+
+    return staff.filter((member) => {
+      const haystack = [
+        member.name,
+        member.email,
+        member.phone,
+        member.role,
+        roleLabelByName.get(member.role),
+        member.inviteStatus,
+        branchNameById.get(member.branchId)
+      ].filter(Boolean).join(" ").toLowerCase();
+
+      const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
+      const matchesRole = !roleFilter || member.role === roleFilter;
+      const matchesInvite = !inviteFilter || member.inviteStatus === inviteFilter;
+      const matchesAccess = !accessFilter
+        || (accessFilter === "active" && member.active)
+        || (accessFilter === "inactive" && !member.active)
+        || (accessFilter === "pin_enabled" && member.pinEnabled)
+        || (accessFilter === "pin_disabled" && !member.pinEnabled);
+
+      return matchesQuery && matchesRole && matchesInvite && matchesAccess;
+    });
+  }, [accessFilter, branchNameById, inviteFilter, roleFilter, roleLabelByName, staff, staffQuery]);
+  const staffPage = usePaginatedRows(filteredStaff, 10);
   const permissionPage = usePaginatedRows(detailStaff?.permissions ?? [], 12);
+  const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
+  const selectedFormBranch = useMemo(() => branches.find((branch) => branch.id === form.branchId) ?? null, [branches, form.branchId]);
+  const branchLocked = Boolean(branchId && branches.length === 1);
 
   async function loadStaff(nextBranchId = branchId) {
     setStatus("Syncing staff...");
@@ -139,6 +180,24 @@ export function StaffView() {
 
   function closeDetailModal() {
     setDetailStaff(null);
+    setSecurityForm({ temporaryPassword: "", pin: "", pinEnabled: true, reason: "Manager credential reset" });
+  }
+
+  function viewStaff(member: StaffMember) {
+    setDetailStaff(member);
+    setSecurityForm({
+      temporaryPassword: "",
+      pin: "",
+      pinEnabled: member.pinEnabled,
+      reason: "Manager credential reset"
+    });
+  }
+
+  function clearStaffFilters() {
+    setStaffQuery("");
+    setRoleFilter("");
+    setInviteFilter("");
+    setAccessFilter("");
   }
 
   async function saveStaff(event: FormEvent) {
@@ -224,6 +283,46 @@ export function StaffView() {
     }
   }
 
+  async function saveStaffSecurity(event: FormEvent) {
+    event.preventDefault();
+    if (!detailStaff) return;
+
+    if (securityForm.temporaryPassword && securityForm.temporaryPassword.length < 8) {
+      setStatus("Temporary password must be at least 8 characters");
+      return;
+    }
+
+    if (securityForm.pin && !/^\d{6}$/.test(securityForm.pin)) {
+      setStatus("PIN must be 6 digits");
+      return;
+    }
+
+    setStatus("Resetting staff credentials...");
+
+    try {
+      const response = await updateStaffSecurity(
+        detailStaff.id,
+        {
+          temporaryPassword: securityForm.temporaryPassword || undefined,
+          pin: securityForm.pin || undefined,
+          pinEnabled: securityForm.pinEnabled,
+          reason: securityForm.reason
+        },
+        detailStaff.branchId
+      );
+      applyStaffUpdate(response.staff);
+      setSecurityForm({
+        temporaryPassword: "",
+        pin: "",
+        pinEnabled: response.staff.pinEnabled,
+        reason: "Manager credential reset"
+      });
+      setStatus("Staff credentials updated");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to reset credentials");
+    }
+  }
+
   return (
     <div className="module-view">
       <div className="module-heading">
@@ -234,10 +333,17 @@ export function StaffView() {
         <div className="button-group">
           <label className="toolbar-select">
             Branch
-            <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-              <option value="">Branch</option>
-              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-            </select>
+            {branchLocked ? (
+              <span className="locked-select-value locked-select-value-compact">
+                <strong>{selectedBranch?.name ?? branchId}</strong>
+                <small>{selectedBranch?.city ?? "assigned"}</small>
+              </span>
+            ) : (
+              <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
+                <option value="">Branch</option>
+                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+              </select>
+            )}
           </label>
           <button className="secondary-button" onClick={() => void loadStaff()}><RefreshCcw size={18} /> Sync</button>
           <button className="primary-button" onClick={resetForm}><UserPlus size={18} /> Invite staff</button>
@@ -268,7 +374,39 @@ export function StaffView() {
       <section className="panel">
         <div className="panel-header">
           <h2>Branch staff</h2>
-          <span>{staff.length} users</span>
+          <span>{filteredStaff.length} of {staff.length} users</span>
+        </div>
+        <div className="table-toolbar staff-filter-toolbar">
+          <div className="search-box compact-search">
+            <Search size={16} />
+            <input
+              value={staffQuery}
+              onChange={(event) => setStaffQuery(event.target.value)}
+              placeholder="Search staff, email, phone or role"
+            />
+            {staffQuery ? <button type="button" onClick={() => setStaffQuery("")} aria-label="Clear staff search"><X size={14} /></button> : null}
+          </div>
+          <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
+            <option value="">Role</option>
+            {roles.map((role) => <option key={role.id} value={role.name}>{role.label}</option>)}
+          </select>
+          <select value={inviteFilter} onChange={(event) => setInviteFilter(event.target.value)}>
+            <option value="">Invite status</option>
+            <option value="pending">Pending</option>
+            <option value="accepted">Accepted</option>
+            <option value="expired">Expired</option>
+            <option value="revoked">Revoked</option>
+          </select>
+          <select value={accessFilter} onChange={(event) => setAccessFilter(event.target.value)}>
+            <option value="">Access status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="pin_enabled">PIN enabled</option>
+            <option value="pin_disabled">PIN disabled</option>
+          </select>
+          {(staffQuery || roleFilter || inviteFilter || accessFilter) ? (
+            <button className="secondary-button" type="button" onClick={clearStaffFilters}>Clear filters</button>
+          ) : null}
         </div>
         <div className="table-wrap">
           <table>
@@ -280,14 +418,14 @@ export function StaffView() {
                 <tr key={member.id}>
                   <td className="number-cell">{staffPage.startIndex + index + 1}</td>
                   <td>{member.name}</td>
-                  <td>{member.role}</td>
+                  <td>{roleLabelByName.get(member.role) ?? member.role}</td>
                   <td>{displayMoney(member.salesTotal)}</td>
                   <td><StatusBadge label={member.active ? "Active" : "Inactive"} tone={member.active ? "success" : "danger"} /></td>
                   <td><StatusBadge label={member.inviteStatus} tone={inviteTone(member.inviteStatus)} /></td>
                   <td>{member.pinEnabled ? "Enabled" : "Off"}</td>
-                  <td><button className="permission-count" onClick={() => setDetailStaff(member)}>{member.permissions.length} permissions</button></td>
+                  <td><button className="permission-count" onClick={() => viewStaff(member)}>{member.permissions.length} permissions</button></td>
                   <td className="row-actions">
-                    <button onClick={() => setDetailStaff(member)} aria-label={`View ${member.name} access`}><Eye size={16} /></button>
+                    <button onClick={() => viewStaff(member)} aria-label={`View ${member.name} access`}><Eye size={16} /></button>
                     <button onClick={() => editStaff(member)} aria-label={`Edit ${member.name}`}><Pencil size={16} /></button>
                     <button onClick={() => toggleStatus(member)}>{member.active ? "Disable" : "Enable"}</button>
                   </td>
@@ -332,15 +470,22 @@ export function StaffView() {
               </label>
               <label>
                 Branch
-                <select value={form.branchId} onChange={(event) => updateForm("branchId", event.target.value)} required>
-                  <option value="" disabled>Branch</option>
-                  {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-                </select>
+                {branchLocked ? (
+                  <span className="locked-select-value">
+                    <strong>{selectedFormBranch?.name ?? form.branchId}</strong>
+                    <small>{selectedFormBranch?.city ?? "assigned"}</small>
+                  </span>
+                ) : (
+                  <select value={form.branchId} onChange={(event) => updateForm("branchId", event.target.value)} required>
+                    <option value="">Branch</option>
+                    {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                  </select>
+                )}
               </label>
               <label>
                 Role
                 <select value={form.role} onChange={(event) => updateForm("role", event.target.value as StaffRole)}>
-                  <option value="" disabled>Role</option>
+                  <option value="">Role</option>
                   {roles.map((role) => <option key={role.id} value={role.name}>{role.label}</option>)}
                 </select>
               </label>
@@ -357,7 +502,7 @@ export function StaffView() {
                 <div className="invite-note"><MailPlus size={16} /> New staff receive a pending invite before access is activated.</div>
               )}
               <div className="form-summary">
-                <span>{selectedStaff?.role ?? form.role}</span>
+                <span>{roleLabelByName.get(selectedStaff?.role ?? form.role) ?? selectedStaff?.role ?? form.role}</span>
                 <span>{status}</span>
                 <button className="primary-button" type="submit"><Check size={18} /> Save</button>
               </div>
@@ -376,7 +521,7 @@ export function StaffView() {
               <button className="icon-button" onClick={closeDetailModal} aria-label="Close staff detail modal"><X size={18} /></button>
             </div>
             <div className="staff-detail-summary">
-              <span><ShieldCheck size={16} /> {detailStaff.role}</span>
+              <span><ShieldCheck size={16} /> {roleLabelByName.get(detailStaff.role) ?? detailStaff.role}</span>
               <StatusBadge label={detailStaff.active ? "Active" : "Inactive"} tone={detailStaff.active ? "success" : "danger"} />
               <StatusBadge label={detailStaff.inviteStatus} tone={inviteTone(detailStaff.inviteStatus)} />
               <span>{detailStaff.pinEnabled ? "PIN enabled" : "PIN disabled"}</span>
@@ -416,7 +561,9 @@ export function StaffView() {
               </div>
             </div>
             <div className="permission-list">
-              {permissionPage.pageRows.map((permission, index) => (
+              {permissionPage.pageRows.length === 0 ? (
+                <div className="empty-state">No permissions assigned to this role.</div>
+              ) : permissionPage.pageRows.map((permission, index) => (
                 <span className="permission-chip" key={permission}>
                   <span className="number-cell">{permissionPage.startIndex + index + 1}</span>{permission}
                 </span>
@@ -432,6 +579,49 @@ export function StaffView() {
               onPageChange={permissionPage.setPage}
               onPageSizeChange={permissionPage.setPageSize}
             />
+            <form className="staff-security-form" onSubmit={saveStaffSecurity}>
+              <div className="panel-header">
+                <h2>Credential reset</h2>
+                <KeyRound size={18} />
+              </div>
+              <label>
+                Temporary password
+                <input
+                  minLength={8}
+                  type="password"
+                  value={securityForm.temporaryPassword}
+                  onChange={(event) => setSecurityForm((current) => ({ ...current, temporaryPassword: event.target.value }))}
+                />
+              </label>
+              <label>
+                6-digit PIN
+                <input
+                  inputMode="numeric"
+                  maxLength={6}
+                  pattern="\d{6}"
+                  type="password"
+                  value={securityForm.pin}
+                  onChange={(event) => setSecurityForm((current) => ({ ...current, pin: event.target.value.replace(/\D/g, "").slice(0, 6) }))}
+                />
+              </label>
+              <label className="toggle-line">
+                <input
+                  type="checkbox"
+                  checked={securityForm.pinEnabled}
+                  onChange={(event) => setSecurityForm((current) => ({ ...current, pinEnabled: event.target.checked }))}
+                />
+                Enable PIN login
+              </label>
+              <label>
+                Reason
+                <input
+                  value={securityForm.reason}
+                  onChange={(event) => setSecurityForm((current) => ({ ...current, reason: event.target.value }))}
+                  required
+                />
+              </label>
+              <button className="secondary-button wide-field" type="submit"><KeyRound size={18} /> Save credentials</button>
+            </form>
             <div className="modal-footer-actions">
               {detailStaff.inviteStatus !== "accepted" ? (
                 <button className="secondary-button" onClick={() => resendInvite(detailStaff)}><MailPlus size={18} /> Resend invite</button>

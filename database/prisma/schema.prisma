@@ -82,6 +82,7 @@ model Branch {
   prepTickets    PrepTicket[]
   terminals      Terminal[]
   syncQueueRecords SyncQueueRecord[]
+  customerLedgerEntries CustomerLedgerEntry[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -387,6 +388,7 @@ model Customer {
 model CustomerLedgerEntry {
   id           String   @id @db.VarChar(64)
   tenantId     String   @db.VarChar(64)
+  branchId     String   @db.VarChar(64)
   customerId   String   @db.VarChar(64)
   type         String   @db.VarChar(60)
   amount       Int
@@ -398,8 +400,10 @@ model CustomerLedgerEntry {
   createdBy    String   @db.VarChar(80)
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch   Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
+  @@index([tenantId, branchId, createdAt])
   @@index([tenantId, customerId, createdAt])
   @@map("customer_ledger_entries")
 }

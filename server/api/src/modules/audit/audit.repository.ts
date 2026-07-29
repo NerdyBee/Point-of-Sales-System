@@ -18,13 +18,15 @@ function toApiAuditEvent(event: DbAuditEvent): AuditEvent {
   };
 }
 
-export async function listAuditEvents(tenantId: string, filters: { branchId?: string; userId?: string; action?: string } = {}) {
+export async function listAuditEvents(tenantId: string, filters: { branchId?: string; userId?: string; action?: string; startDate?: Date; endDate?: Date } = {}) {
   if (useDemoStore) {
     return auditEvents
       .filter((event) => event.tenantId === tenantId)
       .filter((event) => !filters.branchId || event.branchId === filters.branchId)
       .filter((event) => !filters.userId || event.userId === filters.userId)
-      .filter((event) => !filters.action || event.action === filters.action);
+      .filter((event) => !filters.action || event.action === filters.action)
+      .filter((event) => !filters.startDate || new Date(event.createdAt).getTime() >= filters.startDate.getTime())
+      .filter((event) => !filters.endDate || new Date(event.createdAt).getTime() <= filters.endDate.getTime());
   }
 
   const events = await prisma.auditEvent.findMany({
@@ -32,7 +34,13 @@ export async function listAuditEvents(tenantId: string, filters: { branchId?: st
       tenantId,
       branchId: filters.branchId ? filters.branchId : undefined,
       userId: filters.userId ? filters.userId : undefined,
-      action: filters.action ? filters.action : undefined
+      action: filters.action ? filters.action : undefined,
+      createdAt: filters.startDate || filters.endDate
+        ? {
+            gte: filters.startDate,
+            lte: filters.endDate
+          }
+        : undefined
     },
     orderBy: { createdAt: "desc" },
     take: 250

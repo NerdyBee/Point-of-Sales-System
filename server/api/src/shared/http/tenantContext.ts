@@ -2,6 +2,8 @@ import type { NextFunction, Request, Response } from "express";
 import type { PermissionAction } from "@pos/types";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { getRolePermissions } from "../../modules/roles/roles.repository";
+import { authSessions, staffMembers } from "../data/demoStore";
+import { prisma } from "../db/prisma";
 import { fallbackPermissionsForRole } from "../security/accessControl";
 
 export interface TenantContext {
@@ -23,6 +25,7 @@ declare global {
 
 const authSecret = process.env.AUTH_SECRET ?? "naijapos-dev-auth-secret";
 const allowHeaderAuth = process.env.NODE_ENV === "test" || process.env.ALLOW_HEADER_AUTH === "true";
+const useDemoStore = process.env.NODE_ENV === "test";
 
 interface AccessTokenPayload {
   tenantId: string;
@@ -98,20 +101,87 @@ function verifyAccessToken(token: string | null): AccessTokenPayload | null {
   }
 }
 
+async function currentContextForToken(payload: AccessTokenPayload): Promise<TenantContext | null> {
+  if (useDemoStore) {
+    const session = authSessions.find((item) =>
+      item.id === payload.sessionId &&
+      item.tenantId === payload.tenantId &&
+      item.staffId === payload.staffId &&
+      !item.revokedAt &&
+      new Date(item.expiresAt).getTime() > Date.now()
+    );
+    const staff = staffMembers.find((member) =>
+      member.tenantId === payload.tenantId &&
+      member.id === payload.staffId &&
+      member.active &&
+      member.inviteStatus === "accepted"
+    );
+    if (!session || !staff) return null;
+    return {
+      tenantId: payload.tenantId,
+      branchId: session.branchId || staff.branchId || payload.branchId,
+      userId: staff.id,
+      role: staff.role,
+      sessionId: session.id,
+      permissions: await getRolePermissions(payload.tenantId, staff.role)
+    };
+  }
+
+  const [session, staff] = await Promise.all([
+    prisma.authSession.findFirst({
+      where: {
+        id: payload.sessionId,
+        tenantId: payload.tenantId,
+        staffId: payload.staffId,
+        revokedAt: null,
+        expiresAt: { gt: new Date() }
+      }
+    }),
+    prisma.staffMember.findFirst({
+      where: {
+        tenantId: payload.tenantId,
+        id: payload.staffId,
+        active: true,
+        inviteStatus: "accepted"
+      }
+    })
+  ]);
+  if (!session || !staff) return null;
+
+  return {
+    tenantId: payload.tenantId,
+    branchId: session.branchId ?? staff.branchId ?? payload.branchId,
+    userId: staff.id,
+    role: staff.role,
+    sessionId: session.id,
+    permissions: await getRolePermissions(payload.tenantId, staff.role)
+  };
+}
+
 export function attachTenantContext(req: Request, _res: Response, next: NextFunction) {
   const tokenPayload = verifyAccessToken(readBearerToken(req));
   const headerTenantId = allowHeaderAuth ? req.header("x-tenant-id") : undefined;
-  const tenantId = tokenPayload?.tenantId ?? headerTenantId;
-  const branchId = tokenPayload ? (req.header("x-branch-id") || tokenPayload.branchId) : (allowHeaderAuth ? req.header("x-branch-id") : undefined);
+
+  if (tokenPayload) {
+    void currentContextForToken(tokenPayload)
+      .then((context) => {
+        if (context) req.tenantContext = context;
+        next();
+      })
+      .catch(() => next());
+    return;
+  }
+
+  const tenantId = headerTenantId;
+  const branchId = allowHeaderAuth ? req.header("x-branch-id") : undefined;
 
   if (tenantId) {
-    const role = tokenPayload?.role ?? (allowHeaderAuth ? req.header("x-role") : undefined) ?? "";
+    const role = (allowHeaderAuth ? req.header("x-role") : undefined) ?? "";
     const context: TenantContext = {
       tenantId,
       branchId: branchId || undefined,
-      userId: tokenPayload?.staffId ?? (allowHeaderAuth ? req.header("x-user-id") : undefined) ?? "",
+      userId: (allowHeaderAuth ? req.header("x-user-id") : undefined) ?? "",
       role,
-      sessionId: tokenPayload?.sessionId,
       permissions: fallbackPermissionsForRole(role)
     };
     req.tenantContext = context;
@@ -165,6 +235,27 @@ export function requirePermission(permission: PermissionAction) {
 
     if (!req.tenantContext.permissions.includes(permission)) {
       res.status(403).json({ error: "Permission denied", permission });
+      return;
+    }
+
+    next();
+  };
+}
+
+export function requireAnyPermission(permissions: PermissionAction[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.tenantContext) {
+      res.status(401).json({ error: "Tenant context is required" });
+      return;
+    }
+
+    if (!req.tenantContext.userId) {
+      res.status(401).json({ error: "Authenticated user context is required" });
+      return;
+    }
+
+    if (!permissions.some((permission) => req.tenantContext!.permissions.includes(permission))) {
+      res.status(403).json({ error: "Permission denied", permission: permissions[0], permissions });
       return;
     }
 

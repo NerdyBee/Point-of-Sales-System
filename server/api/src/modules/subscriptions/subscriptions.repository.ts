@@ -21,7 +21,7 @@ export const planCatalog: Record<SubscriptionPlan, Pick<TenantSubscription, "amo
     userLimit: 4,
     terminalLimit: 1,
     storageGb: 2,
-    features: ["POS terminal", "Basic reports", "Demo data"]
+    features: ["POS terminal", "Basic reports", "Starter records"]
   },
   Starter: {
     amount: 12000,
@@ -66,8 +66,25 @@ type SubscriptionUpdateInput = {
   notes?: string;
 };
 
+type SubscriptionInvoiceCreateInput = {
+  plan: SubscriptionPlan;
+  amount?: number;
+  status: SubscriptionInvoiceStatus;
+  issuedAt: string;
+  dueAt: string;
+};
+
 function nextAuditId() {
   return `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function nextSubscriptionInvoiceNumber(tenantId: string, existingNumbers: string[]) {
+  const numericSuffixes = existingNumbers
+    .map((invoiceNumber) => Number(invoiceNumber.match(/(\d+)$/)?.[1] ?? 0))
+    .filter((value) => Number.isFinite(value));
+  const nextNumber = Math.max(1000, ...numericSuffixes) + 1;
+  const tenantCode = tenantId.replace(/^tenant-/, "").split("-").map((part) => part[0]?.toUpperCase() ?? "").join("").slice(0, 4) || "TEN";
+  return `SUB-${tenantCode}-${nextNumber}`;
 }
 
 function toApiSubscription(subscription: DbTenantSubscription): TenantSubscription {
@@ -293,6 +310,70 @@ export async function updateTenantSubscription(tenantId: string, userId: string,
   });
 
   return { status: "updated" as const, subscription: toApiSubscription(subscription) };
+}
+
+export async function createSubscriptionInvoice(tenantId: string, userId: string, input: SubscriptionInvoiceCreateInput) {
+  const planLimits = planCatalog[input.plan];
+  const amount = input.amount ?? planLimits.amount;
+  const now = new Date().toISOString();
+
+  if (useDemoStore) {
+    const invoice: SubscriptionInvoice = {
+      id: `sub-inv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      tenantId,
+      invoiceNumber: nextSubscriptionInvoiceNumber(tenantId, subscriptionInvoices.filter((item) => item.tenantId === tenantId).map((item) => item.invoiceNumber)),
+      plan: input.plan,
+      amount,
+      currency: "NGN",
+      status: input.status,
+      issuedAt: input.issuedAt,
+      dueAt: input.dueAt,
+      paidAt: input.status === "paid" ? now : undefined,
+      createdAt: now
+    };
+    subscriptionInvoices.unshift(invoice);
+
+    await appendSubscriptionAudit({
+      tenantId,
+      userId,
+      action: "subscription.invoice_created",
+      entityType: "subscription_invoice",
+      entityId: invoice.id,
+      metadata: { invoiceNumber: invoice.invoiceNumber, plan: invoice.plan, amount: invoice.amount, status: invoice.status }
+    });
+
+    return { status: "created" as const, invoice };
+  }
+
+  const existingInvoices = await prisma.subscriptionInvoice.findMany({
+    where: { tenantId },
+    select: { invoiceNumber: true }
+  });
+  const invoice = await prisma.subscriptionInvoice.create({
+    data: {
+      id: `sub-inv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      tenantId,
+      invoiceNumber: nextSubscriptionInvoiceNumber(tenantId, existingInvoices.map((item) => item.invoiceNumber)),
+      plan: input.plan,
+      amount,
+      currency: "NGN",
+      status: input.status,
+      issuedAt: new Date(input.issuedAt),
+      dueAt: new Date(input.dueAt),
+      paidAt: input.status === "paid" ? new Date() : null
+    }
+  });
+
+  await appendSubscriptionAudit({
+    tenantId,
+    userId,
+    action: "subscription.invoice_created",
+    entityType: "subscription_invoice",
+    entityId: invoice.id,
+    metadata: { invoiceNumber: invoice.invoiceNumber, plan: invoice.plan, amount: invoice.amount, status: invoice.status }
+  });
+
+  return { status: "created" as const, invoice: toApiInvoice(invoice) };
 }
 
 export async function updateSubscriptionInvoiceStatus(tenantId: string, userId: string, invoiceId: string, status: SubscriptionInvoiceStatus, paymentReference?: string) {

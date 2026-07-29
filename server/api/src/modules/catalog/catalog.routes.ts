@@ -1,14 +1,15 @@
-import { Router, raw } from "express";
+import { Router, raw, type Request } from "express";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { productInputSchema } from "@pos/validation";
-import { resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, resolveBranchScope, requireAnyPermission, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import {
   appendCatalogAudit,
   catalogBranchExists,
   catalogBarcodeExists,
   catalogSkuExists,
   createCatalogProductRecord,
+  getCatalogProductRecord,
   getTenantSettings,
   listCatalogProducts,
   updateCatalogProductRecord
@@ -28,13 +29,17 @@ function safeUploadName(value: string) {
   return value.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 80) || "product";
 }
 
+function requestedBranch(req: Request) {
+  return req.query.branchId?.toString() ?? req.header("x-branch-id") ?? (canAccessAllBranches(req.tenantContext!) ? undefined : req.tenantContext!.branchId);
+}
+
 async function categoryAllowed(tenantId: string, category: string) {
   const settings = await getTenantSettings(tenantId);
   return Boolean(settings?.productCategories.includes(category));
 }
 
-catalogRouter.get("/products", requireTenant, requireAuthenticatedUser, async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
+catalogRouter.get("/products", requireTenant, requireAnyPermission(["sale.create", "catalog.manage", "inventory.adjust", "restaurant.manage"]), async (req, res) => {
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
@@ -45,7 +50,7 @@ catalogRouter.get("/products", requireTenant, requireAuthenticatedUser, async (r
 
   await appendCatalogAudit({
     tenantId: req.tenantContext!.tenantId,
-    branchId: req.tenantContext!.branchId,
+    branchId,
     userId: req.tenantContext!.userId,
     action: "catalog.view",
     entityType: "product",
@@ -112,6 +117,12 @@ catalogRouter.post("/products", requireTenant, requirePermission("catalog.manage
     return;
   }
 
+  const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+
   const settings = await getTenantSettings(req.tenantContext!.tenantId);
 
   if (!settings) {
@@ -126,6 +137,7 @@ catalogRouter.post("/products", requireTenant, requirePermission("catalog.manage
 
   const product = await createCatalogProductRecord(req.tenantContext!.tenantId, {
     ...parsed.data,
+    branchId: scope.branchId ?? parsed.data.branchId,
     taxRate: parsed.data.taxRate ?? settings.defaultTaxRate
   });
 
@@ -148,6 +160,19 @@ catalogRouter.patch("/products/:productId", requireTenant, requirePermission("ca
 
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid product payload", issues: parsed.error.flatten() });
+    return;
+  }
+
+  const existingProduct = await getCatalogProductRecord(req.tenantContext!.tenantId, productId);
+
+  if (!existingProduct) {
+    res.status(404).json({ error: "Product not found" });
+    return;
+  }
+
+  const existingScope = resolveBranchScope(req.tenantContext!, existingProduct.branchId);
+  if (existingScope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !existingScope.branchId)) {
+    res.status(403).json({ error: "Branch access denied" });
     return;
   }
 
@@ -177,6 +202,14 @@ catalogRouter.patch("/products/:productId", requireTenant, requirePermission("ca
   if (parsed.data.branchId && !(await catalogBranchExists(req.tenantContext!.tenantId, parsed.data.branchId))) {
     res.status(404).json({ error: "Product branch not found for this tenant" });
     return;
+  }
+
+  if (parsed.data.branchId) {
+    const nextScope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
+    if (nextScope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !nextScope.branchId)) {
+      res.status(403).json({ error: "Branch access denied" });
+      return;
+    }
   }
 
   const product = await updateCatalogProductRecord(req.tenantContext!.tenantId, productId, parsed.data);

@@ -1,4 +1,4 @@
-import { Check, Cloud, CloudOff, RefreshCcw, RotateCcw, ShieldAlert } from "lucide-react";
+import { Check, Cloud, CloudOff, Eye, RefreshCcw, RotateCcw, Search, ShieldAlert, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   fetchBranchOptions,
@@ -52,16 +52,50 @@ export function SyncMonitorView() {
   const [terminals, setTerminals] = useState<TerminalOption[]>([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [terminalFilter, setTerminalFilter] = useState("");
+  const [recordQuery, setRecordQuery] = useState("");
+  const [recordTypeFilter, setRecordTypeFilter] = useState<SyncRecordType | "">("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [form, setForm] = useState<SyncQueuePayload>(blankRecord(initialBranchId));
   const [payloadText, setPayloadText] = useState('{"source":"manual sync test"}');
+  const [reviewRecord, setReviewRecord] = useState<SyncQueueRecord | null>(null);
+  const [reviewForm, setReviewForm] = useState<{
+    status: Exclude<SyncRecordStatus, "processing"> | "";
+    serverEntityId: string;
+    error: string;
+  }>({ status: "", serverEntityId: "", error: "" });
   const [status, setStatus] = useState("Ready");
 
   const queuedCount = useMemo(() => records.filter((record) => record.status === "queued").length, [records]);
   const issueCount = useMemo(() => records.filter((record) => record.status === "failed" || record.status === "conflict").length, [records]);
   const syncedCount = useMemo(() => records.filter((record) => record.status === "synced").length, [records]);
-  const recordsPage = usePaginatedRows(records, 10);
+  const filteredRecords = useMemo(() => {
+    const normalizedQuery = recordQuery.trim().toLowerCase();
 
-  async function loadSync(nextStatus = statusFilter, nextTerminal = terminalFilter, nextBranchId = branchId) {
+    return records.filter((record) => {
+      const haystack = [
+        record.id,
+        record.terminalId,
+        record.recordType,
+        record.operation,
+        record.idempotencyKey,
+        record.status,
+        record.error,
+        record.serverEntityId,
+        JSON.stringify(record.payload)
+      ].filter(Boolean).join(" ").toLowerCase();
+
+      const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
+      const matchesType = !recordTypeFilter || record.recordType === recordTypeFilter;
+
+      return matchesQuery && matchesType;
+    });
+  }, [recordQuery, recordTypeFilter, records]);
+  const recordsPage = usePaginatedRows(filteredRecords, 10);
+  const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
+  const branchLocked = Boolean(branchId && branches.length === 1);
+
+  async function loadSync(nextStatus = statusFilter, nextTerminal = terminalFilter, nextBranchId = branchId, nextStartDate = startDate, nextEndDate = endDate) {
     setStatus("Syncing queue...");
 
     try {
@@ -84,7 +118,7 @@ export function SyncMonitorView() {
         return;
       }
 
-      const queueResponse = await fetchSyncQueue(nextBranchId, nextStatus || "all", nextTerminal, activeUserId);
+      const queueResponse = await fetchSyncQueue(nextBranchId, nextStatus || "all", nextTerminal, activeUserId, nextStartDate, nextEndDate);
       setRecords(queueResponse.records);
       setStatus("Sync queue loaded");
     } catch (error) {
@@ -170,11 +204,97 @@ export function SyncMonitorView() {
     }
   }
 
+  function openReviewRecord(record: SyncQueueRecord) {
+    setReviewRecord(record);
+    setReviewForm({
+      status: record.status === "processing" ? "queued" : record.status,
+      serverEntityId: record.serverEntityId ?? "",
+      error: record.error ?? ""
+    });
+  }
+
+  function closeReviewRecord() {
+    setReviewRecord(null);
+    setReviewForm({ status: "", serverEntityId: "", error: "" });
+  }
+
+  async function saveReviewRecord(event: FormEvent) {
+    event.preventDefault();
+
+    if (!reviewRecord || !reviewForm.status) {
+      setStatus("Select a sync status");
+      return;
+    }
+
+    if (!activeUserId) {
+      setStatus("Sign in before updating sync records");
+      return;
+    }
+
+    setStatus(`Updating ${reviewRecord.id}...`);
+
+    try {
+      const response = await updateSyncRecordStatus(
+        reviewRecord.id,
+        reviewForm.status,
+        reviewForm.serverEntityId.trim() || undefined,
+        reviewForm.error.trim() || undefined,
+        reviewRecord.branchId,
+        activeUserId
+      );
+      setRecords((current) => current.map((item) => (item.id === response.record.id ? response.record : item)));
+      closeReviewRecord();
+      setStatus("Sync record updated");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to update sync record");
+    }
+  }
+
+  async function retryIssueRecords() {
+    const issueRecords = records.filter((record) => record.status === "failed" || record.status === "conflict");
+
+    if (issueRecords.length === 0) {
+      setStatus("No failed or conflict records to retry");
+      return;
+    }
+
+    if (!activeUserId) {
+      setStatus("Sign in before retrying sync records");
+      return;
+    }
+
+    setStatus(`Retrying ${issueRecords.length} issue records...`);
+
+    try {
+      const responses = await Promise.all(issueRecords.map((record) => updateSyncRecordStatus(
+        record.id,
+        "queued",
+        record.serverEntityId,
+        undefined,
+        record.branchId,
+        activeUserId
+      )));
+      const updatedById = new Map(responses.map((response) => [response.record.id, response.record]));
+      setRecords((current) => current.map((record) => updatedById.get(record.id) ?? record));
+      setStatus(`${responses.length} records queued for retry`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to retry issue records");
+    }
+  }
+
   function changeBranch(nextBranchId: string) {
     setBranchId(nextBranchId);
     setTerminalFilter("");
     setForm(blankRecord(nextBranchId));
     void loadSync(statusFilter, "", nextBranchId);
+  }
+
+  function clearRecordFilters() {
+    setRecordQuery("");
+    setRecordTypeFilter("");
+    setStartDate("");
+    setEndDate("");
+    void loadSync(statusFilter, terminalFilter, branchId, "", "");
   }
 
   return (
@@ -187,17 +307,23 @@ export function SyncMonitorView() {
         <div className="button-group">
           <label className="toolbar-select">
             Branch
-            <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-              <option value="">Branch</option>
-              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-            </select>
+            {branchLocked ? (
+              <span className="locked-select-value locked-select-value-compact">
+                <strong>{selectedBranch?.name ?? branchId}</strong>
+                <small>{selectedBranch?.city ?? "assigned"}</small>
+              </span>
+            ) : (
+              <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
+                <option value="">Branch</option>
+                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+              </select>
+            )}
           </label>
           <select className="compact-select" value={statusFilter} onChange={(event) => {
             setStatusFilter(event.target.value);
             void loadSync(event.target.value, terminalFilter);
           }}>
             <option value="">Status</option>
-            <option value="all">All</option>
             <option value="queued">Queued</option>
             <option value="processing">Processing</option>
             <option value="synced">Synced</option>
@@ -212,6 +338,7 @@ export function SyncMonitorView() {
             {terminals.map((terminal) => <option key={terminal.id} value={terminal.id}>{terminal.name}</option>)}
           </select>
           <button className="secondary-button" onClick={() => loadSync()}><RefreshCcw size={18} /> Sync</button>
+          <button className="secondary-button" onClick={retryIssueRecords}><RotateCcw size={18} /> Retry issues</button>
         </div>
       </div>
 
@@ -293,7 +420,43 @@ export function SyncMonitorView() {
       <section className="panel">
         <div className="panel-header">
           <h2>Offline sync queue</h2>
-          <span>{records.length} records</span>
+          <span>{filteredRecords.length} of {records.length} records</span>
+        </div>
+        <div className="table-toolbar sync-record-toolbar">
+          <div className="search-box compact-search">
+            <Search size={16} />
+            <input
+              value={recordQuery}
+              onChange={(event) => setRecordQuery(event.target.value)}
+              placeholder="Search ID, key, server ID, error or payload"
+            />
+            {recordQuery ? (
+              <button type="button" onClick={() => setRecordQuery("")} aria-label="Clear sync search"><X size={14} /></button>
+            ) : null}
+          </div>
+          <select value={recordTypeFilter} onChange={(event) => setRecordTypeFilter(event.target.value as SyncRecordType | "")}>
+            <option value="">Record type</option>
+            <option value="sale">Sale</option>
+            <option value="table_order">Table order</option>
+            <option value="payment">Payment</option>
+            <option value="cash_movement">Cash movement</option>
+            <option value="stock_adjustment">Stock adjustment</option>
+            <option value="receipt_action">Receipt action</option>
+          </select>
+          <div className="date-range-filter sync-date-range-filter">
+            <label>
+              <span>Start</span>
+              <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+            </label>
+            <label>
+              <span>End</span>
+              <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+            </label>
+          </div>
+          <button className="secondary-button" type="button" onClick={() => loadSync(statusFilter, terminalFilter, branchId, startDate, endDate)}>Apply dates</button>
+          {(recordQuery || recordTypeFilter || startDate || endDate) ? (
+            <button className="secondary-button" type="button" onClick={clearRecordFilters}>Clear filters</button>
+          ) : null}
         </div>
         <div className="table-wrap">
           <table>
@@ -312,6 +475,7 @@ export function SyncMonitorView() {
                   <td>{record.attempts}</td>
                   <td><StatusBadge label={record.status} tone={statusTone(record.status)} /></td>
                   <td className="row-actions">
+                    <button onClick={() => openReviewRecord(record)}><Eye size={14} /> Review</button>
                     <button disabled={record.status === "synced"} onClick={() => changeRecordStatus(record, "queued")}><RotateCcw size={14} /> Retry</button>
                     <button disabled={record.status === "synced"} onClick={() => changeRecordStatus(record, "synced")}><Check size={14} /> Resolve</button>
                     <button disabled={record.status === "synced" || record.status === "conflict"} onClick={() => changeRecordStatus(record, "conflict")}>Conflict</button>
@@ -332,6 +496,61 @@ export function SyncMonitorView() {
           onPageSizeChange={recordsPage.setPageSize}
         />
       </section>
+      {reviewRecord ? (
+        <div className="modal-backdrop" role="presentation" onMouseDown={closeReviewRecord}>
+          <section className="modal-panel sync-modal" role="dialog" aria-modal="true" aria-labelledby="sync-review-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">Offline reconciliation</p>
+                <h2 id="sync-review-title">Review sync record</h2>
+              </div>
+              <button className="icon-button" onClick={closeReviewRecord} aria-label="Close sync review modal"><X size={18} /></button>
+            </div>
+            <form className="settings-form" onSubmit={saveReviewRecord}>
+              <label>
+                Record
+                <span className="locked-select-value">
+                  <strong>{reviewRecord.recordType.replace("_", " ")}</strong>
+                  <small>{reviewRecord.id}</small>
+                </span>
+              </label>
+              <label>
+                Terminal
+                <span className="locked-select-value">
+                  <strong>{reviewRecord.terminalId}</strong>
+                  <small>{reviewRecord.operation}</small>
+                </span>
+              </label>
+              <label>
+                Status
+                <select value={reviewForm.status} onChange={(event) => setReviewForm((current) => ({ ...current, status: event.target.value as Exclude<SyncRecordStatus, "processing"> }))} required>
+                  <option value="">Status</option>
+                  <option value="queued">Queued</option>
+                  <option value="synced">Synced</option>
+                  <option value="failed">Failed</option>
+                  <option value="conflict">Conflict</option>
+                </select>
+              </label>
+              <label>
+                Server entity ID
+                <input value={reviewForm.serverEntityId} onChange={(event) => setReviewForm((current) => ({ ...current, serverEntityId: event.target.value }))} placeholder={`server-${reviewRecord.id}`} />
+              </label>
+              <label className="wide-field">
+                Error or review note
+                <input value={reviewForm.error} onChange={(event) => setReviewForm((current) => ({ ...current, error: event.target.value }))} placeholder="Mismatch, duplicate record, retry reason" />
+              </label>
+              <label className="wide-field">
+                Payload
+                <textarea readOnly value={JSON.stringify(reviewRecord.payload, null, 2)} rows={8} />
+              </label>
+              <div className="form-summary wide-field">
+                <span>{reviewRecord.attempts} attempts - {reviewRecord.idempotencyKey}</span>
+                <button className="primary-button" type="submit"><Check size={18} /> Save review</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { Check, Plus, RefreshCcw, ShieldCheck, Users, X } from "lucide-react";
+import { Check, Plus, RefreshCcw, Search, ShieldCheck, Users, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   assignStaffRole,
@@ -7,6 +7,7 @@ import {
   fetchRoles,
   fetchStaff,
   readStoredAuth,
+  refreshCurrentAuth,
   updateRole,
   updateRolePermissions,
   type AccessPermission,
@@ -25,6 +26,7 @@ export function RolesView() {
   const storedAuth = useMemo(() => readStoredAuth(), []);
   const initialBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
   const activeUserId = storedAuth?.staff.id ?? "";
+  const activeRole = storedAuth?.staff.role ?? "";
   const [roles, setRoles] = useState<AccessRole[]>([]);
   const [permissions, setPermissions] = useState<AccessPermission[]>([]);
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -34,16 +36,46 @@ export function RolesView() {
   const [roleForm, setRoleForm] = useState<RolePayload>(blankRole);
   const [assignment, setAssignment] = useState({ staffId: "", role: "" });
   const [roleModalOpen, setRoleModalOpen] = useState(false);
+  const [roleQuery, setRoleQuery] = useState("");
+  const [roleTypeFilter, setRoleTypeFilter] = useState("");
+  const [permissionQuery, setPermissionQuery] = useState("");
+  const [permissionGroupFilter, setPermissionGroupFilter] = useState("");
   const [status, setStatus] = useState("Ready");
 
   const selectedRole = useMemo(() => roles.find((role) => role.id === selectedRoleId) ?? roles[0], [roles, selectedRoleId]);
-  const groupedPermissions = useMemo(() => permissions.reduce<Record<string, AccessPermission[]>>((groups, permission) => {
+  const filteredRoles = useMemo(() => {
+    const normalizedQuery = roleQuery.trim().toLowerCase();
+
+    return roles.filter((role) => {
+      const matchesQuery = !normalizedQuery || `${role.name} ${role.label} ${role.description ?? ""}`.toLowerCase().includes(normalizedQuery);
+      const matchesType = !roleTypeFilter
+        || (roleTypeFilter === "system" && role.system)
+        || (roleTypeFilter === "custom" && !role.system);
+
+      return matchesQuery && matchesType;
+    });
+  }, [roleQuery, roleTypeFilter, roles]);
+  const filteredPermissions = useMemo(() => {
+    const normalizedQuery = permissionQuery.trim().toLowerCase();
+
+    return permissions.filter((permission) => {
+      const matchesGroup = !permissionGroupFilter || permission.group === permissionGroupFilter;
+      const matchesQuery = !normalizedQuery
+        || `${permission.action} ${permission.label} ${permission.group} ${permission.description}`.toLowerCase().includes(normalizedQuery);
+
+      return matchesGroup && matchesQuery;
+    });
+  }, [permissionGroupFilter, permissionQuery, permissions]);
+  const permissionGroups = useMemo(() => [...new Set(permissions.map((permission) => permission.group))].sort(), [permissions]);
+  const groupedPermissions = useMemo(() => filteredPermissions.reduce<Record<string, AccessPermission[]>>((groups, permission) => {
     groups[permission.group] = [...(groups[permission.group] ?? []), permission];
     return groups;
-  }, {}), [permissions]);
+  }, {}), [filteredPermissions]);
   const permissionGroupEntries = useMemo(() => Object.entries(groupedPermissions), [groupedPermissions]);
-  const rolePage = usePaginatedRows(roles, 10);
+  const rolePage = usePaginatedRows(filteredRoles, 10);
   const permissionGroupPage = usePaginatedRows(permissionGroupEntries, 4);
+  const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
+  const branchLocked = Boolean(branchId && branches.length === 1);
 
   async function loadAccessControl(nextBranchId = branchId) {
     setStatus("Syncing roles...");
@@ -73,6 +105,10 @@ export function RolesView() {
   function upsertRole(role: AccessRole) {
     setRoles((current) => current.some((item) => item.id === role.id) ? current.map((item) => (item.id === role.id ? role : item)) : [...current, role]);
     setSelectedRoleId(role.id);
+  }
+
+  function permissionsForRole(roleName: string, roleList = roles) {
+    return roleList.find((role) => role.name === roleName)?.permissions ?? [];
   }
 
   async function saveRole(event: FormEvent) {
@@ -118,6 +154,10 @@ export function RolesView() {
     try {
       const response = await updateRolePermissions(selectedRole.id, nextPermissions);
       upsertRole(response.role);
+      setStaff((current) => current.map((member) => member.role === response.role.name ? { ...member, permissions: response.role.permissions } : member));
+      if (response.role.name === activeRole) {
+        void refreshCurrentAuth();
+      }
       setStatus("Permissions saved");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to save permissions");
@@ -144,7 +184,10 @@ export function RolesView() {
     setStatus("Assigning role...");
     try {
       const response = await assignStaffRole(assignment.staffId, assignment.role, branchId);
-      setStaff((current) => current.map((member) => member.id === response.staffId ? { ...member, role: response.role } : member));
+      setStaff((current) => current.map((member) => member.id === response.staffId ? { ...member, role: response.role, permissions: permissionsForRole(response.role) } : member));
+      if (response.staffId === activeUserId) {
+        void refreshCurrentAuth();
+      }
       setAssignment({ staffId: "", role: "" });
       setStatus("Staff role assigned");
     } catch (error) {
@@ -163,6 +206,16 @@ export function RolesView() {
     setRoleForm(blankRole);
   }
 
+  function clearRoleFilters() {
+    setRoleQuery("");
+    setRoleTypeFilter("");
+  }
+
+  function clearPermissionFilters() {
+    setPermissionQuery("");
+    setPermissionGroupFilter("");
+  }
+
   return (
     <div className="module-view">
       <div className="module-heading">
@@ -173,10 +226,17 @@ export function RolesView() {
         <div className="button-group">
           <label className="toolbar-select">
             Staff branch
-            <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-              <option value="">Staff branch</option>
-              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-            </select>
+            {branchLocked ? (
+              <span className="locked-select-value locked-select-value-compact">
+                <strong>{selectedBranch?.name ?? branchId}</strong>
+                <small>{selectedBranch?.city ?? "assigned"}</small>
+              </span>
+            ) : (
+              <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
+                <option value="">Staff branch</option>
+                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+              </select>
+            )}
           </label>
           <button className="secondary-button" onClick={() => void loadAccessControl()}><RefreshCcw size={18} /> Sync</button>
           <button className="primary-button" onClick={() => setRoleModalOpen(true)}><Plus size={18} /> Create role</button>
@@ -205,7 +265,28 @@ export function RolesView() {
         <section className="panel">
           <div className="panel-header">
             <h2>Roles</h2>
-            <span>{roles.length} records</span>
+            <span>{filteredRoles.length} of {roles.length} records</span>
+          </div>
+          <div className="table-toolbar role-filter-toolbar">
+            <div className="search-box compact-search">
+              <Search size={16} />
+              <input
+                value={roleQuery}
+                onChange={(event) => setRoleQuery(event.target.value)}
+                placeholder="Search roles"
+              />
+              {roleQuery ? (
+                <button type="button" onClick={() => setRoleQuery("")} aria-label="Clear role search"><X size={14} /></button>
+              ) : null}
+            </div>
+            <select value={roleTypeFilter} onChange={(event) => setRoleTypeFilter(event.target.value)}>
+              <option value="">Role type</option>
+              <option value="system">System</option>
+              <option value="custom">Custom</option>
+            </select>
+            {(roleQuery || roleTypeFilter) ? (
+              <button className="secondary-button" type="button" onClick={clearRoleFilters}>Clear filters</button>
+            ) : null}
           </div>
           <div className="stack">
             {rolePage.pageRows.length === 0 ? (
@@ -250,8 +331,31 @@ export function RolesView() {
                 </label>
                 <button className="secondary-button wide-field" type="submit"><Check size={18} /> Save role details</button>
               </form>
+              <div className="table-toolbar permission-filter-toolbar">
+                <div className="search-box compact-search">
+                  <Search size={16} />
+                  <input
+                    value={permissionQuery}
+                    onChange={(event) => setPermissionQuery(event.target.value)}
+                    placeholder="Search permissions"
+                  />
+                  {permissionQuery ? (
+                    <button type="button" onClick={() => setPermissionQuery("")} aria-label="Clear permission search"><X size={14} /></button>
+                  ) : null}
+                </div>
+                <select value={permissionGroupFilter} onChange={(event) => setPermissionGroupFilter(event.target.value)}>
+                  <option value="">Permission group</option>
+                  {permissionGroups.map((group) => <option key={group} value={group}>{group}</option>)}
+                </select>
+                <span>{filteredPermissions.length} of {permissions.length} permissions</span>
+                {(permissionQuery || permissionGroupFilter) ? (
+                  <button className="secondary-button" type="button" onClick={clearPermissionFilters}>Clear filters</button>
+                ) : null}
+              </div>
               <div className="permission-groups">
-                {permissionGroupPage.pageRows.map(([group, groupPermissions], groupIndex) => (
+                {permissionGroupPage.pageRows.length === 0 ? (
+                  <div className="empty-state">No permissions match the current search.</div>
+                ) : permissionGroupPage.pageRows.map(([group, groupPermissions], groupIndex) => (
                   <div className="permission-group" key={group}>
                     <h3><span className="number-cell">{permissionGroupPage.startIndex + groupIndex + 1}</span>{group}</h3>
                     {groupPermissions.map((permission, permissionIndex) => (

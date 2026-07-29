@@ -1,6 +1,6 @@
 import { cashMovementSchema, closeRegisterShiftSchema, openRegisterShiftSchema, paymentReconciliationSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
-import { canAccessAllBranches, resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant, selfScopedUserId } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, resolveBranchScope, requirePermission, requireTenant, selfScopedUserId } from "../../shared/http/tenantContext";
 import {
   closeRegisterShift,
   createCashMovement,
@@ -12,7 +12,10 @@ import {
 export const registersRouter = Router();
 
 function requireBranchContext(req: Request, res: Response) {
-  const scope = resolveBranchScope(req.tenantContext!, req.tenantContext!.branchId);
+  const requestedBranchId = req.query.branchId?.toString() ?? req.header("x-branch-id") ?? (
+    canAccessAllBranches(req.tenantContext!) ? undefined : req.tenantContext!.branchId
+  );
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranchId);
   if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return null;
@@ -21,13 +24,10 @@ function requireBranchContext(req: Request, res: Response) {
   return scope;
 }
 
-registersRouter.get("/current", requireTenant, requireAuthenticatedUser, async (req, res) => {
+registersRouter.get("/current", requireTenant, requirePermission("register.manage"), async (req, res) => {
   const terminalId = req.query.terminalId?.toString();
-  const scope = resolveBranchScope(req.tenantContext!, req.query.branchId?.toString());
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
-    res.status(403).json({ error: "Branch access denied" });
-    return;
-  }
+  const scope = requireBranchContext(req, res);
+  if (!scope) return;
 
   const register = await getCurrentRegister(req.tenantContext!.tenantId, scope.branchId, terminalId, selfScopedUserId(req.tenantContext!));
 
@@ -48,7 +48,10 @@ registersRouter.post("/open", requireTenant, requirePermission("register.manage"
     return;
   }
 
-  const result = await openRegisterShift(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+  const result = await openRegisterShift(req.tenantContext!.tenantId, req.tenantContext!.userId, {
+    ...parsed.data,
+    branchId: scope.branchId ?? parsed.data.branchId
+  });
 
   if (result.status === "already_open") {
     res.status(409).json({ error: "Register is already open for this terminal" });

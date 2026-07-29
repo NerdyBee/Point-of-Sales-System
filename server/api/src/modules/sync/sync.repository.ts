@@ -78,21 +78,34 @@ async function appendSyncAudit(event: Parameters<typeof appendAudit>[0]) {
   });
 }
 
-export async function listSyncQueue(tenantId: string, filters: { branchId?: string; terminalId?: string; status?: string }) {
+export async function listSyncQueue(
+  tenantId: string,
+  filters: { branchId?: string; terminalId?: string; status?: string; startDate?: Date; endDate?: Date }
+) {
   if (useDemoStore) {
     return syncQueueRecords
       .filter((record) => record.tenantId === tenantId)
       .filter((record) => !filters.branchId || record.branchId === filters.branchId)
       .filter((record) => !filters.terminalId || record.terminalId === filters.terminalId)
-      .filter((record) => !filters.status || filters.status === "all" || record.status === filters.status);
+      .filter((record) => !filters.status || filters.status === "all" || record.status === filters.status)
+      .filter((record) => (filters.startDate ? new Date(record.createdAt).getTime() >= filters.startDate.getTime() : true))
+      .filter((record) => (filters.endDate ? new Date(record.createdAt).getTime() <= filters.endDate.getTime() : true));
   }
+
+  const createdAt = filters.startDate || filters.endDate
+    ? {
+        ...(filters.startDate ? { gte: filters.startDate } : {}),
+        ...(filters.endDate ? { lte: filters.endDate } : {})
+      }
+    : undefined;
 
   const records = await prisma.syncQueueRecord.findMany({
     where: {
       tenantId,
       branchId: filters.branchId ? filters.branchId : undefined,
       terminalId: filters.terminalId ? filters.terminalId : undefined,
-      status: filters.status && filters.status !== "all" ? filters.status : undefined
+      status: filters.status && filters.status !== "all" ? filters.status : undefined,
+      createdAt
     },
     orderBy: { createdAt: "desc" }
   });

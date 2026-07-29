@@ -1,4 +1,4 @@
-import { Ban, MessageCircle, Printer, RefreshCcw, RotateCcw, Search } from "lucide-react";
+import { Ban, MessageCircle, Printer, RefreshCcw, RotateCcw, Search, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyApproval,
@@ -19,8 +19,9 @@ import { TablePagination, usePaginatedRows } from "../../shared/components/Table
 import { formatMoney, type CurrencyCode } from "../../shared/utils/money";
 import { printReceipt } from "./receiptPrint";
 
-const statusOptions: Array<SaleStatus | "all"> = ["all", "completed", "partially_refunded", "refunded", "voided"];
+const statusOptions: SaleStatus[] = ["completed", "partially_refunded", "refunded", "voided"];
 const fallbackBranches: BranchOption[] = [];
+const paymentFilterOptions = ["cash", "card", "bank_transfer", "mobile_money", "customer_credit", "voucher"];
 
 function formatSaleDateTime(value: string) {
   return new Date(value).toLocaleString([], {
@@ -57,6 +58,9 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
   const [branches, setBranches] = useState<BranchOption[]>(fallbackBranches);
   const [statusFilter, setStatusFilter] = useState<SaleStatus | "all" | "">("");
   const [query, setQuery] = useState("");
+  const [paymentFilter, setPaymentFilter] = useState("");
+  const [cashierFilter, setCashierFilter] = useState("");
+  const [customerFilter, setCustomerFilter] = useState("");
   const [refundAmount, setRefundAmount] = useState(0);
   const [actionReason, setActionReason] = useState("Customer request");
   const [actionApprovalId, setActionApprovalId] = useState("");
@@ -64,16 +68,37 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
   const handledApprovalIdRef = useRef<string | null>(null);
 
   const filteredSales = useMemo(() => {
-    const needle = query.toLowerCase();
-    return sales.filter((sale) =>
-      `${sale.id} ${sale.terminalId} ${sale.cashierId} ${sale.customer?.name ?? ""} ${sale.customer?.phone ?? ""} ${sale.tableId ?? ""} ${sale.tableOrderId ?? ""}`
-        .toLowerCase()
-        .includes(needle)
-    );
-  }, [query, sales]);
+    const needle = query.trim().toLowerCase();
+    return sales.filter((sale) => {
+      const matchesQuery = !needle || [
+        sale.id,
+        sale.terminalId,
+        sale.cashierId,
+        sale.customer?.name ?? "",
+        sale.customer?.phone ?? "",
+        sale.tableId ?? "",
+        sale.tableOrderId ?? "",
+        sale.status,
+        ...sale.summary.lines.map((line) => `${line.name} ${line.productId}`),
+        ...sale.payments.map((payment) => `${payment.method} ${payment.reference ?? ""} ${payment.amount}`)
+      ].some((value) => value.toLowerCase().includes(needle));
+      const matchesPayment = !paymentFilter || sale.payments.some((payment) => payment.method === paymentFilter);
+      const matchesCashier = !cashierFilter || sale.cashierId === cashierFilter;
+      const matchesCustomer =
+        !customerFilter ||
+        (customerFilter === "walk_in" && !sale.customer) ||
+        (customerFilter === "account" && Boolean(sale.customer)) ||
+        (customerFilter === "credit" && sale.payments.some((payment) => payment.method === "customer_credit"));
+
+      return matchesQuery && matchesPayment && matchesCashier && matchesCustomer;
+    });
+  }, [cashierFilter, customerFilter, paymentFilter, query, sales]);
+  const cashierOptions = useMemo(() => Array.from(new Set(sales.map((sale) => sale.cashierId))).sort(), [sales]);
   const completedTotal = useMemo(() => sales.filter((sale) => sale.status === "completed").reduce((sum, sale) => sum + sale.summary.total, 0), [sales]);
   const refundTotal = useMemo(() => sales.reduce((sum, sale) => sum + sale.refundTotal, 0), [sales]);
   const salesPage = usePaginatedRows(filteredSales, 10);
+  const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
+  const branchLocked = Boolean(branchId && branches.length === 1);
   const activeCurrency = (selectedSale?.receipt.currency ?? sales[0]?.receipt.currency ?? "NGN") as CurrencyCode;
   const displayMoney = (amount: number, currency: CurrencyCode = activeCurrency) => formatMoney(amount, currency);
   const receiptMoney = (sale: CompletedSale, amount: number) => formatMoney(amount, sale.receipt.currency);
@@ -140,6 +165,9 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
   function changeBranch(nextBranchId: string) {
     setBranchId(nextBranchId);
     setQuery("");
+    setPaymentFilter("");
+    setCashierFilter("");
+    setCustomerFilter("");
     setActionApprovalId("");
     void loadSales(statusFilter, nextBranchId);
   }
@@ -149,6 +177,13 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
     setRefundAmount(Math.max(sale.summary.total - sale.refundTotal, 0));
     setActionReason(sale.status === "completed" ? "Customer request" : sale.refundReason ?? sale.voidReason ?? "Manager review");
     setActionApprovalId("");
+  }
+
+  function clearSalesFilters() {
+    setQuery("");
+    setPaymentFilter("");
+    setCashierFilter("");
+    setCustomerFilter("");
   }
 
   async function submitRefund(event: FormEvent) {
@@ -297,10 +332,17 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
           <h1>Sales history</h1>
         </div>
         <div className="button-group">
-          <select className="compact-select" value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-            <option value="">Branch</option>
-            {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-          </select>
+          {branchLocked ? (
+            <span className="locked-select-value locked-select-value-compact">
+              <strong>{selectedBranch?.name ?? branchId}</strong>
+              <small>{selectedBranch?.city ?? "assigned"}</small>
+            </span>
+          ) : (
+            <select className="compact-select" value={branchId} onChange={(event) => changeBranch(event.target.value)}>
+              <option value="">Branch</option>
+              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+            </select>
+          )}
           <select className="compact-select" value={statusFilter} onChange={(event) => {
             const nextStatus = event.target.value as SaleStatus | "all" | "";
             setStatusFilter(nextStatus);
@@ -335,10 +377,33 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
         <section className="panel">
           <div className="panel-header">
             <h2>Receipt ledger</h2>
+            <span>{filteredSales.length} of {sales.length} receipts</span>
+          </div>
+          <div className="table-toolbar sales-history-filter-toolbar">
             <div className="search-box compact-search">
               <Search size={16} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search receipt or customer" />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search receipt, customer, item or payment ref" />
+              {query ? (
+                <button type="button" onClick={() => setQuery("")} aria-label="Clear sales search"><X size={14} /></button>
+              ) : null}
             </div>
+            <select value={paymentFilter} onChange={(event) => setPaymentFilter(event.target.value)}>
+              <option value="">Payment method</option>
+              {paymentFilterOptions.map((method) => <option key={method} value={method}>{method.replace("_", " ")}</option>)}
+            </select>
+            <select value={cashierFilter} onChange={(event) => setCashierFilter(event.target.value)}>
+              <option value="">Cashier</option>
+              {cashierOptions.map((cashierId) => <option key={cashierId} value={cashierId}>{cashierId}</option>)}
+            </select>
+            <select value={customerFilter} onChange={(event) => setCustomerFilter(event.target.value)}>
+              <option value="">Customer type</option>
+              <option value="walk_in">Walk-in</option>
+              <option value="account">Customer account</option>
+              <option value="credit">Credit sale</option>
+            </select>
+            {(query || paymentFilter || cashierFilter || customerFilter) ? (
+              <button className="secondary-button" type="button" onClick={clearSalesFilters}>Clear filters</button>
+            ) : null}
           </div>
           <div className="table-wrap">
             <table>

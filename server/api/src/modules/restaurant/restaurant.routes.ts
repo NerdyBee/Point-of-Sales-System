@@ -10,7 +10,8 @@ import {
   tableTransferSchema
 } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
-import { canAccessAllBranches, resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { listStaffOptions } from "../staff/staff.repository";
 import {
   addTableOrderItem,
   createReservation,
@@ -27,13 +28,8 @@ import {
 
 export const restaurantRouter = Router();
 
-function requireBranchContext(req: Request, res: Response) {
-  if (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId) {
-    res.status(403).json({ error: "Branch access denied" });
-    return false;
-  }
-
-  return true;
+function requestedBranch(req: Request, bodyBranchId?: string) {
+  return bodyBranchId ?? req.query.branchId?.toString() ?? req.header("x-branch-id") ?? req.tenantContext!.branchId;
 }
 
 function resolveScopedBranch(req: Request, res: Response, requestedBranchId?: string) {
@@ -46,13 +42,21 @@ function resolveScopedBranch(req: Request, res: Response, requestedBranchId?: st
   return scope;
 }
 
-restaurantRouter.get("/tables", requireTenant, requireAuthenticatedUser, async (req, res) => {
+restaurantRouter.get("/tables", requireTenant, requirePermission("restaurant.manage"), async (req, res) => {
   const scope = resolveScopedBranch(req, res, req.query.branchId?.toString());
   if (!scope) return;
 
   const state = await getFloorState(req.tenantContext!.tenantId, scope.branchId);
 
   res.json(state);
+});
+
+restaurantRouter.get("/staff-options", requireTenant, requirePermission("restaurant.manage"), async (req, res) => {
+  const scope = resolveScopedBranch(req, res, req.query.branchId?.toString());
+  if (!scope) return;
+
+  const staff = await listStaffOptions(req.tenantContext!.tenantId, scope.branchId);
+  res.json({ staff });
 });
 
 restaurantRouter.post("/reservations", requireTenant, requirePermission("restaurant.manage"), async (req, res) => {
@@ -66,7 +70,10 @@ restaurantRouter.post("/reservations", requireTenant, requirePermission("restaur
   const scope = resolveScopedBranch(req, res, parsed.data.branchId);
   if (!scope) return;
 
-  const result = await createReservation(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+  const result = await createReservation(req.tenantContext!.tenantId, req.tenantContext!.userId, {
+    ...parsed.data,
+    branchId: scope.branchId ?? parsed.data.branchId
+  });
 
   if (result.status === "table_not_found") {
     res.status(404).json({ error: "Table not found" });
@@ -97,7 +104,10 @@ restaurantRouter.post("/tables", requireTenant, requirePermission("restaurant.ma
   const scope = resolveScopedBranch(req, res, parsed.data.branchId);
   if (!scope) return;
 
-  const result = await createRestaurantTable(req.tenantContext!.tenantId, req.tenantContext!.userId, parsed.data);
+  const result = await createRestaurantTable(req.tenantContext!.tenantId, req.tenantContext!.userId, {
+    ...parsed.data,
+    branchId: scope.branchId ?? parsed.data.branchId
+  });
 
   if (result.status === "branch_not_found") {
     res.status(404).json({ error: "Table branch not found for this tenant" });
@@ -120,11 +130,12 @@ restaurantRouter.patch("/reservations/:reservationId/status", requireTenant, req
     return;
   }
 
-  if (!requireBranchContext(req, res)) return;
+  const scope = resolveScopedBranch(req, res, requestedBranch(req));
+  if (!scope) return;
 
   const result = await updateReservationStatus(
     req.tenantContext!.tenantId,
-    req.tenantContext!.branchId,
+    scope.branchId,
     req.tenantContext!.userId,
     req.params.reservationId.toString(),
     parsed.data
@@ -151,9 +162,10 @@ restaurantRouter.post("/table-orders", requireTenant, requirePermission("restaur
     return;
   }
 
-  if (!requireBranchContext(req, res)) return;
+  const scope = resolveScopedBranch(req, res, requestedBranch(req));
+  if (!scope) return;
 
-  const result = await openTableOrder(req.tenantContext!.tenantId, req.tenantContext!.branchId, req.tenantContext!.userId, parsed.data);
+  const result = await openTableOrder(req.tenantContext!.tenantId, scope.branchId, req.tenantContext!.userId, parsed.data);
 
   if (result.status === "table_not_found") {
     res.status(404).json({ error: "Table not found" });
@@ -176,11 +188,12 @@ restaurantRouter.post("/table-orders/:orderId/items", requireTenant, requirePerm
     return;
   }
 
-  if (!requireBranchContext(req, res)) return;
+  const scope = resolveScopedBranch(req, res, requestedBranch(req));
+  if (!scope) return;
 
   const result = await addTableOrderItem(
     req.tenantContext!.tenantId,
-    req.tenantContext!.branchId,
+    scope.branchId,
     req.tenantContext!.userId,
     req.params.orderId.toString(),
     parsed.data
@@ -200,11 +213,12 @@ restaurantRouter.post("/table-orders/:orderId/items", requireTenant, requirePerm
 });
 
 restaurantRouter.delete("/table-orders/:orderId/items/:itemId", requireTenant, requirePermission("restaurant.manage"), async (req, res) => {
-  if (!requireBranchContext(req, res)) return;
+  const scope = resolveScopedBranch(req, res, requestedBranch(req));
+  if (!scope) return;
 
   const result = await removeTableOrderItem(
     req.tenantContext!.tenantId,
-    req.tenantContext!.branchId,
+    scope.branchId,
     req.tenantContext!.userId,
     req.params.orderId.toString(),
     req.params.itemId.toString()
@@ -231,9 +245,10 @@ restaurantRouter.patch("/table-orders/:orderId/bill", requireTenant, requirePerm
     return;
   }
 
-  if (!requireBranchContext(req, res)) return;
+  const scope = resolveScopedBranch(req, res, requestedBranch(req));
+  if (!scope) return;
 
-  const result = await requestTableBill(req.tenantContext!.tenantId, req.tenantContext!.branchId, req.tenantContext!.userId, req.params.orderId.toString(), parsed.data.note);
+  const result = await requestTableBill(req.tenantContext!.tenantId, scope.branchId, req.tenantContext!.userId, req.params.orderId.toString(), parsed.data.note);
 
   if (result.status === "order_not_found") {
     res.status(404).json({ error: "Open table order not found" });
@@ -256,9 +271,10 @@ restaurantRouter.patch("/table-orders/:orderId/transfer", requireTenant, require
     return;
   }
 
-  if (!requireBranchContext(req, res)) return;
+  const scope = resolveScopedBranch(req, res, requestedBranch(req));
+  if (!scope) return;
 
-  const result = await transferTableOrder(req.tenantContext!.tenantId, req.tenantContext!.branchId, req.tenantContext!.userId, req.params.orderId.toString(), parsed.data);
+  const result = await transferTableOrder(req.tenantContext!.tenantId, scope.branchId, req.tenantContext!.userId, req.params.orderId.toString(), parsed.data);
 
   if (result.status === "order_not_found") {
     res.status(404).json({ error: "Open table order not found" });
@@ -291,9 +307,10 @@ restaurantRouter.patch("/tables/:tableId/state", requireTenant, requirePermissio
     return;
   }
 
-  if (!requireBranchContext(req, res)) return;
+  const scope = resolveScopedBranch(req, res, requestedBranch(req));
+  if (!scope) return;
 
-  const result = await updateTableState(req.tenantContext!.tenantId, req.tenantContext!.branchId, req.tenantContext!.userId, req.params.tableId.toString(), parsed.data);
+  const result = await updateTableState(req.tenantContext!.tenantId, scope.branchId, req.tenantContext!.userId, req.params.tableId.toString(), parsed.data);
 
   if (result.status === "table_not_found") {
     res.status(404).json({ error: "Table not found" });
@@ -311,9 +328,10 @@ restaurantRouter.patch("/tables/:tableId/layout", requireTenant, requirePermissi
     return;
   }
 
-  if (!requireBranchContext(req, res)) return;
+  const scope = resolveScopedBranch(req, res, requestedBranch(req));
+  if (!scope) return;
 
-  const result = await updateTableLayout(req.tenantContext!.tenantId, req.tenantContext!.branchId, req.tenantContext!.userId, req.params.tableId.toString(), parsed.data);
+  const result = await updateTableLayout(req.tenantContext!.tenantId, scope.branchId, req.tenantContext!.userId, req.params.tableId.toString(), parsed.data);
 
   if (result.status === "table_not_found") {
     res.status(404).json({ error: "Table not found" });

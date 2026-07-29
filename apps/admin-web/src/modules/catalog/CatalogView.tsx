@@ -6,7 +6,7 @@ import type { Product, ProductCategory } from "./types";
 
 const defaultTaxRate = 0.075;
 const fallbackBranches: BranchOption[] = [];
-type StockFilter = "all" | "stocked" | "low" | "services";
+type StockFilter = "" | "stocked" | "low" | "out" | "services";
 
 function isServiceCategory(category: string) {
   return category.trim().toLowerCase() === "services";
@@ -45,8 +45,11 @@ export function CatalogView() {
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [branchFilter, setBranchFilter] = useState(activeBranchId);
-  const [stockFilter, setStockFilter] = useState<StockFilter>("all");
+  const [stockFilter, setStockFilter] = useState<StockFilter>("");
   const [status, setStatus] = useState("Ready");
+  const selectedFilterBranch = useMemo(() => branches.find((branch) => branch.id === branchFilter) ?? null, [branchFilter, branches]);
+  const selectedFormBranch = useMemo(() => branches.find((branch) => branch.id === form.branchId) ?? null, [form.branchId, branches]);
+  const branchLocked = Boolean(activeBranchId && branches.length === 1);
   const categoryUsage = useMemo(
     () =>
       categories.map((category) => ({
@@ -75,10 +78,11 @@ export function CatalogView() {
       const branchMatch = branchFilter ? product.branchId === branchFilter : true;
       const service = isServiceCategory(product.category);
       const stockMatch =
-        stockFilter === "all" ||
+        !stockFilter ||
         (stockFilter === "services" && service) ||
         (stockFilter === "stocked" && !service && product.stock > product.reorderPoint) ||
-        (stockFilter === "low" && !service && product.stock <= product.reorderPoint);
+        (stockFilter === "low" && !service && product.stock > 0 && product.stock <= product.reorderPoint) ||
+        (stockFilter === "out" && !service && product.stock <= 0);
 
       return queryMatch && categoryMatch && branchMatch && stockMatch;
     });
@@ -178,15 +182,46 @@ export function CatalogView() {
   async function handleImageUpload(file: File | undefined) {
     if (!file) return;
 
+    const uploadBranchId = form.branchId || activeBranchId;
+    if (!uploadBranchId) {
+      setStatus("Select a branch before uploading product image");
+      return;
+    }
+
     setStatus("Uploading product image...");
 
     try {
-      const response = await uploadProductImage(file, activeBranchId, activeUserId);
+      const response = await uploadProductImage(file, uploadBranchId, activeUserId);
       updateForm("image", response.imagePath);
       setStatus("Product image saved locally");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to upload product image");
     }
+  }
+
+  function branchName(nextBranchId: string) {
+    return branches.find((branch) => branch.id === nextBranchId)?.name ?? nextBranchId;
+  }
+
+  function stockLabel(product: Product) {
+    if (isServiceCategory(product.category)) return "Service";
+    if (product.stock <= 0) return "Out of stock";
+    if (product.stock <= product.reorderPoint) return `${product.stock} low`;
+    return `${product.stock} in stock`;
+  }
+
+  function stockClass(product: Product) {
+    if (isServiceCategory(product.category)) return "catalog-stock-service";
+    if (product.stock <= 0) return "catalog-stock-empty";
+    if (product.stock <= product.reorderPoint) return "catalog-stock-low";
+    return "catalog-stock-ok";
+  }
+
+  function clearFilters() {
+    setQuery("");
+    setBranchFilter(activeBranchId);
+    setCategoryFilter("");
+    setStockFilter("");
   }
 
   return (
@@ -212,24 +247,38 @@ export function CatalogView() {
       </section>
 
       <section className="catalog-filter-bar">
-        <label className="search-field">
-          <Search size={18} />
+        <label className="search-box compact-search">
+          <Search size={16} />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search product, SKU or barcode" />
+          {query ? (
+            <button type="button" onClick={() => setQuery("")} aria-label="Clear product search"><X size={14} /></button>
+          ) : null}
         </label>
-        <select className="compact-select" value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
-          <option value="">Branch</option>
-          {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-        </select>
+        {branchLocked ? (
+          <span className="locked-select-value locked-select-value-compact catalog-branch-lock">
+            <strong>{selectedFilterBranch?.name ?? activeBranchId}</strong>
+            <small>{selectedFilterBranch?.status ?? "assigned"}</small>
+          </span>
+        ) : (
+          <select className="compact-select" value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
+            <option value="">Branch</option>
+            {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+          </select>
+        )}
         <select className="compact-select" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
           <option value="">Category</option>
           {categories.map((category) => <option key={category} value={category}>{category}</option>)}
         </select>
         <select className="compact-select" value={stockFilter} onChange={(event) => setStockFilter(event.target.value as StockFilter)}>
-          <option value="all">Stock status</option>
+          <option value="">Stock status</option>
           <option value="stocked">In stock</option>
           <option value="low">Low stock</option>
+          <option value="out">Out of stock</option>
           <option value="services">Services</option>
         </select>
+        {(query || branchFilter !== activeBranchId || categoryFilter || stockFilter) ? (
+          <button className="secondary-button" type="button" onClick={clearFilters}>Clear filters</button>
+        ) : null}
         <span>{filteredProducts.length} products</span>
       </section>
 
@@ -244,6 +293,10 @@ export function CatalogView() {
                 <span>{product.category}</span>
                 <h2>{product.name}</h2>
                 <p>{product.sku} - {product.station}</p>
+                <div className="catalog-card-meta">
+                  <small>{branchName(product.branchId)}</small>
+                  <small className={stockClass(product)}>{stockLabel(product)}</small>
+                </div>
               </div>
               <footer>
                 <strong>{displayMoney(product.price)}</strong>
@@ -270,10 +323,17 @@ export function CatalogView() {
               </label>
               <label>
                 Branch
-                <select value={form.branchId} onChange={(event) => updateForm("branchId", event.target.value)} required>
-                  <option value="">Branch</option>
-                  {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name} - {branch.status}</option>)}
-                </select>
+                {branchLocked ? (
+                  <span className="locked-select-value">
+                    <strong>{selectedFormBranch?.name ?? form.branchId}</strong>
+                    <small>{selectedFormBranch?.status ?? "assigned"}</small>
+                  </span>
+                ) : (
+                  <select value={form.branchId} onChange={(event) => updateForm("branchId", event.target.value)} required>
+                    <option value="">Branch</option>
+                    {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name} - {branch.status}</option>)}
+                  </select>
+                )}
               </label>
               <label>
                 SKU
@@ -286,7 +346,7 @@ export function CatalogView() {
               <label>
                 Category
                 <select value={form.category} onChange={(event) => updateForm("category", event.target.value as ProductCategory)}>
-                  <option value="" disabled>Category</option>
+                  <option value="">Category</option>
                   {categories.map((category) => <option key={category} value={category}>{category}</option>)}
                 </select>
               </label>
@@ -321,7 +381,7 @@ export function CatalogView() {
               <label>
                 Station
                 <select value={form.station} onChange={(event) => updateForm("station", event.target.value as ProductPayload["station"])}>
-                  <option value="" disabled>Station</option>
+                  <option value="">Station</option>
                   <option value="Kitchen">Kitchen</option>
                   <option value="Bar">Bar</option>
                   <option value="Counter">Counter</option>
