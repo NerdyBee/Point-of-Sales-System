@@ -4,6 +4,7 @@ import type { Platform } from "../data/db";
 import { readModel, type Staff, type Tenant } from "../data/readModel";
 import { SyncEngine, type SyncStatus } from "../sync/engine";
 import { loadSettings, type DeviceSettings } from "../sync/settings";
+import { ensureStandaloneUpgrades } from "../standalone/business";
 
 const backgroundSyncMs = 20_000;
 const autoLockMs = 10 * 60_000;
@@ -35,8 +36,14 @@ export function AppProvider(props: { platform: Platform; children: ReactNode }) 
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(engine.getStatus());
   const [dataVersion, setDataVersion] = useState(0);
   const lastActivity = useRef(Date.now());
+  const upgraded = useRef(false);
 
   const refresh = useCallback(async () => {
+    if (!upgraded.current) {
+      upgraded.current = true;
+      // Devices set up with an older version get newly added permissions (e.g. customer credit).
+      await ensureStandaloneUpgrades(props.platform).catch(() => undefined);
+    }
     const next = await loadSettings(props.platform);
     setSettings(next);
     setTenant(next ? await readModel.tenant(props.platform.db, next.tenantId) : null);

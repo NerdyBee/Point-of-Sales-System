@@ -69,7 +69,8 @@ export function RegisterScreen(props: { onOpened: () => void }) {
   }
 
   // The server's expected cash includes every sale it has processed; until then use the local tally.
-  const expected = serverShift ? Number(serverShift.expectedCash) : shift.openingBalance + shift.cashSales;
+  const cashIn = Number(shift.cashIn ?? 0);
+  const expected = serverShift ? Number(serverShift.expectedCash) : shift.openingBalance + shift.cashSales + cashIn;
 
   return (
     <ScrollView contentContainerStyle={styles.page}>
@@ -81,6 +82,7 @@ export function RegisterScreen(props: { onOpened: () => void }) {
         <Line label="Opened" value={new Date(shift.openedAt).toLocaleString()} />
         <Line label="Opening float" value={formatMoney(shift.openingBalance, currency)} />
         <Line label="Cash sales on this device" value={formatMoney(shift.cashSales, currency)} />
+        {cashIn ? <Line label="Customer payments (cash)" value={formatMoney(cashIn, currency)} /> : null}
         <Line label="Expected cash in drawer" value={formatMoney(expected, currency)} strong />
 
         {shift.status === "closing" ? (
@@ -129,7 +131,7 @@ function ShiftHistory(props: { currency: string; excludeId?: string }) {
     <View style={styles.history}>
       <Text style={styles.historyTitle}>Past shifts</Text>
       {shifts.map((row) => {
-        const expected = row.openingBalance + row.cashSales;
+        const expected = row.openingBalance + row.cashSales + Number(row.cashIn ?? 0);
         const difference = row.countedCash === null ? null : row.countedCash - expected;
         return (
           <View key={row.id} style={styles.historyRow}>

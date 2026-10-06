@@ -1,3 +1,5 @@
+import type { TenantSettings } from "../data/readModel";
+import type { SaleRecord } from "../pos/actions";
 import type { SaleSummary } from "../pos/pricing";
 import { EscPosBuilder, type PaperWidth } from "./escpos";
 
@@ -16,11 +18,13 @@ export interface ReceiptData {
   payments: { method: string; amount: number; reference?: string }[];
   /** Cash handed over by the customer (to show change). */
   tendered?: number;
+  /** For credit sales: what the customer owes after this sale. */
+  account?: { balanceAfter: number };
   voided?: boolean;
   reprint?: boolean;
 }
 
-const methodNames: Record<string, string> = { cash: "Cash", card: "Card", bank_transfer: "Transfer", mobile_money: "Mobile money", customer_credit: "Credit" };
+const methodNames: Record<string, string> = { cash: "Cash", card: "Card", bank_transfer: "Transfer", mobile_money: "Mobile money", customer_credit: "On account" };
 const printSymbols: Record<string, string> = { NGN: "N", GHS: "GHS ", KES: "KSh ", ZAR: "R", USD: "$" };
 
 /** Money in plain ASCII, e.g. N12,500 — thermal printers cannot print ₦. */
@@ -85,6 +89,10 @@ export function buildReceiptBytes(receipt: ReceiptData, options: { width: PaperW
     p.pair("Cash received", money(receipt.tendered));
     p.pair("Change", money(change(receipt)));
   }
+  if (receipt.account) {
+    p.divider();
+    p.bold(true).pair("Account balance", money(receipt.account.balanceAfter)).bold(false);
+  }
 
   p.feed(1).align("center");
   if (receipt.footer) p.wrapped(receipt.footer);
@@ -111,7 +119,33 @@ export function buildReceiptText(receipt: ReceiptData) {
     ...(receipt.summary.serviceCharge ? [`Service charge: ${money(receipt.summary.serviceCharge)}`] : []),
     `TOTAL: ${money(receipt.summary.total)}`,
     ...receipt.payments.map((payment) => `${methodNames[payment.method] ?? payment.method}: ${money(payment.amount)}`),
+    ...(receipt.account ? [`Account balance: ${money(receipt.account.balanceAfter)}`] : []),
     ...(receipt.footer ? ["", receipt.footer] : [])
   ];
   return lines.join("\n");
+}
+
+/** Builds receipt data from a sale recorded on this device. */
+export function receiptFromSale(
+  sale: { number: string; serverId?: string | null; createdAt: string; status?: string },
+  record: SaleRecord & { tendered?: number },
+  tenant: TenantSettings,
+  extra: { tendered?: number; reprint?: boolean } = {}
+): ReceiptData {
+  return {
+    businessName: tenant.businessName,
+    taxId: tenant.taxId || undefined,
+    footer: tenant.receiptFooter,
+    currency: tenant.currency ?? "NGN",
+    number: sale.serverId ?? sale.number,
+    createdAt: sale.createdAt,
+    staffName: record.staffName,
+    customer: record.customer ? { name: record.customer.name, phone: record.customer.phone } : undefined,
+    summary: record.summary,
+    payments: record.payments,
+    tendered: extra.tendered ?? record.tendered,
+    account: record.credit ? { balanceAfter: record.credit.balanceAfter } : undefined,
+    voided: sale.status === "voided",
+    reprint: extra.reprint
+  };
 }

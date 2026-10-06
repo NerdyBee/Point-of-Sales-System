@@ -1,11 +1,11 @@
 import { Share } from "react-native";
 import type { Platform } from "../data/db";
-import type { TenantSettings } from "../data/readModel";
-import type { SaleRecord } from "../pos/actions";
 import { getKv, setKv } from "../sync/settings";
 import { bluetoothSupport, PrinterError, sendToPrinter, type PrinterDevice } from "./bluetooth";
 import { EscPosBuilder, type PaperWidth } from "./escpos";
 import { buildReceiptBytes, buildReceiptText, type ReceiptData } from "./receipt";
+
+export { receiptFromSale } from "./receipt";
 
 export interface PrinterSettings {
   device: PrinterDevice | null;
@@ -31,30 +31,6 @@ export async function savePrinterSettings(platform: Platform, settings: PrinterS
 export function printingAvailable() {
   const support = bluetoothSupport();
   return support.classic || support.ble;
-}
-
-/** Builds receipt data from a sale recorded on this device. */
-export function receiptFromSale(
-  sale: { number: string; serverId?: string | null; createdAt: string; status?: string },
-  record: SaleRecord & { tendered?: number },
-  tenant: TenantSettings,
-  extra: { tendered?: number; reprint?: boolean } = {}
-): ReceiptData {
-  return {
-    businessName: tenant.businessName,
-    taxId: tenant.taxId || undefined,
-    footer: tenant.receiptFooter,
-    currency: tenant.currency ?? "NGN",
-    number: sale.serverId ?? sale.number,
-    createdAt: sale.createdAt,
-    staffName: record.staffName,
-    customer: record.customer ? { name: record.customer.name, phone: record.customer.phone } : undefined,
-    summary: record.summary,
-    payments: record.payments,
-    tendered: extra.tendered ?? record.tendered,
-    voided: sale.status === "voided",
-    reprint: extra.reprint
-  };
 }
 
 export async function printReceipt(platform: Platform, receipt: ReceiptData) {

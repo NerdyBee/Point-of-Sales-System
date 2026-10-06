@@ -10,6 +10,7 @@ import {
   recordSale,
   referenceRequired,
   type LocalShift,
+  type Payment,
   type PaymentMethod
 } from "../pos/actions";
 import { calculateSale, formatMoney, type CartLine, type SaleSummary } from "../pos/pricing";
@@ -21,10 +22,12 @@ import type { ReceiptData } from "../print/receipt";
 import { PrinterSheet } from "./PrinterSheet";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { isStandalone } from "../sync/settings";
+import { availableCredit, hasCreditAccount } from "../standalone/credit";
 import { colors, font, radius, spacing } from "../ui/theme";
 
-const methodLabels: Record<PaymentMethod, string> = { cash: "Cash", card: "Card", bank_transfer: "Transfer", mobile_money: "Mobile money" };
-const methodSetting: Record<PaymentMethod, "cash" | "card" | "bankTransfer" | "mobileMoney"> = {
+const methodLabels: Record<PaymentMethod, string> = { cash: "Cash", card: "Card", bank_transfer: "Transfer", mobile_money: "Mobile money", customer_credit: "On account" };
+type ImmediateMethod = Exclude<PaymentMethod, "customer_credit">;
+const methodSetting: Record<ImmediateMethod, "cash" | "card" | "bankTransfer" | "mobileMoney"> = {
   cash: "cash",
   card: "card",
   bank_transfer: "bankTransfer",
@@ -34,8 +37,7 @@ const methodSetting: Record<PaymentMethod, "cash" | "card" | "bankTransfer" | "m
 interface Receipt {
   number: string;
   summary: SaleSummary;
-  method: PaymentMethod;
-  tendered: number;
+  tendered?: number;
   createdAt: string;
   customer?: string;
   data: ReceiptData;
@@ -54,6 +56,8 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
   const [customerOpen, setCustomerOpen] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
+  // Set when checkout sent the cashier to pick a customer (for a credit sale); checkout reopens after.
+  const [resumeCheckout, setResumeCheckout] = useState(false);
   const { compact, productColumns } = useLayout();
 
   const currency = tenant?.settings.currency ?? "NGN";
@@ -245,25 +249,24 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
         <CheckoutModal
           total={summary.total}
           currency={currency}
-          enabled={(Object.keys(methodLabels) as PaymentMethod[]).filter((method) => tenant.settings.paymentMethods?.[methodSetting[method]] !== false)}
+          enabled={(Object.keys(methodSetting) as ImmediateMethod[]).filter((method) => tenant.settings.paymentMethods?.[methodSetting[method]] !== false)}
+          allowCredit={isStandalone(settings)}
+          customerId={customer?.id ?? null}
+          onPickCustomer={() => {
+            setCheckoutOpen(false);
+            setResumeCheckout(true);
+            setCustomerOpen(true);
+          }}
           onCancel={() => setCheckoutOpen(false)}
-          onConfirm={async (method, tendered, reference) => {
-            const sale = await recordSale(platform, {
-              settings,
-              tenantSettings: tenant.settings,
-              staff,
-              cart,
-              customer,
-              payments: [{ method, amount: summary.total, reference }]
-            });
+          onConfirm={async ({ payments, tendered }) => {
+            const sale = await recordSale(platform, { settings, tenantSettings: tenant.settings, staff, cart, customer, payments });
             setReceipt({
               number: sale.number,
               summary: sale.summary,
-              method,
               tendered,
               createdAt: sale.createdAt,
               customer: customer?.name,
-              data: receiptFromSale({ number: sale.number, createdAt: sale.createdAt }, sale.record, tenant.settings, { tendered: method === "cash" ? tendered : undefined })
+              data: receiptFromSale({ number: sale.number, createdAt: sale.createdAt }, sale.record, tenant.settings, { tendered })
             });
             setCart([]);
             setCustomer(null);
@@ -277,13 +280,29 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
       {customerOpen && staff ? (
         <CustomerModal
           canCreate={permissions.has("customer.manage")}
-          onClose={() => setCustomerOpen(false)}
-          onPick={(picked) => { setCustomer(picked); setCustomerOpen(false); if (compact) setCartOpen(true); }}
+          onClose={() => {
+            setCustomerOpen(false);
+            if (resumeCheckout) {
+              setResumeCheckout(false);
+              setCheckoutOpen(true);
+            }
+          }}
+          onPick={(picked) => {
+            setCustomer(picked);
+            setCustomerOpen(false);
+            if (resumeCheckout) {
+              setResumeCheckout(false);
+              setCheckoutOpen(true);
+            } else if (compact) setCartOpen(true);
+          }}
           onCreate={async (input) => {
             const created = await createCustomer(platform, staff, input);
             setCustomer(created);
             setCustomerOpen(false);
-            if (compact) setCartOpen(true);
+            if (resumeCheckout) {
+              setResumeCheckout(false);
+              setCheckoutOpen(true);
+            } else if (compact) setCartOpen(true);
             await refresh();
           }}
         />
@@ -306,25 +325,60 @@ function TotalRow(props: { label: string; value: string; strong?: boolean }) {
 function CheckoutModal(props: {
   total: number;
   currency: string;
-  enabled: PaymentMethod[];
+  enabled: ImmediateMethod[];
+  allowCredit: boolean;
+  customerId: string | null;
+  onPickCustomer(): void;
   onCancel(): void;
-  onConfirm(method: PaymentMethod, tendered: number, reference?: string): Promise<void>;
+  onConfirm(input: { payments: Payment[]; tendered?: number }): Promise<void>;
 }) {
-  const [method, setMethod] = useState<PaymentMethod>(props.enabled[0] ?? "cash");
+  const { platform } = useApp();
+  const methods: PaymentMethod[] = [...props.enabled, ...(props.allowCredit ? (["customer_credit"] as const) : [])];
+  const [method, setMethod] = useState<PaymentMethod>(methods[0] ?? "cash");
   const [tendered, setTendered] = useState(String(props.total));
   const [reference, setReference] = useState("");
+  const [paidNow, setPaidNow] = useState("");
+  const [paidNowMethod, setPaidNowMethod] = useState<ImmediateMethod>(props.enabled[0] ?? "cash");
+  const [account, setAccount] = useState<Customer | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const tenderedValue = Number(tendered.replace(/[^0-9]/g, "")) || 0;
+  const money = (amount: number) => formatMoney(amount, props.currency);
+  const amount = (value: string) => Number(value.replace(/[^0-9]/g, "")) || 0;
+  const tenderedValue = amount(tendered);
   const change = method === "cash" ? tenderedValue - props.total : 0;
+
+  // Fresh balance/limit for the selected customer (the cart may hold an older copy).
+  useEffect(() => {
+    if (props.customerId) void readModel.customer(platform.db, props.customerId).then(setAccount);
+    else setAccount(null);
+  }, [platform, props.customerId]);
+
+  const credit = method === "customer_credit";
+  const paidNowValue = Math.min(amount(paidNow), props.total);
+  const onAccount = props.total - paidNowValue;
+  const owed = Number(account?.outstandingBalance ?? 0);
+  const canCredit = Boolean(account && hasCreditAccount(account));
+  const available = account ? availableCredit(account) : 0;
 
   const confirm = async () => {
     setError(null);
-    if (method === "cash" && tenderedValue < props.total) return setError("Cash received is less than the total");
-    if (referenceRequired.includes(method) && !reference.trim()) return setError("Enter the payment reference");
+    let payments: Payment[];
+    let cashTendered: number | undefined;
+    if (credit) {
+      if (!canCredit) return setError("Choose a registered customer with a credit account.");
+      if (onAccount <= 0) return setError("Nothing is left to put on account. Choose how the customer is paying instead.");
+      if (onAccount > available) return setError(`Only ${money(available)} credit is available for ${account!.name}. Take more payment now.`);
+      if (paidNowValue > 0 && referenceRequired.includes(paidNowMethod) && !reference.trim()) return setError("Enter the payment reference");
+      payments = [{ method: "customer_credit", amount: onAccount }, ...(paidNowValue > 0 ? [{ method: paidNowMethod, amount: paidNowValue, reference: reference.trim() || undefined }] : [])];
+    } else {
+      if (method === "cash" && tenderedValue < props.total) return setError("Cash received is less than the total");
+      if (referenceRequired.includes(method) && !reference.trim()) return setError("Enter the payment reference");
+      payments = [{ method, amount: props.total, reference: reference.trim() || undefined }];
+      cashTendered = method === "cash" ? tenderedValue : undefined;
+    }
     setBusy(true);
     try {
-      await props.onConfirm(method, method === "cash" ? tenderedValue : props.total, reference.trim() || undefined);
+      await props.onConfirm({ payments, tendered: cashTendered });
     } catch (cause) {
       setError(cause instanceof PosError || cause instanceof Error ? cause.message : String(cause));
       setBusy(false);
@@ -334,41 +388,80 @@ function CheckoutModal(props: {
   return (
     <Modal transparent animationType="fade" onRequestClose={props.onCancel}>
       <View style={styles.backdrop}>
-        <View style={styles.modal}>
-          <Title>Charge {formatMoney(props.total, props.currency)}</Title>
-          <View style={styles.methods}>
-            {props.enabled.map((item) => (
-              <Pressable key={item} accessibilityRole="radio" accessibilityState={{ selected: method === item }} onPress={() => setMethod(item)} style={[styles.method, method === item && styles.methodActive]}>
-                <Text style={[styles.methodLabel, method === item && { color: colors.primaryText }]}>{methodLabels[item]}</Text>
-              </Pressable>
-            ))}
+        <ScrollView style={{ width: "100%", maxWidth: 560 }} contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }} keyboardShouldPersistTaps="handled">
+          <View style={styles.modal}>
+            <Title>Charge {money(props.total)}</Title>
+            <View style={styles.methods}>
+              {methods.map((item) => (
+                <Pressable key={item} accessibilityRole="radio" accessibilityState={{ selected: method === item }} onPress={() => { setMethod(item); setError(null); }} style={[styles.method, method === item && styles.methodActive]}>
+                  <Text style={[styles.methodLabel, method === item && { color: colors.primaryText }]}>{methodLabels[item]}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {credit ? (
+              !account ? (
+                <>
+                  <Banner tone="warning" message="Credit is only for registered customers with a credit account. Choose the customer first." />
+                  <Button label="Choose customer" variant="secondary" onPress={props.onPickCustomer} />
+                </>
+              ) : !canCredit ? (
+                <>
+                  <Banner tone="warning" message={`${account.name} does not have a credit account. An owner or manager can set a credit limit in Manage → Customers.`} />
+                  <Button label="Choose another customer" variant="secondary" onPress={props.onPickCustomer} />
+                </>
+              ) : (
+                <>
+                  <View style={styles.creditBox}>
+                    <Text style={styles.creditName}>{account.name}</Text>
+                    <Text style={styles.lineMeta}>Owes {money(owed)} · Limit {money(Number(account.creditLimit))} · Available {money(available)}</Text>
+                  </View>
+                  <Field label="Paid now (optional)" value={paidNow} onChangeText={setPaidNow} keyboardType="number-pad" placeholder="0" />
+                  {paidNowValue > 0 ? (
+                    <>
+                      <View style={styles.methods}>
+                        {props.enabled.map((item) => (
+                          <Pressable key={item} onPress={() => setPaidNowMethod(item)} style={[styles.method, paidNowMethod === item && styles.methodActive]}>
+                            <Text style={[styles.methodLabel, paidNowMethod === item && { color: colors.primaryText }]}>{methodLabels[item]}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                      {referenceRequired.includes(paidNowMethod) ? <Field label="Payment reference" value={reference} onChangeText={setReference} autoCapitalize="characters" /> : null}
+                    </>
+                  ) : null}
+                  <TotalRow label="On account" value={money(onAccount)} strong />
+                  <TotalRow label="Balance after this sale" value={money(owed + onAccount)} />
+                  {onAccount > available ? <Banner tone="danger" message={`Over the credit limit by ${money(onAccount - available)}.`} /> : null}
+                </>
+              )
+            ) : method === "cash" ? (
+              <>
+                <Field label="Cash received" value={tendered} onChangeText={setTendered} keyboardType="number-pad" />
+                <View style={styles.quickCash}>
+                  {[props.total, Math.ceil(props.total / 1000) * 1000, Math.ceil(props.total / 5000) * 5000].filter((value, index, all) => all.indexOf(value) === index).map((value) => (
+                    <Button key={value} label={money(value)} variant="secondary" onPress={() => setTendered(String(value))} />
+                  ))}
+                </View>
+                <Text style={styles.change}>Change: {money(Math.max(change, 0))}</Text>
+              </>
+            ) : (
+              <Field label="Payment reference" value={reference} onChangeText={setReference} autoCapitalize="characters" placeholder="Terminal / transfer reference" />
+            )}
+            {error ? <Banner tone="danger" message={error} /> : null}
+            <View style={{ flexDirection: "row", gap: spacing.sm }}>
+              <Button label="Back" variant="secondary" onPress={props.onCancel} />
+              <Button label={credit ? "Complete credit sale" : "Complete sale"} onPress={() => void confirm()} busy={busy} disabled={credit && !canCredit} style={{ flex: 1 }} large />
+            </View>
           </View>
-          {method === "cash" ? (
-            <>
-              <Field label="Cash received" value={tendered} onChangeText={setTendered} keyboardType="number-pad" />
-              <View style={styles.quickCash}>
-                {[props.total, Math.ceil(props.total / 1000) * 1000, Math.ceil(props.total / 5000) * 5000].filter((value, index, all) => all.indexOf(value) === index).map((value) => (
-                  <Button key={value} label={formatMoney(value, props.currency)} variant="secondary" onPress={() => setTendered(String(value))} />
-                ))}
-              </View>
-              <Text style={styles.change}>Change: {formatMoney(Math.max(change, 0), props.currency)}</Text>
-            </>
-          ) : (
-            <Field label="Payment reference" value={reference} onChangeText={setReference} autoCapitalize="characters" placeholder="Terminal / transfer reference" />
-          )}
-          {error ? <Banner tone="danger" message={error} /> : null}
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <Button label="Back" variant="secondary" onPress={props.onCancel} />
-            <Button label="Complete sale" onPress={() => void confirm()} busy={busy} style={{ flex: 1 }} large />
-          </View>
-        </View>
+        </ScrollView>
       </View>
     </Modal>
   );
 }
 
 function CustomerModal(props: { canCreate: boolean; onClose(): void; onPick(customer: Customer): void; onCreate(input: { name: string; phone: string }): Promise<void> }) {
-  const { platform } = useApp();
+  const { platform, tenant } = useApp();
+  const currency = tenant?.settings.currency ?? "NGN";
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<Customer[]>([]);
   const [name, setName] = useState("");
@@ -389,7 +482,10 @@ function CustomerModal(props: { canCreate: boolean; onClose(): void; onPick(cust
             {results.map((item) => (
               <Pressable key={item.id} onPress={() => props.onPick(item)} style={styles.customerRow}>
                 <Text style={styles.lineName}>{item.name}</Text>
-                <Text style={styles.lineMeta}>{item.phone} · {item.loyaltyPoints} pts</Text>
+                <Text style={styles.lineMeta}>
+                  {item.phone} · {item.loyaltyPoints} pts
+                  {hasCreditAccount(item) ? ` · credit: owes ${formatMoney(Number(item.outstandingBalance ?? 0), currency)} of ${formatMoney(Number(item.creditLimit), currency)}` : ""}
+                </Text>
               </Pressable>
             ))}
           </ScrollView>
@@ -463,8 +559,11 @@ function ReceiptModal(props: { receipt: Receipt; businessName: string; footer?: 
           <TotalRow label="VAT" value={formatMoney(receipt.summary.vat, props.currency)} />
           {receipt.summary.serviceCharge ? <TotalRow label="Service charge" value={formatMoney(receipt.summary.serviceCharge, props.currency)} /> : null}
           <TotalRow label="Total" value={formatMoney(receipt.summary.total, props.currency)} strong />
-          <TotalRow label={methodLabels[receipt.method]} value={formatMoney(receipt.tendered, props.currency)} />
-          {receipt.method === "cash" ? <TotalRow label="Change" value={formatMoney(receipt.tendered - receipt.summary.total, props.currency)} /> : null}
+          {receipt.data.payments.map((payment, index) => (
+            <TotalRow key={index} label={methodLabels[payment.method as PaymentMethod] ?? payment.method} value={formatMoney(payment.method === "cash" && receipt.tendered ? receipt.tendered : payment.amount, props.currency)} />
+          ))}
+          {receipt.tendered && receipt.tendered > receipt.summary.total ? <TotalRow label="Change" value={formatMoney(receipt.tendered - receipt.summary.total, props.currency)} /> : null}
+          {receipt.data.account ? <TotalRow label="Account balance" value={formatMoney(receipt.data.account.balanceAfter, props.currency)} strong /> : null}
           {props.footer ? <Text style={[styles.lineMeta, { textAlign: "center" }]}>{props.footer}</Text> : null}
           {printStatus ? <Banner tone={printStatus.tone} message={printStatus.text} /> : null}
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -483,6 +582,8 @@ function ReceiptModal(props: { receipt: Receipt; businessName: string; footer?: 
 
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: "row", backgroundColor: colors.background },
+  creditBox: { backgroundColor: colors.surfaceMuted, borderRadius: radius.md, padding: spacing.md, gap: 2 },
+  creditName: { fontSize: font.md, fontWeight: "700", color: colors.text },
   iconSquare: { width: 48, height: 48, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, alignItems: "center", justifyContent: "center" },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md, padding: spacing.xl },
   catalog: { flex: 3, padding: spacing.lg, gap: spacing.md },

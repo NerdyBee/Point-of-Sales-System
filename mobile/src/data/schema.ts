@@ -67,7 +67,9 @@ const migrations: string[] = [
      createdAt TEXT NOT NULL
    );
    CREATE INDEX IF NOT EXISTS sales_created ON sales (createdAt);
-   CREATE TABLE IF NOT EXISTS id_map (localId TEXT PRIMARY KEY, serverId TEXT NOT NULL);`
+   CREATE TABLE IF NOT EXISTS id_map (localId TEXT PRIMARY KEY, serverId TEXT NOT NULL);`,
+  // v2: cash received for customer account payments, counted in the drawer.
+  `ALTER TABLE shifts ADD COLUMN cashIn INTEGER NOT NULL DEFAULT 0;`
 ];
 
 export async function migrate(db: Db) {

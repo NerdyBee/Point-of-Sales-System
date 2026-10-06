@@ -1,5 +1,9 @@
 import type { Db, Platform } from "../data/db";
 import type { Customer, Product, Staff, TenantSettings } from "../data/readModel";
+import { reverseAccountCharge } from "./credit";
+import { context, getRow, putRow } from "./store";
+
+export { context, getRow, putRow };
 import { loadSettings, saveSettings, type DeviceSettings } from "../sync/settings";
 
 /**
@@ -13,13 +17,14 @@ import { loadSettings, saveSettings, type DeviceSettings } from "../sync/setting
 export type StandaloneRole = "owner" | "manager" | "cashier";
 
 const allActions = [
-  "sale.create", "sale.refund", "sale.void", "catalog.manage", "inventory.adjust", "customer.manage", "staff.manage",
+  "sale.create", "sale.refund", "sale.void", "catalog.manage", "inventory.adjust", "customer.manage", "customer.credit", "staff.manage",
   "register.manage", "register.close", "reports.profit.view", "settings.manage", "sync.manage"
 ];
 
+/** customer.credit = open credit accounts and set credit limits (selling on account needs only sale.create). */
 const roleActions: Record<StandaloneRole, string[]> = {
   owner: allActions,
-  manager: ["sale.create", "sale.refund", "catalog.manage", "inventory.adjust", "customer.manage", "register.manage", "register.close", "reports.profit.view"],
+  manager: ["sale.create", "sale.refund", "sale.void", "catalog.manage", "inventory.adjust", "customer.manage", "customer.credit", "register.manage", "register.close", "reports.profit.view"],
   cashier: ["sale.create", "customer.manage", "register.manage"]
 };
 
@@ -27,18 +32,6 @@ export const roleLabels: Record<StandaloneRole, string> = { owner: "Owner", mana
 
 const now = () => new Date().toISOString();
 
-export async function putRow(db: Db, table: string, id: string, data: Record<string, unknown>, branchId: string | null = null) {
-  await db.run(
-    `INSERT INTO rows (tbl, id, branchId, data, updatedAt) VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(tbl, id) DO UPDATE SET branchId = excluded.branchId, data = excluded.data, updatedAt = excluded.updatedAt`,
-    [table, id, branchId, JSON.stringify(data), now()]
-  );
-}
-
-export async function getRow<T>(db: Db, table: string, id: string) {
-  const row = await db.first<{ data: string }>("SELECT data FROM rows WHERE tbl = ? AND id = ?", [table, id]);
-  return row ? (JSON.parse(row.data) as T) : null;
-}
 
 function shortCode(platform: Platform, length = 4) {
   return platform.uuid().replace(/-/g, "").slice(0, length).toUpperCase();
@@ -138,10 +131,31 @@ export async function createStandaloneBusiness(platform: Platform, input: Standa
   return { tenantId, owner };
 }
 
-export async function context(platform: Platform) {
+
+/**
+ * Brings a device set up with an older version up to date: adds permissions introduced
+ * since (e.g. customer.credit) to the built-in roles. Safe to run on every start.
+ */
+export async function ensureStandaloneUpgrades(platform: Platform) {
   const settings = await loadSettings(platform);
-  if (!settings || settings.mode !== "standalone") throw new Error("Only available when the tablet runs on its own");
-  return settings;
+  if (!settings || settings.mode !== "standalone") return;
+  const tenantId = settings.tenantId;
+  const db = platform.db;
+  for (const action of allActions) {
+    const permissionId = `perm-${tenantId}-${action}`;
+    if (!(await getRow(db, "access_permissions", permissionId))) {
+      await putRow(db, "access_permissions", permissionId, { id: permissionId, tenantId, action, label: action, group: action.split(".")[0], description: action });
+    }
+  }
+  for (const role of Object.keys(roleActions) as StandaloneRole[]) {
+    const roleId = `role-${tenantId}-${role}`;
+    if (!(await getRow(db, "access_roles", roleId))) continue;
+    for (const action of roleActions[role]) {
+      const permissionId = `perm-${tenantId}-${action}`;
+      const linkId = `${roleId}|${permissionId}`;
+      if (!(await getRow(db, "access_role_permissions", linkId))) await putRow(db, "access_role_permissions", linkId, { roleId, permissionId });
+    }
+  }
 }
 
 // ----- products ---------------------------------------------------------------
@@ -479,6 +493,8 @@ export interface CustomerInput {
   email?: string;
   group?: string;
   notes?: string;
+  /** 0 = no credit account. Leave undefined to keep the current limit. */
+  creditLimit?: number;
 }
 
 export async function listCustomers(platform: Platform, search = "") {
@@ -500,6 +516,7 @@ export async function saveCustomer(platform: Platform, input: CustomerInput) {
   if (phone.length < 7) throw new Error("Enter a valid phone number");
   const email = input.email?.trim() ?? "";
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Enter a valid email or leave it empty");
+  if (input.creditLimit !== undefined && (!Number.isInteger(input.creditLimit) || input.creditLimit < 0)) throw new Error("Credit limit must be 0 or more");
 
   const existing = input.id ? await getRow<Customer & Record<string, unknown>>(platform.db, "customers", input.id) : null;
   const id = existing?.id ?? `cust-${platform.uuid()}`;
@@ -513,7 +530,8 @@ export async function saveCustomer(platform: Platform, input: CustomerInput) {
     phone,
     email: email || null,
     group: input.group && (customerGroups as readonly string[]).includes(input.group) ? input.group : existing?.group ?? "Walk-in",
-    notes: input.notes?.trim() || null
+    notes: input.notes?.trim() || null,
+    creditLimit: input.creditLimit ?? existing?.creditLimit ?? 0
   };
   await putRow(platform.db, "customers", id, customer);
   return customer as unknown as Customer;
@@ -572,6 +590,8 @@ export async function voidSale(platform: Platform, saleId: string, staffId: stri
       );
     }
     if (cash) await platform.db.run("UPDATE shifts SET cashSales = cashSales - ? WHERE id = ? AND status = 'open'", [cash, sale.shiftId]);
+    const onAccount = record.payments.filter((payment) => payment.method === "customer_credit").reduce((sum, payment) => sum + payment.amount, 0);
+    if (onAccount && sale.customerId) await reverseAccountCharge(platform, { customerId: sale.customerId, amount: onAccount, saleNumber: sale.number, staffId });
     const voided = { ...record, voided: { at: now(), by: staffId, reason: reason.trim() } };
     await platform.db.run("UPDATE sales SET status = 'voided', data = ? WHERE id = ?", [JSON.stringify(voided), saleId]);
   });

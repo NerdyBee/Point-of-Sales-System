@@ -92,6 +92,7 @@ export const readModel = {
   tenant: (db: Db, tenantId: string) => rowOf<Tenant>(db, "tenants", tenantId),
   terminal: (db: Db, terminalId: string) => rowOf<Terminal>(db, "terminals", terminalId),
   staff: (db: Db, staffId: string) => rowOf<Staff>(db, "staff_members", staffId),
+  customer: (db: Db, customerId: string) => rowOf<Customer>(db, "customers", customerId),
 
   /** Products on sale at a branch. Archived products (standalone mode) are hidden unless asked for. */
   async products(db: Db, branchId: string, options: { includeArchived?: boolean } = {}) {

@@ -10,7 +10,7 @@ import { printReceipt, printingAvailable, receiptFromSale, shareReceipt } from "
 import { Badge, Banner, Button, Field, Muted } from "../ui/components";
 import { colors, font, radius, spacing } from "../ui/theme";
 
-const methodNames: Record<string, string> = { cash: "Cash", card: "Card", bank_transfer: "Transfer", mobile_money: "Mobile money" };
+const methodNames: Record<string, string> = { cash: "Cash", card: "Card", bank_transfer: "Transfer", mobile_money: "Mobile money", customer_credit: "On account" };
 
 type SaleWithRecord = LocalSale & { record: SaleRecord & { voided?: { at: string; reason: string } } };
 
@@ -185,6 +185,7 @@ function SaleSheet(props: { sale: SaleWithRecord; currency: string; onClose(): v
         {payments.map((payment, index) => (
           <Row key={index} label={`${methodNames[payment.method] ?? payment.method}${payment.reference ? ` (${payment.reference})` : ""}`} value={formatMoney(payment.amount, currency)} />
         ))}
+        {sale.record.credit ? <Row label="Account balance after" value={formatMoney(sale.record.credit.balanceAfter, currency)} /> : null}
       </View>
       {receiptData ? (
         <View style={styles.printRow}>

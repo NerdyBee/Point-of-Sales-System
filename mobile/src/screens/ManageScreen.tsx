@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, FlatList, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { Alert, FlatList, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { readModel, type Customer, type Product, type Staff } from "../data/readModel";
 import { formatMoney } from "../pos/pricing";
 import { useApp } from "../shell/AppContext";
@@ -24,6 +24,17 @@ import {
 } from "../standalone/business";
 import { EmptyState, Fab, Icon, ListItem, Sheet } from "../ui/appKit";
 import { recordInflow } from "../standalone/inventory";
+import {
+  availableCredit,
+  customerLedger,
+  debtorsSummary,
+  hasCreditAccount,
+  ledgerLabels,
+  receivePayment,
+  statementText,
+  type LedgerEntry,
+  type PaymentChannel
+} from "../standalone/credit";
 import { InflowSection } from "./InventoryScreens";
 import { Badge, Banner, Button, Card, Field, Muted } from "../ui/components";
 import { colors, font, radius, spacing } from "../ui/theme";
@@ -326,35 +337,67 @@ function StockPanel(props: { product: Product; onDone(): void }) {
 // ----- customers -------------------------------------------------------------------
 
 function CustomersSection() {
-  const { platform, dataVersion } = useApp();
+  const { platform, tenant, dataVersion } = useApp();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | "owing" | "accounts">("all");
+  const [summary, setSummary] = useState<{ owed: number; debtors: number; accounts: number } | null>(null);
   const [editing, setEditing] = useState<Customer | "new" | null>(null);
+  const currency = tenant?.settings.currency ?? "NGN";
 
   useEffect(() => {
     void listCustomers(platform, search).then(setCustomers);
+    void debtorsSummary(platform).then(setSummary);
   }, [platform, search, dataVersion]);
+
+  const visible = customers
+    .filter((customer) => (filter === "owing" ? Number(customer.outstandingBalance ?? 0) > 0 : filter === "accounts" ? hasCreditAccount(customer) : true))
+    .sort((left, right) => (filter === "owing" ? Number(right.outstandingBalance ?? 0) - Number(left.outstandingBalance ?? 0) : 0));
 
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.toolbar}>
+        {summary && summary.accounts ? (
+          <View style={styles.debtors}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.debtorsLabel}>Owed to you</Text>
+              <Text style={styles.debtorsValue}>{formatMoney(summary.owed, currency)}</Text>
+            </View>
+            <Text style={styles.debtorsMeta}>{summary.debtors} of {summary.accounts} credit customer{summary.accounts === 1 ? "" : "s"} owe</Text>
+          </View>
+        ) : null}
         <SearchBar value={search} onChange={setSearch} placeholder="Search name or phone" />
+        <View style={styles.wrapRow}>
+          {([["all", "All"], ["owing", "Owing"], ["accounts", "Credit accounts"]] as const).map(([key, label]) => (
+            <Pressable key={key} onPress={() => setFilter(key)} style={[styles.chip, filter === key && styles.chipActive]}>
+              <Text style={[styles.chipLabel, filter === key && { color: colors.primaryText }]}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
       </View>
       <FlatList
-        data={customers}
+        data={visible}
         keyExtractor={(item) => item.id}
         ItemSeparatorComponent={Separator}
         contentContainerStyle={{ paddingBottom: 96 }}
         ListEmptyComponent={
-          search ? (
-            <EmptyState icon="search" title="No matching customers" />
+          search || filter !== "all" ? (
+            <EmptyState icon="search" title={filter === "owing" ? "Nobody owes you" : filter === "accounts" ? "No credit accounts yet" : "No matching customers"} message={filter === "accounts" ? "Open a customer and set a credit limit to let them buy on account." : undefined} />
           ) : (
             <EmptyState icon="people-outline" title="No customers yet" message="Customers you add here or at checkout appear in this list." />
           )
         }
-        renderItem={({ item }) => (
-          <ListItem title={item.name} subtitle={`${item.phone} · ${item.group}`} onPress={() => setEditing(item)} right={<Badge label={`${item.loyaltyPoints ?? 0} pts`} tone="info" />} />
-        )}
+        renderItem={({ item }) => {
+          const owes = Number(item.outstandingBalance ?? 0);
+          return (
+            <ListItem
+              title={item.name}
+              subtitle={`${item.phone} · ${item.group}${hasCreditAccount(item) ? ` · limit ${formatMoney(Number(item.creditLimit), currency)}` : ""}`}
+              onPress={() => setEditing(item)}
+              right={owes > 0 ? <Badge label={`Owes ${formatMoney(owes, currency)}`} tone="danger" /> : <Badge label={`${item.loyaltyPoints ?? 0} pts`} tone="info" />}
+            />
+          );
+        }}
       />
       <Fab label="Customer" icon="person-add-outline" onPress={() => setEditing("new")} />
       {editing ? <CustomerSheet customer={editing === "new" ? null : editing} onClose={() => setEditing(null)} /> : null}
@@ -363,62 +406,179 @@ function CustomersSection() {
 }
 
 function CustomerSheet(props: { customer: Customer | null; onClose(): void }) {
-  const { platform, tenant } = useApp();
-  const { error, busy, run } = useRunner();
-  const existing = props.customer;
+  const { platform, tenant, permissions, staff, dataVersion } = useApp();
+  const { error, busy, run, setError } = useRunner();
+  const [existing, setExisting] = useState<Customer | null>(props.customer);
+  const [tab, setTab] = useState<"details" | "account">(props.customer && Number(props.customer.outstandingBalance ?? 0) > 0 ? "account" : "details");
   const [name, setName] = useState(existing?.name ?? "");
   const [phone, setPhone] = useState(existing?.phone ?? "");
   const [email, setEmail] = useState(existing?.email ?? "");
   const [group, setGroup] = useState(existing?.group ?? "Walk-in");
   const [notes, setNotes] = useState(existing?.notes ?? "");
+  const [creditLimit, setCreditLimit] = useState(existing?.creditLimit ? String(existing.creditLimit) : "");
   const [history, setHistory] = useState<{ count: number; total: number } | null>(null);
+  const [ledger, setLedger] = useState<LedgerEntry[]>([]);
+  const [paying, setPaying] = useState(false);
+  const [payAmount, setPayAmount] = useState("");
+  const [payMethod, setPayMethod] = useState<PaymentChannel>("cash");
+  const [payReference, setPayReference] = useState("");
+  const [payNote, setPayNote] = useState("");
+  const currency = tenant?.settings.currency ?? "NGN";
+  const money = (amount: number) => formatMoney(amount, currency);
+  const canSetCredit = permissions.has("customer.credit");
+  const owes = Number(existing?.outstandingBalance ?? 0);
 
   useEffect(() => {
-    if (existing) void customerSales(platform, existing.id).then(setHistory);
-  }, [platform, existing]);
+    if (!props.customer) return;
+    void readModel.customer(platform.db, props.customer.id).then((fresh) => fresh && setExisting(fresh));
+    void customerSales(platform, props.customer.id).then(setHistory);
+    void customerLedger(platform, props.customer.id).then(setLedger);
+  }, [platform, props.customer, dataVersion]);
+
+  const save = () =>
+    void run(
+      () => saveCustomer(platform, { id: existing?.id, name, phone, email: email ?? "", group, notes: notes ?? "", creditLimit: canSetCredit ? digitsOnly(creditLimit) : undefined }),
+      props.onClose
+    );
+
+  const pay = () =>
+    void run(async () => {
+      await receivePayment(platform, { customerId: existing!.id, amount: digitsOnly(payAmount), method: payMethod, reference: payReference, note: payNote, staffId: staff!.id });
+      setPaying(false);
+      setPayAmount("");
+      setPayReference("");
+      setPayNote("");
+    });
+
+  const shareStatement = () => {
+    if (!existing) return;
+    void Share.share({ title: `Statement - ${existing.name}`, message: statementText({ businessName: tenant?.settings.businessName ?? "", customer: existing, entries: ledger, money }) });
+  };
+
+  const detailsFooter = (
+    <>
+      {existing ? (
+        <Button
+          label="Delete"
+          variant="danger"
+          onPress={() => confirm("Delete customer?", `${existing.name} will be removed.`, "Delete", () => void run(() => deleteCustomer(platform, existing.id), props.onClose))}
+        />
+      ) : null}
+      <Button label="Save" busy={busy} style={{ flex: 1 }} onPress={save} />
+    </>
+  );
+
+  const accountFooter = paying ? (
+    <>
+      <Button label="Back" variant="secondary" onPress={() => { setPaying(false); setError(null); }} />
+      <Button label={`Receive ${digitsOnly(payAmount) ? money(digitsOnly(payAmount)) : "payment"}`} busy={busy} style={{ flex: 1 }} onPress={pay} />
+    </>
+  ) : (
+    <>
+      <Button label="Share statement" variant="secondary" onPress={shareStatement} disabled={!ledger.length} />
+      <Button label="Receive payment" style={{ flex: 1 }} disabled={owes <= 0} onPress={() => { setPaying(true); setPayAmount(String(owes)); setError(null); }} />
+    </>
+  );
 
   return (
-    <Sheet
-      title={existing ? existing.name : "New customer"}
-      onClose={props.onClose}
-      footer={
-        <>
-          {existing ? (
-            <Button
-              label="Delete"
-              variant="danger"
-              onPress={() => confirm("Delete customer?", `${existing.name} will be removed.`, "Delete", () => void run(() => deleteCustomer(platform, existing.id), props.onClose))}
-            />
-          ) : null}
-          <Button label="Save" busy={busy} style={{ flex: 1 }} onPress={() => void run(() => saveCustomer(platform, { id: existing?.id, name, phone, email, group, notes }), props.onClose)} />
-        </>
-      }
-    >
-      {existing && history ? (
-        <View style={styles.stats}>
-          <Stat label="Purchases" value={String(history.count)} />
-          <Stat label="Spent" value={formatMoney(history.total, tenant?.settings.currency ?? "NGN")} />
-          <Stat label="Points" value={String(existing.loyaltyPoints ?? 0)} />
+    <Sheet title={existing ? existing.name : "New customer"} onClose={props.onClose} footer={tab === "details" ? detailsFooter : accountFooter}>
+      {existing ? (
+        <View style={styles.tabsRow}>
+          <Button label="Details" variant={tab === "details" ? "primary" : "secondary"} onPress={() => { setTab("details"); setError(null); }} style={{ flex: 1 }} />
+          <Button label={owes > 0 ? `Account (owes ${money(owes)})` : "Account"} variant={tab === "account" ? "primary" : "secondary"} onPress={() => { setTab("account"); setError(null); }} style={{ flex: 1 }} />
         </View>
       ) : null}
-      <Field label="Name" value={name} onChangeText={setName} />
-      <View style={styles.twoColumns}>
-        <View style={styles.column}><Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" /></View>
-        <View style={styles.column}><Field label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" placeholder="Optional" /></View>
-      </View>
-      <Text style={styles.fieldLabel}>Group</Text>
-      <View style={styles.wrapRow}>
-        {customerGroups.map((item) => (
-          <Pressable key={item} onPress={() => setGroup(item)} style={[styles.chip, group === item && styles.chipActive]}>
-            <Text style={[styles.chipLabel, group === item && { color: colors.primaryText }]}>{item}</Text>
-          </Pressable>
-        ))}
-      </View>
-      <Field label="Notes" value={notes} onChangeText={setNotes} placeholder="Optional" multiline />
+
+      {tab === "account" && existing ? (
+        <>
+          <View style={styles.stats}>
+            <Stat label="Owes" value={money(owes)} />
+            <Stat label="Credit limit" value={hasCreditAccount(existing) ? money(Number(existing.creditLimit)) : "None"} />
+            <Stat label="Available" value={money(availableCredit(existing))} />
+          </View>
+          {!hasCreditAccount(existing) ? (
+            <Muted>{canSetCredit ? "No credit account. Set a credit limit on the Details tab to let this customer buy on account." : "No credit account. Ask an owner or manager to set a credit limit."}</Muted>
+          ) : null}
+
+          {paying ? (
+            <>
+              <Field label="Amount received" value={payAmount} onChangeText={setPayAmount} keyboardType="number-pad" hint={`Owes ${money(owes)}`} />
+              <View style={styles.wrapRow}>
+                {(Object.keys(payLabels) as PaymentChannel[]).map((item) => (
+                  <Pressable key={item} onPress={() => setPayMethod(item)} style={[styles.chip, payMethod === item && styles.chipActive]}>
+                    <Text style={[styles.chipLabel, payMethod === item && { color: colors.primaryText }]}>{payLabels[item]}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              {payMethod !== "cash" ? <Field label="Payment reference" value={payReference} onChangeText={setPayReference} autoCapitalize="characters" /> : <Muted>Cash is added to the open register's expected cash.</Muted>}
+              <Field label="Note" value={payNote} onChangeText={setPayNote} placeholder="Optional" />
+            </>
+          ) : (
+            <>
+              <Text style={styles.subheading}>Statement</Text>
+              {ledger.length === 0 ? <Muted>No credit sales or payments yet.</Muted> : null}
+              {[...ledger].reverse().map((entry) => (
+                <View key={entry.id} style={styles.historyRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.historyReason}>{ledgerLabels[entry.type] ?? entry.type}{entry.reference ? ` · ${entry.reference}` : ""}</Text>
+                    <Text style={styles.historyMeta}>
+                      {new Date(entry.createdAt).toLocaleString()}
+                      {entry.paymentMethod ? ` · ${payLabels[entry.paymentMethod]}${entry.paymentReference ? ` ${entry.paymentReference}` : ""}` : ""}
+                      {entry.type === "payment" && entry.note && entry.note !== "Payment received" ? ` · ${entry.note}` : ""}
+                    </Text>
+                  </View>
+                  <Text style={[styles.historyDelta, { color: entry.amount > 0 ? colors.danger : colors.success, minWidth: 90 }]}>
+                    {entry.amount > 0 ? "+" : "−"}{money(Math.abs(entry.amount))}
+                  </Text>
+                  <Text style={[styles.historyBalance, { minWidth: 80 }]}>{money(entry.balanceAfter)}</Text>
+                </View>
+              ))}
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          {existing && history ? (
+            <View style={styles.stats}>
+              <Stat label="Purchases" value={String(history.count)} />
+              <Stat label="Spent" value={money(history.total)} />
+              <Stat label="Points" value={String(existing.loyaltyPoints ?? 0)} />
+            </View>
+          ) : null}
+          <Field label="Name" value={name} onChangeText={setName} />
+          <View style={styles.twoColumns}>
+            <View style={styles.column}><Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" /></View>
+            <View style={styles.column}><Field label="Email" value={email ?? ""} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" placeholder="Optional" /></View>
+          </View>
+          <Text style={styles.fieldLabel}>Group</Text>
+          <View style={styles.wrapRow}>
+            {customerGroups.map((item) => (
+              <Pressable key={item} onPress={() => setGroup(item)} style={[styles.chip, group === item && styles.chipActive]}>
+                <Text style={[styles.chipLabel, group === item && { color: colors.primaryText }]}>{item}</Text>
+              </Pressable>
+            ))}
+          </View>
+          {canSetCredit ? (
+            <Field
+              label="Credit limit"
+              value={creditLimit}
+              onChangeText={setCreditLimit}
+              keyboardType="number-pad"
+              placeholder="0 = no credit"
+              hint="The most this customer may owe at any time. Leave 0 for cash-only customers."
+            />
+          ) : existing && hasCreditAccount(existing) ? (
+            <Muted>Credit limit: {money(Number(existing.creditLimit))}</Muted>
+          ) : null}
+          <Field label="Notes" value={notes ?? ""} onChangeText={setNotes} placeholder="Optional" multiline />
+        </>
+      )}
       {error ? <Banner tone="danger" message={error} /> : null}
     </Sheet>
   );
 }
+
+const payLabels: Record<PaymentChannel, string> = { cash: "Cash", bank_transfer: "Transfer", card: "Card", mobile_money: "Mobile money" };
 
 function Stat(props: { label: string; value: string }) {
   return (
@@ -606,6 +766,10 @@ const styles = StyleSheet.create({
   stats: { flexDirection: "row", gap: spacing.sm },
   stat: { flex: 1, backgroundColor: colors.surfaceMuted, borderRadius: radius.md, padding: spacing.md, alignItems: "center", gap: 2 },
   statValue: { fontSize: font.lg, fontWeight: "700", color: colors.text },
+  debtors: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.dangerBg, borderRadius: radius.md, padding: spacing.md },
+  debtorsLabel: { fontSize: font.sm, color: colors.danger, fontWeight: "600" },
+  debtorsValue: { fontSize: font.xl, color: colors.danger, fontWeight: "800" },
+  debtorsMeta: { fontSize: font.sm, color: colors.danger, textAlign: "right", flexShrink: 1 },
   statLabel: { fontSize: font.sm, color: colors.textMuted },
   switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }
 });

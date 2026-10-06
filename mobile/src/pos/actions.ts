@@ -3,6 +3,7 @@ import { readModel, type Customer, type Staff, type TenantSettings } from "../da
 import { enqueueCommand } from "../sync/engine";
 import { getKv, isStandalone, loadSettings, setKv, type DeviceSettings } from "../sync/settings";
 import { deductStockForSale } from "../standalone/business";
+import { chargeToAccount } from "../standalone/credit";
 import { calculateSale, type CartLine, type SaleSummary } from "./pricing";
 
 /**
@@ -10,7 +11,8 @@ import { calculateSale, type CartLine, type SaleSummary } from "./pricing";
  * so the tablet behaves the same online and offline.
  */
 
-export type PaymentMethod = "cash" | "card" | "bank_transfer" | "mobile_money";
+/** customer_credit = "on account": the customer pays later (standalone devices only). */
+export type PaymentMethod = "cash" | "card" | "bank_transfer" | "mobile_money" | "customer_credit";
 export const referenceRequired: PaymentMethod[] = ["card", "bank_transfer", "mobile_money"];
 
 export interface Payment {
@@ -26,6 +28,8 @@ export interface LocalShift {
   openedBy: string;
   openingBalance: number;
   cashSales: number;
+  /** Cash taken for customer account payments during this shift. */
+  cashIn: number;
   status: "open" | "closing" | "closed";
   countedCash: number | null;
   openedAt: string;
@@ -52,6 +56,8 @@ export interface SaleRecord {
   payments: Payment[];
   customer?: Pick<Customer, "id" | "name" | "phone">;
   staffName: string;
+  /** Part of the sale put on the customer's account, and what they owe afterwards. */
+  credit?: { amount: number; balanceAfter: number; limit: number };
 }
 
 export class PosError extends Error {}
@@ -97,7 +103,7 @@ export async function requestCloseShift(platform: Platform, staff: Staff, counte
   if (!Number.isInteger(countedCash) || countedCash < 0) throw new PosError("Enter the counted cash");
   if (isStandalone(await loadSettings(platform))) {
     await platform.db.run("UPDATE shifts SET status = 'closed', countedCash = ?, closedAt = ? WHERE id = ?", [countedCash, new Date().toISOString(), shift.id]);
-    return { closed: true as const, expected: shift.openingBalance + shift.cashSales };
+    return { closed: true as const, expected: shift.openingBalance + shift.cashSales + Number(shift.cashIn ?? 0) };
   }
   await platform.db.transaction(async () => {
     await platform.db.run("UPDATE shifts SET status = 'closing', countedCash = ? WHERE id = ?", [countedCash, shift.id]);
@@ -108,7 +114,7 @@ export async function requestCloseShift(platform: Platform, staff: Staff, counte
       payload: { shiftId: shift.serverId ?? shift.id, countedCash, note: note?.trim() || undefined }
     });
   });
-  return { closed: false as const, expected: shift.openingBalance + shift.cashSales };
+  return { closed: false as const, expected: shift.openingBalance + shift.cashSales + Number(shift.cashIn ?? 0) };
 }
 
 /** Units of each product sold on this tablet that the server stock does not reflect yet. */
@@ -143,6 +149,11 @@ export async function recordSale(
   for (const payment of payments) {
     if (referenceRequired.includes(payment.method) && !payment.reference?.trim()) throw new PosError("Enter the payment reference");
   }
+  const onAccount = payments.filter((payment) => payment.method === "customer_credit").reduce((sum, payment) => sum + payment.amount, 0);
+  if (onAccount) {
+    if (!isStandalone(input.settings)) throw new PosError("Credit sales are recorded in the web app when this device is connected to a server.");
+    if (!input.customer || input.customer.id.startsWith("local-")) throw new PosError("Choose a registered customer to sell on credit.");
+  }
 
   const id = localId(platform, "sale");
   const idempotencyKey = `tab-${input.settings.deviceCode}-${platform.uuid()}`;
@@ -159,6 +170,10 @@ export async function recordSale(
   let number = "";
   await platform.db.transaction(async () => {
     number = await nextSaleNumber(platform, input.settings);
+    // Charge the account first: if the customer cannot take more credit nothing is saved.
+    if (onAccount && input.customer) {
+      record.credit = await chargeToAccount(platform, { customerId: input.customer.id, amount: onAccount, saleNumber: number, staffId: input.staff.id });
+    }
     await platform.db.run(
       "INSERT INTO sales (id, number, shiftId, idempotencyKey, staffId, customerId, data, total, status, reconciled, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [id, number, shift.id, idempotencyKey, input.staff.id, input.customer?.id ?? null, JSON.stringify(record), summary.total, standalone ? "saved" : "pending", standalone ? 1 : 0, createdAt]
@@ -254,6 +269,7 @@ export interface ShiftHistoryRow {
   openedBy: string;
   openingBalance: number;
   cashSales: number;
+  cashIn: number;
   countedCash: number | null;
   status: string;
   openedAt: string;
