@@ -6,6 +6,7 @@ import { exportBackup, lastBackupAt, restoreBackup } from "../standalone/busines
 import { pickBackupFile, shareBackupFile } from "../standalone/files";
 import { Banner, Button, Card, Muted, Title } from "../ui/components";
 import { PrinterCard } from "./PrinterSheet";
+import { AboutLine } from "../ui/BrandMark";
 import { colors, font, spacing } from "../ui/theme";
 
 export const backupReminderDays = 7;
@@ -108,6 +109,7 @@ export function BackupScreen() {
             <Button label="Erase this device" variant="danger" onPress={reset} />
           </Card>
         ) : null}
+        <AboutLine />
       </View>
     </ScrollView>
   );

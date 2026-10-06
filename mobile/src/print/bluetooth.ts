@@ -45,7 +45,7 @@ async function ensureAndroidPermissions(scan: boolean) {
   if (!wanted.length) return;
   const result = await PermissionsAndroid.requestMultiple(wanted);
   const denied = wanted.filter((permission) => result[permission] !== PermissionsAndroid.RESULTS.GRANTED);
-  if (denied.length) throw new PrinterError("Allow Bluetooth (\"Nearby devices\") permission for NaijaPOS in the phone settings to use the printer.");
+  if (denied.length) throw new PrinterError("Allow Bluetooth (\"Nearby devices\") permission for Ajoke POS in the phone settings to use the printer.");
 }
 
 // ----- Bluetooth Classic -------------------------------------------------------------
@@ -153,7 +153,7 @@ async function bleReady(scan: boolean) {
     state = await manager.state();
   }
   if (state === "PoweredOff") throw new PrinterError("Turn on Bluetooth to print.");
-  if (state === "Unauthorized") throw new PrinterError("Allow Bluetooth access for NaijaPOS in the device settings.");
+  if (state === "Unauthorized") throw new PrinterError("Allow Bluetooth access for Ajoke POS in the device settings.");
   if (state === "Unsupported") throw new PrinterError("This device does not support Bluetooth LE.");
   return manager;
 }

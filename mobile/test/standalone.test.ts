@@ -137,10 +137,10 @@ describe("standalone tablet (no server)", () => {
     await recordSale(platform, { settings, tenantSettings: tenant.settings, staff: owner, cart, payments: [{ method: "cash", amount: calculateSale(cart, tenant.settings).total }] });
 
     const backup = await exportBackup(platform);
-    expect(backup.fileName).toMatch(/^naijapos-mama-nkechi-provisions-\d{4}-\d{2}-\d{2}\.json$/);
+    expect(backup.fileName).toMatch(/^ajokepos-mama-nkechi-provisions-\d{4}-\d{2}-\d{2}\.json$/);
 
     const replacement = await nodePlatform();
-    await expect(restoreBackup(replacement, "{}")).rejects.toThrow("not a NaijaPOS backup");
+    await expect(restoreBackup(replacement, "{}")).rejects.toThrow("not an Ajoke POS backup");
     await restoreBackup(replacement, backup.content);
     expect((await loadSettings(replacement))?.tenantId).toBe(settings.tenantId);
     expect((await readModel.products(replacement.db, settings.branchId))[0].stock).toBe(3);

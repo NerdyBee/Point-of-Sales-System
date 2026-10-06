@@ -78,7 +78,7 @@ async function request<T>(platform: Platform, url: string, path: string, init: {
   }
 }
 
-/** Checks a URL is a NaijaPOS server (used by the setup screen). */
+/** Checks a URL is a POS server (used by the setup screen). */
 export async function probeServer(platform: Platform, url: string) {
   return request<{ product: string; role: "cloud" | "office"; nodeId: string }>(platform, url, "/hello", { timeoutMs: helloTimeoutMs });
 }

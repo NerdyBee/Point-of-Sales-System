@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Platform as RNPlatform, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { bluetoothSupport, listPrinters, type PrinterDevice, type PrinterTransport } from "../print/bluetooth";
 import { defaultPrinterSettings, loadPrinterSettings, printTestPage, savePrinterSettings, type PrinterSettings } from "../print/printer";
+import { BRAND } from "../brand";
 import { useApp } from "../shell/AppContext";
 import { Icon, Sheet } from "../ui/appKit";
 import { Banner, Button, Muted } from "../ui/components";
@@ -60,7 +61,7 @@ export function PrinterSheet(props: { onClose(): void }) {
     setBusy(true);
     setMessage(null);
     try {
-      await printTestPage(settings.device, settings.paperWidth, tenant?.settings.businessName ?? "NaijaPOS");
+      await printTestPage(settings.device, settings.paperWidth, tenant?.settings.businessName ?? BRAND.appName);
       setMessage({ tone: "info", text: "Test page sent." });
     } catch (error) {
       setMessage({ tone: "danger", text: error instanceof Error ? error.message : String(error) });
@@ -85,7 +86,7 @@ export function PrinterSheet(props: { onClose(): void }) {
       {!available ? (
         <Banner
           tone="warning"
-          message="Bluetooth printing needs the installed NaijaPOS app. It is not available in Expo Go. Until then you can share receipts by WhatsApp or SMS from the receipt screen."
+          message="Bluetooth printing needs the installed Ajoke POS app. It is not available in Expo Go. Until then you can share receipts by WhatsApp or SMS from the receipt screen."
         />
       ) : (
         <>

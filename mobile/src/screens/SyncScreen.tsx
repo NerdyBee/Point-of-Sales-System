@@ -6,6 +6,7 @@ import { setServerToken } from "../sync/settings";
 import type { ServerKey } from "../sync/types";
 import { Badge, Banner, Button, Card, Muted, Title } from "../ui/components";
 import { PrinterCard } from "./PrinterSheet";
+import { AboutLine } from "../ui/BrandMark";
 import { colors, font, spacing } from "../ui/theme";
 
 type CommandRow = Awaited<ReturnType<ReturnType<typeof useApp>["engine"]["recentCommands"]>>[number];
@@ -112,6 +113,7 @@ export function SyncScreen(props: { onRepair: () => void }) {
             <Button label="Reset tablet" variant="danger" onPress={reset} />
           </Card>
         ) : null}
+        <AboutLine />
       </View>
     </ScrollView>
   );

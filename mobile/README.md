@@ -1,6 +1,8 @@
-# NaijaPOS Tablet
+# Ajoke POS (mobile app)
 
-Offline-first point of sale for Android/iOS tablets (Expo SDK 57, React Native 0.86). It syncs with the **office server** on the shop Wi-Fi, with the **cloud**, or with both. See `../SYNC_ARCHITECTURE.md` for how sync works.
+Developed by **Ajoke Code Sphere**.
+
+Ajoke POS is an offline-first point of sale for Android/iOS phones and tablets (Expo SDK 57, React Native 0.86). It syncs with the **office server** on the shop Wi-Fi, with the **cloud**, or with both. See `../SYNC_ARCHITECTURE.md` for how sync works.
 
 It can also run **on its own (standalone)** for very small shops that have no server. See [Standalone mode](#standalone-mode).
 
@@ -96,6 +98,11 @@ The core (`src/data`, `src/sync`, `src/pos`, `src/auth`) has no React Native imp
 ```bash
 NAIJAPOS_OFFICE_URL=http://127.0.0.1:4000 NAIJAPOS_OFFICE_CODE=ABCD-EFGH npm test
 ```
+
+## Branding
+- **Name and developer:** "Ajoke POS", developed by Ajoke Code Sphere. Set in `app.json` (name, `extra.developer`, package `com.ajokecodesphere.ajokepos`) and `src/brand.ts`, which supplies the in-app name, receipts ("Powered by Ajoke POS"), backup file names and the about line.
+- **Icons** in `assets/` are generated from the logo: `icon.png` (opaque, iOS/stores), Android adaptive `android-icon-foreground/background/monochrome.png`, `splash-icon.png`, `favicon.png`, and `logo.png` (used in the app). The background colour is `#060C18`.
+- **Internal identifiers stay as they were** so existing data, backups and licences keep working: database `naijapos.db`, secure-storage keys `naijapos.*`, backup format `naijapos-tablet-backup`, and the device-code salt.
 
 ## Layout
 ```

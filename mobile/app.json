@@ -1,32 +1,37 @@
 {
   "expo": {
-    "name": "NaijaPOS Tablet",
-    "slug": "naijapos-tablet",
+    "name": "Ajoke POS",
+    "slug": "ajoke-pos",
+    "description": "Ajoke POS - offline-first point of sale for shops: sales, stock, credit customers, receipts and reports. Developed by Ajoke Code Sphere.",
+    "scheme": "ajokepos",
     "version": "1.0.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.naijapos.tablet",
+      "bundleIdentifier": "com.ajokecodesphere.ajokepos",
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true,
           "NSAllowsArbitraryLoads": true
         },
-        "NSLocalNetworkUsageDescription": "NaijaPOS connects to the POS server on your shop network.",
-        "NSBluetoothAlwaysUsageDescription": "NaijaPOS uses Bluetooth to print receipts on your receipt printer."
-      }
+        "NSLocalNetworkUsageDescription": "Ajoke POS connects to the POS server on your shop network.",
+        "NSBluetoothAlwaysUsageDescription": "Ajoke POS uses Bluetooth to print receipts on your receipt printer.",
+        "CFBundleDisplayName": "Ajoke POS"
+      },
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#060C18",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.naijapos.tablet"
+      "package": "com.ajokecodesphere.ajokepos",
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -48,11 +53,25 @@
         {
           "isBackgroundEnabled": false,
           "neverForLocation": true,
-          "bluetoothAlwaysPermission": "NaijaPOS uses Bluetooth to print receipts on your receipt printer."
+          "bluetoothAlwaysPermission": "Ajoke POS uses Bluetooth to print receipts on your receipt printer."
         }
       ],
       "expo-font",
-      "@react-native-community/datetimepicker"
-    ]
+      "@react-native-community/datetimepicker",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#060C18"
+        }
+      ]
+    ],
+    "backgroundColor": "#060C18",
+    "extra": {
+      "developer": "Ajoke Code Sphere",
+      "brand": "Ajoke POS"
+    }
   }
 }

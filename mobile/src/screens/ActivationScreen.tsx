@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
+import { BRAND } from "../brand";
 import { LICENSE_VENDOR } from "../license/config";
 import { activateLicense } from "../license/licenseStore";
 import type { LicenseState } from "../license/licenseStore";
 import { useApp } from "../shell/AppContext";
-import { Icon } from "../ui/appKit";
+import { AboutLine, BrandHeader } from "../ui/BrandMark";
 import { Banner, Button, Muted, Title } from "../ui/components";
 import { colors, font, radius, spacing } from "../ui/theme";
 
@@ -21,7 +22,7 @@ export function ActivationScreen(props: { state: LicenseState; onActivated(): vo
 
   const shareDeviceCode = () =>
     void Share.share({
-      message: `Please activate NaijaPOS on my device.\nDevice code: ${props.state.deviceCode}${previous?.license ? `\nCurrent licence: ${previous.license.id} (${previous.license.name})` : ""}`
+      message: `Please activate ${BRAND.appName} on my device.\nDevice code: ${props.state.deviceCode}${previous?.license ? `\nCurrent licence: ${previous.license.id} (${previous.license.name})` : ""}`
     });
 
   const activate = async () => {
@@ -36,10 +37,8 @@ export function ActivationScreen(props: { state: LicenseState; onActivated(): vo
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
       <View style={styles.column}>
-        <View style={styles.badge}>
-          <Icon name="key-outline" size={34} color={colors.primary} />
-        </View>
-        <Title>{previous?.reason === "expired" ? "Renew your licence" : "Activate NaijaPOS"}</Title>
+        <BrandHeader size={96} />
+        <Title>{previous?.reason === "expired" ? "Renew your licence" : `Activate ${BRAND.appName}`}</Title>
         {previous ? <Banner tone={previous.reason === "expired" ? "warning" : "danger"} message={previous.message} /> : null}
         {previous?.reason === "expired" ? <Muted>Your shop's records are safe on this device. They will be available again as soon as the licence is renewed.</Muted> : null}
 
@@ -66,6 +65,7 @@ export function ActivationScreen(props: { state: LicenseState; onActivated(): vo
           <Button label="Activate" onPress={() => void activate()} busy={busy} disabled={code.trim().length < 20} large />
         </View>
 
+        <AboutLine />
         {props.onSkip ? (
           <View style={{ gap: spacing.xs }}>
             <Button label="Continue without licence (development build only)" variant="ghost" onPress={props.onSkip} />
@@ -80,7 +80,6 @@ export function ActivationScreen(props: { state: LicenseState; onActivated(): vo
 const styles = StyleSheet.create({
   page: { flexGrow: 1, padding: spacing.xl, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
   column: { width: "100%", maxWidth: 560, gap: spacing.lg },
-  badge: { width: 72, height: 72, borderRadius: 36, backgroundColor: "#E7F5F0", alignItems: "center", justifyContent: "center", alignSelf: "center" },
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, gap: spacing.md },
   step: { fontSize: font.md, fontWeight: "700", color: colors.text },
   deviceCode: { fontSize: 30, fontWeight: "800", letterSpacing: 2, color: colors.text, textAlign: "center", fontVariant: ["tabular-nums"], paddingVertical: spacing.sm },

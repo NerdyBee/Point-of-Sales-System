@@ -5,6 +5,7 @@ import { readModel, type Staff } from "../data/readModel";
 import { useApp } from "../shell/AppContext";
 import { isStandalone } from "../sync/settings";
 import { LICENSE_WARN_DAYS } from "../license/config";
+import { AboutLine, BrandHeader } from "../ui/BrandMark";
 import { Banner, Button, Muted, PinPad, Title } from "../ui/components";
 import { useLayout } from "../ui/layout";
 import { colors, font, radius, spacing } from "../ui/theme";
@@ -47,6 +48,9 @@ export function LockScreen(props: { onOpenSync: () => void }) {
 
   const list = (
     <View style={[styles.list, !compact && styles.listWide]}>
+      <View style={{ alignSelf: "flex-start" }}>
+        <BrandHeader size={52} />
+      </View>
       <Title>{tenant?.settings.businessName ?? settings?.tenantName}</Title>
       <Muted>{settings?.terminalName} · tap your name</Muted>
       {staff.length === 0 ? (
@@ -74,6 +78,7 @@ export function LockScreen(props: { onOpenSync: () => void }) {
       {licence && licence.daysLeft !== null && licence.daysLeft <= LICENSE_WARN_DAYS ? (
         <Banner tone="warning" message={`Licence expires in ${licence.daysLeft} day${licence.daysLeft === 1 ? "" : "s"}. Contact your supplier to renew (device code ${license?.deviceCode}).`} />
       ) : null}
+      <AboutLine />
       {licence ? (
         <Text style={styles.licence}>
           Licensed to {licence.license.name} · {licence.license.expires ? `valid until ${licence.license.expires}` : "no expiry"} · device {license?.deviceCode}

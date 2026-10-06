@@ -9,7 +9,7 @@ export async function shareBackupFile(fileName: string, content: string) {
   file.create();
   file.write(content);
   if (!(await Sharing.isAvailableAsync())) throw new Error("Sharing is not available on this device");
-  await Sharing.shareAsync(file.uri, { mimeType: "application/json", dialogTitle: "Save NaijaPOS backup" });
+  await Sharing.shareAsync(file.uri, { mimeType: "application/json", dialogTitle: "Save Ajoke POS backup" });
 }
 
 /** Lets the user pick a backup file; returns its text, or null if cancelled. */

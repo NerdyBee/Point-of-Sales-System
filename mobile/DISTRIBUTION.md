@@ -1,6 +1,6 @@
-# Sending the app to a shop (one licence = one Android device)
+# Sending Ajoke POS to a shop (one licence = one Android device)
 
-Each copy of NaijaPOS must be **activated** before use, and an activation code only works on the device it was issued for. If the APK is copied to another phone, that phone shows a different device code and needs its own licence.
+Each copy of Ajoke POS must be **activated** before use, and an activation code only works on the device it was issued for. If the APK is copied to another phone, that phone shows a different device code and needs its own licence.
 
 ## One-time setup (you, the vendor)
 

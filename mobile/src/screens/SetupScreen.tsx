@@ -6,6 +6,7 @@ import { createStandaloneBusiness, restoreBackup } from "../standalone/business"
 import { pickBackupFile } from "../standalone/files";
 import { pairServer, probeServer } from "../sync/engine";
 import type { ServerKey, SyncMode } from "../sync/types";
+import { AboutLine, BrandHeader } from "../ui/BrandMark";
 import { Banner, Button, Card, Field, Muted, Title } from "../ui/components";
 import { colors, font, radius, spacing } from "../ui/theme";
 
@@ -41,6 +42,7 @@ export function SetupScreen() {
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
       <View style={styles.column}>
+        <BrandHeader size={88} />
         <Title>Set up this device</Title>
         <Muted>Choose how this device keeps its records.</Muted>
 
@@ -60,6 +62,7 @@ export function SetupScreen() {
         </View>
 
         {mode === "standalone" ? <StandaloneSetup /> : <ServerSetup mode={mode} />}
+        <AboutLine />
       </View>
     </ScrollView>
   );
@@ -118,7 +121,7 @@ function ServerSetup(props: { mode: SyncMode }) {
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
-            hint={key === "local" ? "The office computer's address on the shop network, e.g. http://192.168.1.10:4000" : "The online address of your NaijaPOS server"}
+            hint={key === "local" ? "The office computer's address on the shop network, e.g. http://192.168.1.10:4000" : "The online address of your Ajoke POS server"}
           />
           <Field label="Pairing code" value={forms[key].code} onChangeText={(code) => update(key, { code: code.toUpperCase() })} autoCapitalize="characters" autoCorrect={false} placeholder="ABCD-EFGH" />
           <View style={styles.row}>

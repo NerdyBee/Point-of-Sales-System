@@ -393,7 +393,7 @@ export async function exportBackup(platform: Platform) {
   const exportedAt = now();
   await platform.db.run("INSERT INTO kv (key, value) VALUES ('backup.lastAt', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [exportedAt]);
   return {
-    fileName: `naijapos-${settings.tenantName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "backup"}-${exportedAt.slice(0, 10)}.json`,
+    fileName: `ajokepos-${settings.tenantName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "backup"}-${exportedAt.slice(0, 10)}.json`,
     content: JSON.stringify({ format: backupFormat, version: 1, exportedAt, tenantId: settings.tenantId, tables })
   };
 }
@@ -404,9 +404,9 @@ export async function restoreBackup(platform: Platform, content: string) {
   try {
     backup = JSON.parse(content);
   } catch {
-    throw new Error("This file is not a NaijaPOS backup");
+    throw new Error("This file is not an Ajoke POS backup");
   }
-  if (backup.format !== backupFormat || backup.version !== 1 || !backup.tables) throw new Error("This file is not a NaijaPOS backup");
+  if (backup.format !== backupFormat || backup.version !== 1 || !backup.tables) throw new Error("This file is not an Ajoke POS backup");
   const settingsRow = backup.tables.kv?.find((row) => row.key === "device.settings");
   if (!settingsRow || (JSON.parse(String(settingsRow.value)) as DeviceSettings).mode !== "standalone") {
     throw new Error("This backup is not from a standalone tablet");

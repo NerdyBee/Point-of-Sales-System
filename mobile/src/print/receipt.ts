@@ -1,3 +1,4 @@
+import { BRAND } from "../brand";
 import type { TenantSettings } from "../data/readModel";
 import type { SaleRecord } from "../pos/actions";
 import type { SaleSummary } from "../pos/pricing";
@@ -96,7 +97,7 @@ export function buildReceiptBytes(receipt: ReceiptData, options: { width: PaperW
 
   p.feed(1).align("center");
   if (receipt.footer) p.wrapped(receipt.footer);
-  p.line("Powered by NaijaPOS");
+  p.line(`Powered by ${BRAND.appName}`);
   p.cut();
   return p.build();
 }
