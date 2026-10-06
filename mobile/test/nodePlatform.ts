@@ -30,7 +30,7 @@ export function nodeDb(file = ":memory:"): Db {
   };
 }
 
-export async function nodePlatform(): Promise<Platform> {
+export async function nodePlatform(deviceId = "test-device-1"): Promise<Platform> {
   const db = nodeDb();
   await migrate(db);
   const secrets = new Map<string, string>();
@@ -48,6 +48,7 @@ export async function nodePlatform(): Promise<Platform> {
     sha256Hex: async (value) => createHash("sha256").update(value).digest("hex"),
     uuid: () => randomUUID(),
     fetch: (input, init) => fetch(input, init),
-    appVersion: "test"
+    appVersion: "test",
+    deviceId: async () => deviceId
   };
 }

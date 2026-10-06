@@ -28,4 +28,6 @@ export interface Platform {
   uuid(): string;
   fetch: typeof fetch;
   appVersion: string;
+  /** Stable per-install device id (Android ID / iOS vendor id), used for licensing. */
+  deviceId(): Promise<string>;
 }

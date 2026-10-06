@@ -4,6 +4,8 @@ Offline-first point of sale for Android/iOS tablets (Expo SDK 57, React Native 0
 
 It can also run **on its own (standalone)** for very small shops that have no server. See [Standalone mode](#standalone-mode).
 
+**Selling it to a shop:** every copy must be activated, and a licence works on one device only. See [DISTRIBUTION.md](DISTRIBUTION.md) for building the APK, sending it and issuing activation codes (`npm run license -- issue ...`).
+
 This app is deliberately **outside** the npm workspaces (`apps/*`, `packages/*`, `server/*`). It has its own `node_modules` and lockfile, so Expo's React/React Native versions never clash with the web app's.
 
 ## What it does
@@ -104,6 +106,8 @@ src/pos/                pricing (mirrors server), register/sale/customer actions
 src/standalone/         no-server mode: business setup, products/stock, staff, settings, backup; inventory.ts = inflow + stock report
 src/print/              ESC/POS receipt builder, Bluetooth Classic/BLE printer transports, printer settings
 src/auth/pin.ts         offline PIN check with lockout
+src/license/            device-locked licences: device code, Ed25519 activation codes, activation gate
+scripts/license.ts      vendor tool: keygen / issue / verify activation codes (private key in .license/, git-ignored)
 src/shell/              app context (session, background sync, auto-lock) and tab shell
 src/screens/            Setup, Lock, Sell, Register, Sales, Reports, Sync, Manage, Backup
 src/ui/                 theme, form components, app kit (icons, list rows, bottom sheets, FAB), responsive layout

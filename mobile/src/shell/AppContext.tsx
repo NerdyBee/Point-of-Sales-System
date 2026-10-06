@@ -5,6 +5,7 @@ import { readModel, type Staff, type Tenant } from "../data/readModel";
 import { SyncEngine, type SyncStatus } from "../sync/engine";
 import { loadSettings, type DeviceSettings } from "../sync/settings";
 import { ensureStandaloneUpgrades } from "../standalone/business";
+import { loadLicense, type LicenseState } from "../license/licenseStore";
 
 const backgroundSyncMs = 20_000;
 const autoLockMs = 10 * 60_000;
@@ -20,6 +21,12 @@ interface AppContextValue {
   /** Bumped after local writes or a sync so screens re-query. */
   dataVersion: number;
   refresh(): Promise<void>;
+  /** null while loading. */
+  license: LicenseState | null;
+  licensed: boolean;
+  reloadLicense(): Promise<void>;
+  /** Development builds only: continue without a licence. */
+  skipLicense?: () => void;
   signIn(staff: Staff): Promise<void>;
   signOut(): void;
   touch(): void;
@@ -37,6 +44,21 @@ export function AppProvider(props: { platform: Platform; children: ReactNode }) 
   const [dataVersion, setDataVersion] = useState(0);
   const lastActivity = useRef(Date.now());
   const upgraded = useRef(false);
+  const [license, setLicense] = useState<LicenseState | null>(null);
+  const [devSkip, setDevSkip] = useState(false);
+
+  const reloadLicense = useCallback(async () => {
+    setLicense(await loadLicense(props.platform));
+  }, [props.platform]);
+
+  // Check at start and whenever the app comes back to the foreground (catches expiry while open).
+  useEffect(() => {
+    void reloadLicense();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void reloadLicense();
+    });
+    return () => subscription.remove();
+  }, [reloadLicense]);
 
   const refresh = useCallback(async () => {
     if (!upgraded.current) {
@@ -97,6 +119,10 @@ export function AppProvider(props: { platform: Platform; children: ReactNode }) 
     syncStatus,
     dataVersion,
     refresh,
+    license,
+    licensed: Boolean(license?.check?.ok) || devSkip,
+    reloadLicense,
+    skipLicense: __DEV__ ? () => setDevSkip(true) : undefined,
     async signIn(member) {
       lastActivity.current = Date.now();
       setPermissions(await readModel.permissionsForRole(props.platform.db, member.role));

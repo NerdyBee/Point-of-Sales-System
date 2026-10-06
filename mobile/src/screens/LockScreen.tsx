@@ -4,6 +4,7 @@ import { verifyPin } from "../auth/pin";
 import { readModel, type Staff } from "../data/readModel";
 import { useApp } from "../shell/AppContext";
 import { isStandalone } from "../sync/settings";
+import { LICENSE_WARN_DAYS } from "../license/config";
 import { Banner, Button, Muted, PinPad, Title } from "../ui/components";
 import { useLayout } from "../ui/layout";
 import { colors, font, radius, spacing } from "../ui/theme";
@@ -13,7 +14,8 @@ import { colors, font, radius, spacing } from "../ui/theme";
  * Wide screens show the list and PIN pad side by side; phones show one at a time.
  */
 export function LockScreen(props: { onOpenSync: () => void }) {
-  const { platform, settings, tenant, signIn, dataVersion, syncStatus, engine } = useApp();
+  const { platform, settings, tenant, signIn, dataVersion, syncStatus, engine, license } = useApp();
+  const licence = license?.check?.ok ? license.check : null;
   const { compact } = useLayout();
   const [staff, setStaff] = useState<Staff[]>([]);
   const [selected, setSelected] = useState<Staff | null>(null);
@@ -69,6 +71,14 @@ export function LockScreen(props: { onOpenSync: () => void }) {
         </View>
       )}
       <Button label={standalone ? "Backup" : "Sync & settings"} variant="ghost" onPress={props.onOpenSync} style={{ alignSelf: "flex-start" }} />
+      {licence && licence.daysLeft !== null && licence.daysLeft <= LICENSE_WARN_DAYS ? (
+        <Banner tone="warning" message={`Licence expires in ${licence.daysLeft} day${licence.daysLeft === 1 ? "" : "s"}. Contact your supplier to renew (device code ${license?.deviceCode}).`} />
+      ) : null}
+      {licence ? (
+        <Text style={styles.licence}>
+          Licensed to {licence.license.name} · {licence.license.expires ? `valid until ${licence.license.expires}` : "no expiry"} · device {license?.deviceCode}
+        </Text>
+      ) : null}
     </View>
   );
 
@@ -109,5 +119,6 @@ const styles = StyleSheet.create({
   staffSelected: { borderColor: colors.primary },
   staffName: { fontSize: font.lg, fontWeight: "700", color: colors.text },
   staffRole: { fontSize: font.sm, color: colors.textMuted, textTransform: "capitalize" },
-  prompt: { fontSize: font.lg, fontWeight: "600", color: colors.text }
+  prompt: { fontSize: font.lg, fontWeight: "600", color: colors.text },
+  licence: { fontSize: 12, color: colors.textMuted }
 });

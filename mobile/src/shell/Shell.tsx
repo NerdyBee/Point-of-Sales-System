@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivationScreen } from "../screens/ActivationScreen";
 import { BackupScreen, backupAgeDays, backupReminderDays } from "../screens/BackupScreen";
 import { LockScreen } from "../screens/LockScreen";
 import { ManageScreen } from "../screens/ManageScreen";
@@ -31,7 +32,7 @@ const tabIcons: Record<Tab, [IconName, IconName]> = {
 };
 
 export function Shell() {
-  const { platform, settings, tenant, staff, signOut, syncStatus, touch, permissions, dataVersion } = useApp();
+  const { platform, settings, tenant, staff, signOut, syncStatus, touch, permissions, dataVersion, license, licensed, reloadLicense, skipLicense } = useApp();
   const [tab, setTab] = useState<Tab>("sell");
   const [repairing, setRepairing] = useState(false);
   const [lockedView, setLockedView] = useState<"lock" | "sync">("lock");
@@ -42,6 +43,27 @@ export function Shell() {
   useEffect(() => {
     if (standalone) void lastBackupAt(platform).then(setLastBackup);
   }, [platform, standalone, dataVersion]);
+
+  if (!license) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (!licensed) {
+    return (
+      <ActivationScreen
+        state={license}
+        onActivated={() => {
+          signOut();
+          void reloadLicense();
+        }}
+        onSkip={skipLicense}
+      />
+    );
+  }
 
   if (!settings || repairing) {
     return (
