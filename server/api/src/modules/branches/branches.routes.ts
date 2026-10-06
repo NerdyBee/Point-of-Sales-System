@@ -1,12 +1,12 @@
 import { branchInputSchema, terminalInputSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
-import { canAccessAllBranches, resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, canAccessScopedBranches, resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import { createBranch, createTerminal, listBranchOptions, listBranches, updateBranch, updateTerminal } from "./branches.repository";
 
 export const branchesRouter = Router();
 
 function requireBranchContext(req: Request, res: Response) {
-  if (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId) {
+  if (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !req.tenantContext!.branchId) {
     res.status(403).json({ error: "Branch access denied" });
     return false;
   }
@@ -15,7 +15,16 @@ function requireBranchContext(req: Request, res: Response) {
 }
 
 function requestedBranch(req: Request) {
-  return req.query.branchId?.toString() ?? req.header("x-branch-id") ?? (canAccessAllBranches(req.tenantContext!) ? undefined : req.tenantContext!.branchId);
+  const queryBranchId = req.query.branchId?.toString();
+  if (queryBranchId) return queryBranchId;
+  if (canAccessAllBranches(req.tenantContext!) || canAccessScopedBranches(req.tenantContext!)) return undefined;
+  return req.header("x-branch-id") ?? req.tenantContext!.branchId;
+}
+
+function branchVisible(scope: ReturnType<typeof resolveBranchScope>, branchId: string) {
+  if (scope.branchScopeIds?.length) return scope.branchScopeIds.includes(branchId);
+  if (scope.branchId) return branchId === scope.branchId;
+  return true;
 }
 
 branchesRouter.get("/", requireTenant, requirePermission("branch.manage"), async (req, res) => {
@@ -29,8 +38,8 @@ branchesRouter.get("/", requireTenant, requirePermission("branch.manage"), async
 
   const result = await listBranches(req.tenantContext!.tenantId);
   res.json({
-    branches: scope.branchId ? result.branches.filter((branch) => branch.id === scope.branchId) : result.branches,
-    terminals: scope.branchId ? result.terminals.filter((terminal) => terminal.branchId === scope.branchId) : result.terminals
+    branches: result.branches.filter((branch) => branchVisible(scope, branch.id)),
+    terminals: result.terminals.filter((terminal) => branchVisible(scope, terminal.branchId))
   });
 });
 
@@ -45,8 +54,8 @@ branchesRouter.get("/options", requireTenant, requireAuthenticatedUser, async (r
 
   const result = await listBranchOptions(req.tenantContext!.tenantId);
   res.json({
-    branches: scope.branchId ? result.branches.filter((branch) => branch.id === scope.branchId) : result.branches,
-    terminals: scope.branchId ? result.terminals.filter((terminal) => terminal.branchId === scope.branchId) : result.terminals
+    branches: result.branches.filter((branch) => branchVisible(scope, branch.id)),
+    terminals: result.terminals.filter((terminal) => branchVisible(scope, terminal.branchId))
   });
 });
 
@@ -158,6 +167,11 @@ branchesRouter.post("/terminals", requireTenant, requirePermission("branch.manag
     return;
   }
 
+  if (result.status === "terminal_limit_reached") {
+    res.status(409).json({ error: "Terminal limit reached for this tenant plan" });
+    return;
+  }
+
   res.status(201).json({ terminal: result.terminal });
 });
 
@@ -171,13 +185,24 @@ branchesRouter.patch("/terminals/:terminalId", requireTenant, requirePermission(
 
   if (!requireBranchContext(req, res)) return;
 
-  const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
+  const currentBranchId = req.header("x-branch-id") ?? req.query.branchId?.toString();
+  const scope = resolveBranchScope(req.tenantContext!, currentBranchId ?? parsed.data.branchId);
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
 
-  const terminalInput = parsed.data.branchId ? { ...parsed.data, branchId: scope.branchId ?? parsed.data.branchId } : parsed.data;
+  let terminalInput = parsed.data;
+  if (parsed.data.branchId) {
+    const targetScope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
+    if (targetScope.forbidden) {
+      res.status(403).json({ error: "Branch access denied" });
+      return;
+    }
+
+    terminalInput = { ...parsed.data, branchId: targetScope.branchId ?? parsed.data.branchId };
+  }
+
   const scopedBranchId = canAccessAllBranches(req.tenantContext!) ? undefined : scope.branchId;
   const result = await updateTerminal(req.tenantContext!.tenantId, req.tenantContext!.userId, req.params.terminalId.toString(), terminalInput, scopedBranchId);
 

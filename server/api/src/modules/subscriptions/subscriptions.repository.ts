@@ -1,9 +1,12 @@
 import type { Prisma, SubscriptionInvoice as DbSubscriptionInvoice, TenantSubscription as DbTenantSubscription } from "@prisma/client";
 import {
   appendAudit,
+  branches,
   demoTenants,
+  staffMembers,
   subscriptionInvoices,
   tenantSubscriptions,
+  terminals,
   type SubscriptionInvoice,
   type SubscriptionInvoiceStatus,
   type SubscriptionPlan,
@@ -72,6 +75,7 @@ type SubscriptionInvoiceCreateInput = {
   status: SubscriptionInvoiceStatus;
   issuedAt: string;
   dueAt: string;
+  paymentReference?: string;
 };
 
 function nextAuditId() {
@@ -146,13 +150,36 @@ async function appendSubscriptionAudit(event: Parameters<typeof appendAudit>[0])
   });
 }
 
+async function getSubscriptionUsage(tenantId: string) {
+  if (useDemoStore) {
+    return {
+      branches: branches.filter((branch) => branch.tenantId === tenantId && branch.status === "active").length,
+      users: staffMembers.filter((member) => member.tenantId === tenantId && member.inviteStatus !== "revoked").length,
+      terminals: terminals.filter((terminal) => terminal.tenantId === tenantId).length
+    };
+  }
+
+  const [activeBranches, billableUsers, tenantTerminals] = await Promise.all([
+    prisma.branch.count({ where: { tenantId, status: "active" } }),
+    prisma.staffMember.count({ where: { tenantId, inviteStatus: { not: "revoked" } } }),
+    prisma.terminal.count({ where: { tenantId } })
+  ]);
+
+  return {
+    branches: activeBranches,
+    users: billableUsers,
+    terminals: tenantTerminals
+  };
+}
+
 export async function getSubscriptionOverview(tenantId: string) {
   const plans = Object.entries(planCatalog).map(([plan, limits]) => ({ plan: plan as SubscriptionPlan, ...limits }));
+  const usage = await getSubscriptionUsage(tenantId);
 
   if (useDemoStore) {
     const subscription = tenantSubscriptions.find((item) => item.tenantId === tenantId) ?? null;
     const invoices = subscriptionInvoices.filter((invoice) => invoice.tenantId === tenantId);
-    return { subscription, invoices, plans };
+    return { subscription, invoices, plans, usage };
   }
 
   const [subscription, invoices] = await Promise.all([
@@ -185,14 +212,16 @@ export async function getSubscriptionOverview(tenantId: string) {
         updatedAt: now
       } : null,
       invoices: invoices.map(toApiInvoice),
-      plans
+      plans,
+      usage
     };
   }
 
   return {
     subscription: toApiSubscription(subscription),
     invoices: invoices.map(toApiInvoice),
-    plans
+    plans,
+    usage
   };
 }
 
@@ -329,6 +358,7 @@ export async function createSubscriptionInvoice(tenantId: string, userId: string
       issuedAt: input.issuedAt,
       dueAt: input.dueAt,
       paidAt: input.status === "paid" ? now : undefined,
+      paymentReference: input.paymentReference?.trim() || undefined,
       createdAt: now
     };
     subscriptionInvoices.unshift(invoice);
@@ -360,7 +390,8 @@ export async function createSubscriptionInvoice(tenantId: string, userId: string
       status: input.status,
       issuedAt: new Date(input.issuedAt),
       dueAt: new Date(input.dueAt),
-      paidAt: input.status === "paid" ? new Date() : null
+      paidAt: input.status === "paid" ? new Date() : null,
+      paymentReference: input.paymentReference?.trim() || null
     }
   });
 
@@ -380,9 +411,10 @@ export async function updateSubscriptionInvoiceStatus(tenantId: string, userId: 
   if (useDemoStore) {
     const invoice = subscriptionInvoices.find((item) => item.tenantId === tenantId && item.id === invoiceId);
     if (!invoice) return { status: "not_found" as const };
+    if ((invoice.status === "paid" || invoice.status === "void") && invoice.status !== status) return { status: "finalized" as const };
 
     invoice.status = status;
-    invoice.paymentReference = paymentReference || invoice.paymentReference;
+    invoice.paymentReference = paymentReference?.trim() || invoice.paymentReference;
     invoice.paidAt = status === "paid" ? new Date().toISOString() : invoice.paidAt;
 
     await appendSubscriptionAudit({
@@ -399,12 +431,13 @@ export async function updateSubscriptionInvoiceStatus(tenantId: string, userId: 
 
   const existing = await prisma.subscriptionInvoice.findFirst({ where: { tenantId, id: invoiceId } });
   if (!existing) return { status: "not_found" as const };
+  if ((existing.status === "paid" || existing.status === "void") && existing.status !== status) return { status: "finalized" as const };
 
   const invoice = await prisma.subscriptionInvoice.update({
     where: { id: existing.id },
     data: {
       status,
-      paymentReference: paymentReference || existing.paymentReference,
+      paymentReference: paymentReference?.trim() || existing.paymentReference,
       paidAt: status === "paid" ? new Date() : existing.paidAt
     }
   });

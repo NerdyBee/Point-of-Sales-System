@@ -10,7 +10,7 @@ import {
   tableTransferSchema
 } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
-import { canAccessAllBranches, resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, canAccessScopedBranches, resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import { listStaffOptions } from "../staff/staff.repository";
 import {
   addTableOrderItem,
@@ -29,12 +29,15 @@ import {
 export const restaurantRouter = Router();
 
 function requestedBranch(req: Request, bodyBranchId?: string) {
-  return bodyBranchId ?? req.query.branchId?.toString() ?? req.header("x-branch-id") ?? req.tenantContext!.branchId;
+  const requested = bodyBranchId ?? req.query.branchId?.toString() ?? req.header("x-branch-id");
+  if (requested) return requested;
+  if (canAccessAllBranches(req.tenantContext!) || canAccessScopedBranches(req.tenantContext!)) return undefined;
+  return req.tenantContext!.branchId;
 }
 
 function resolveScopedBranch(req: Request, res: Response, requestedBranchId?: string) {
   const scope = resolveBranchScope(req.tenantContext!, requestedBranchId);
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return null;
   }
@@ -42,20 +45,28 @@ function resolveScopedBranch(req: Request, res: Response, requestedBranchId?: st
   return scope;
 }
 
-restaurantRouter.get("/tables", requireTenant, requirePermission("restaurant.manage"), async (req, res) => {
-  const scope = resolveScopedBranch(req, res, req.query.branchId?.toString());
-  if (!scope) return;
+function effectiveReadScope(scope: ReturnType<typeof resolveBranchScope>, requestedBranchId?: string) {
+  return !requestedBranchId && scope.branchScopeIds?.length ? { ...scope, branchId: undefined, branchIds: scope.branchScopeIds } : { ...scope, branchIds: undefined };
+}
 
-  const state = await getFloorState(req.tenantContext!.tenantId, scope.branchId);
+restaurantRouter.get("/tables", requireTenant, requirePermission("restaurant.manage"), async (req, res) => {
+  const requestedBranchId = req.query.branchId?.toString();
+  const scope = resolveScopedBranch(req, res, requestedBranchId);
+  if (!scope) return;
+  const effectiveScope = effectiveReadScope(scope, requestedBranchId);
+
+  const state = await getFloorState(req.tenantContext!.tenantId, { branchId: effectiveScope.branchId, branchIds: effectiveScope.branchIds });
 
   res.json(state);
 });
 
 restaurantRouter.get("/staff-options", requireTenant, requirePermission("restaurant.manage"), async (req, res) => {
-  const scope = resolveScopedBranch(req, res, req.query.branchId?.toString());
+  const requestedBranchId = req.query.branchId?.toString();
+  const scope = resolveScopedBranch(req, res, requestedBranchId);
   if (!scope) return;
+  const effectiveScope = effectiveReadScope(scope, requestedBranchId);
 
-  const staff = await listStaffOptions(req.tenantContext!.tenantId, scope.branchId);
+  const staff = await listStaffOptions(req.tenantContext!.tenantId, { branchId: effectiveScope.branchId, branchIds: effectiveScope.branchIds });
   res.json({ staff });
 });
 

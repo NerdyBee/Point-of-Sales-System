@@ -9,6 +9,7 @@ import { prisma } from "../../shared/db/prisma";
 import { validateAppliedApproval } from "../approvals/approvals.repository";
 
 const useDemoStore = process.env.NODE_ENV === "test";
+type BranchScopeFilter = { branchId?: string; branchIds?: string[] };
 
 function nextShiftId() {
   return `shift-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -79,6 +80,22 @@ function expectedCashAfterFromAudit(metadata: unknown) {
   return undefined;
 }
 
+function paymentNeedsExternalReconciliation(method: PaymentRecord["method"]) {
+  return method === "card" || method === "bank_transfer" || method === "mobile_money";
+}
+
+function matchesBranchScope(scope: BranchScopeFilter, branchId: string) {
+  if (scope.branchId) return branchId === scope.branchId;
+  if (scope.branchIds?.length) return scope.branchIds.includes(branchId);
+  return true;
+}
+
+function branchWhere(scope: BranchScopeFilter) {
+  if (scope.branchId) return scope.branchId;
+  if (scope.branchIds?.length) return { in: scope.branchIds };
+  return undefined;
+}
+
 async function validateOpenRegisterTerminal(tenantId: string, branchId: string, terminalId: string) {
   if (useDemoStore) {
     const branch = branches.find((item) => item.tenantId === tenantId && item.id === branchId);
@@ -107,12 +124,12 @@ async function validateOpenRegisterTerminal(tenantId: string, branchId: string, 
   return { status: "valid" as const };
 }
 
-export async function getCurrentRegister(tenantId: string, branchId: string | undefined, terminalId?: string, cashierId?: string) {
+export async function getCurrentRegister(tenantId: string, scope: BranchScopeFilter = {}, terminalId?: string, cashierId?: string) {
   if (useDemoStore) {
     const shift = registerShifts.find(
       (item) =>
         item.tenantId === tenantId &&
-        item.branchId === branchId &&
+        matchesBranchScope(scope, item.branchId) &&
         (!terminalId || item.terminalId === terminalId) &&
         (!cashierId || item.cashierId === cashierId) &&
         item.status === "open"
@@ -135,7 +152,7 @@ export async function getCurrentRegister(tenantId: string, branchId: string | un
   const shift = await prisma.registerShift.findFirst({
     where: {
       tenantId,
-      branchId,
+      branchId: branchWhere(scope),
       terminalId: terminalId ? terminalId : undefined,
       cashierId: cashierId ? cashierId : undefined,
       status: "open"
@@ -165,6 +182,33 @@ export async function getCurrentRegister(tenantId: string, branchId: string | un
     payments: payments.map(toApiPayment),
     movements: movements.map((movement) => toApiMovement(movement, expectedCashByMovementId.get(movement.id)))
   };
+}
+
+export async function listRegisterShiftHistory(tenantId: string, scope: BranchScopeFilter = {}, terminalId?: string, cashierId?: string) {
+  if (useDemoStore) {
+    return registerShifts
+      .filter((shift) =>
+        shift.tenantId === tenantId &&
+        matchesBranchScope(scope, shift.branchId) &&
+        (!terminalId || shift.terminalId === terminalId) &&
+        (!cashierId || shift.cashierId === cashierId)
+      )
+      .sort((left, right) => new Date(right.openedAt).getTime() - new Date(left.openedAt).getTime())
+      .slice(0, 100);
+  }
+
+  const shifts = await prisma.registerShift.findMany({
+    where: {
+      tenantId,
+      branchId: branchWhere(scope),
+      terminalId: terminalId ? terminalId : undefined,
+      cashierId: cashierId ? cashierId : undefined
+    },
+    orderBy: { openedAt: "desc" },
+    take: 100
+  });
+
+  return shifts.map(toApiShift);
 }
 
 export async function openRegisterShift(
@@ -420,7 +464,13 @@ export async function closeRegisterShift(
     const shift = registerShifts.find((item) => item.tenantId === tenantId && (!branchId || item.branchId === branchId) && item.id === input.shiftId);
 
     if (!shift || shift.status !== "open") return { status: "shift_not_found" as const };
-    const hasPendingPayments = paymentRecords.some((payment) => payment.tenantId === tenantId && payment.shiftId === shift.id && payment.method !== "cash" && payment.reconciliationStatus === "pending");
+    const hasPendingPayments = paymentRecords.some(
+      (payment) =>
+        payment.tenantId === tenantId &&
+        payment.shiftId === shift.id &&
+        paymentNeedsExternalReconciliation(payment.method) &&
+        payment.reconciliationStatus === "pending"
+    );
     if (hasPendingPayments) return { status: "pending_payments" as const };
 
     const variance = input.countedCash - shift.expectedCash;
@@ -460,7 +510,7 @@ export async function closeRegisterShift(
       where: {
         tenantId,
         shiftId: shift.id,
-        method: { not: "cash" },
+        method: { in: ["card", "bank_transfer", "mobile_money"] },
         reconciliationStatus: "pending"
       }
     });

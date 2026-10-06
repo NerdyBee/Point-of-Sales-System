@@ -82,12 +82,16 @@ async function appendExpenseAudit(event: Parameters<typeof appendAudit>[0]) {
 
 export async function listExpenses(
   tenantId: string,
-  filters: { branchId?: string; status?: string; startDate?: Date; endDate?: Date }
+  filters: { branchId?: string; branchIds?: string[]; status?: string; startDate?: Date; endDate?: Date }
 ) {
   if (useDemoStore) {
     return expenses
       .filter((expense) => expense.tenantId === tenantId)
-      .filter((expense) => !filters.branchId || expense.branchId === filters.branchId)
+      .filter((expense) => {
+        if (filters.branchId) return expense.branchId === filters.branchId;
+        if (filters.branchIds?.length) return filters.branchIds.includes(expense.branchId);
+        return true;
+      })
       .filter((expense) => !filters.status || filters.status === "all" || expense.status === filters.status)
       .filter((expense) => (filters.startDate ? new Date(expense.spentAt).getTime() >= filters.startDate.getTime() : true))
       .filter((expense) => (filters.endDate ? new Date(expense.spentAt).getTime() <= filters.endDate.getTime() : true));
@@ -103,7 +107,7 @@ export async function listExpenses(
   const records = await prisma.expense.findMany({
     where: {
       tenantId,
-      branchId: filters.branchId ? filters.branchId : undefined,
+      branchId: filters.branchId ? filters.branchId : filters.branchIds?.length ? { in: filters.branchIds } : undefined,
       status: filters.status && filters.status !== "all" ? filters.status : undefined,
       spentAt
     },
@@ -184,10 +188,17 @@ export async function updateExpenseStatus(
   expenseId: string,
   status: Extract<ExpenseStatus, "approved" | "paid" | "rejected" | "voided">,
   note?: string,
-  branchId?: string
+  filters: { branchId?: string; branchIds?: string[] } = {}
 ) {
   if (useDemoStore) {
-    const expense = expenses.find((item) => item.tenantId === tenantId && item.id === expenseId && (!branchId || item.branchId === branchId));
+    const expense = expenses.find((item) => {
+      const branchMatch = filters.branchId
+        ? item.branchId === filters.branchId
+        : filters.branchIds?.length
+          ? filters.branchIds.includes(item.branchId)
+          : true;
+      return item.tenantId === tenantId && item.id === expenseId && branchMatch;
+    });
     if (!expense) return { status: "not_found" as const };
     if (expense.status === "voided") return { status: "already_voided" as const };
 
@@ -212,7 +223,9 @@ export async function updateExpenseStatus(
     return { status: "updated" as const, expense };
   }
 
-  const existing = await prisma.expense.findFirst({ where: { tenantId, id: expenseId, branchId } });
+  const existing = await prisma.expense.findFirst({
+    where: { tenantId, id: expenseId, branchId: filters.branchId ? filters.branchId : filters.branchIds?.length ? { in: filters.branchIds } : undefined }
+  });
   if (!existing) return { status: "not_found" as const };
   if (existing.status === "voided") return { status: "already_voided" as const };
 

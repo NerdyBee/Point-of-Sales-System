@@ -32,6 +32,12 @@ const discountApprovalThreshold = 50000;
 
 type SaleInput = z.infer<typeof createSaleSchema>;
 type SaleAction = "refund" | "void";
+type BranchScopeFilter = { branchId?: string; branchIds?: string[] };
+type SalePaymentMethod = SaleInput["payments"][number]["method"];
+
+function paymentNeedsExternalReconciliation(method: SalePaymentMethod) {
+  return method === "card" || method === "bank_transfer" || method === "mobile_money";
+}
 type SerializedSale = CompletedSale & {
   customer?: Pick<DbCustomer, "id" | "name" | "phone" | "group" | "loyaltyPoints" | "outstandingBalance">;
   payments: PaymentRecord[];
@@ -39,6 +45,18 @@ type SerializedSale = CompletedSale & {
 
 function isServiceProduct(product: { category: string }) {
   return product.category.trim().toLowerCase() === "services";
+}
+
+function matchesBranchScope(scope: BranchScopeFilter, branchId: string) {
+  if (scope.branchId) return branchId === scope.branchId;
+  if (scope.branchIds?.length) return scope.branchIds.includes(branchId);
+  return true;
+}
+
+function branchWhere(scope: BranchScopeFilter) {
+  if (scope.branchId) return scope.branchId;
+  if (scope.branchIds?.length) return { in: scope.branchIds };
+  return undefined;
 }
 
 async function validateDiscountApprovalForSale(tenantId: string, input: SaleInput, discountTotal: number) {
@@ -63,6 +81,7 @@ const paymentSettingKey = {
 function nextSaleIdFromCount(count: number) {
   return `INV-${String(count + 1).padStart(5, "0")}`;
 }
+
 
 function nextPaymentId() {
   return `payment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -476,11 +495,11 @@ async function applyDbCustomerSaleReversal(
   }
 }
 
-export async function listSales(tenantId: string, filters: { branchId?: string; status?: string; cashierId?: string } = {}) {
+export async function listSales(tenantId: string, filters: BranchScopeFilter & { status?: string; cashierId?: string } = {}) {
   if (useDemoStore) {
     return saleLedger
       .filter((sale) => sale.tenantId === tenantId)
-      .filter((sale) => !filters.branchId || sale.branchId === filters.branchId)
+      .filter((sale) => matchesBranchScope(filters, sale.branchId))
       .filter((sale) => !filters.cashierId || sale.cashierId === filters.cashierId)
       .filter((sale) => !filters.status || filters.status === "all" || sale.status === filters.status)
       .map((sale) => serializeDemoSale(sale));
@@ -489,7 +508,7 @@ export async function listSales(tenantId: string, filters: { branchId?: string; 
   const sales = await prisma.completedSale.findMany({
     where: {
       tenantId,
-      branchId: filters.branchId ? filters.branchId : undefined,
+      branchId: branchWhere(filters),
       cashierId: filters.cashierId ? filters.cashierId : undefined,
       status: filters.status && filters.status !== "all" ? filters.status : undefined
     },
@@ -517,7 +536,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
       vatRate: tenant.settings.defaultTaxRate,
       serviceChargeEnabled: tenant.settings.serviceChargeEnabled,
       serviceChargeRate: tenant.settings.serviceChargeRate
-    });
+    }, demoProducts);
 
     const disabledPayment = input.payments.find((payment) => {
       const key = paymentSettingKey[payment.method as keyof typeof paymentSettingKey];
@@ -611,7 +630,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
         method: payment.method,
         amount: payment.amount,
         reference: payment.reference,
-        reconciliationStatus: payment.method === "cash" ? "matched" : "pending"
+        reconciliationStatus: paymentNeedsExternalReconciliation(payment.method) ? "pending" : "matched"
       });
 
       if (payment.method === "cash") shift.expectedCash += payment.amount;
@@ -712,7 +731,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
     return { status: "created" as const, response };
   }
 
-  const products = await prisma.product.findMany({ where: { tenantId, id: { in: input.lines.map((line) => line.productId) } } });
+  const products = await prisma.product.findMany({ where: { tenantId, branchId: input.branchId, id: { in: input.lines.map((line) => line.productId) } } });
   const productCatalog = products.map(toApiProduct);
   const idempotentSale = await prisma.completedSale.findUnique({
     where: { tenantId_idempotencyKey: { tenantId, idempotencyKey: input.idempotencyKey } }
@@ -870,7 +889,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
           method: payment.method,
           amount: payment.amount,
           reference: payment.reference,
-          reconciliationStatus: payment.method === "cash" ? "matched" : "pending"
+          reconciliationStatus: paymentNeedsExternalReconciliation(payment.method) ? "pending" : "matched"
         }
       });
       if (payment.method === "cash") cashTotal += payment.amount;
@@ -971,11 +990,11 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
   return result;
 }
 
-export async function queueReceiptAction(tenantId: string, branchId: string | undefined, userId: string, saleId: string, channel: "print" | "whatsapp") {
+export async function queueReceiptAction(tenantId: string, scope: BranchScopeFilter, userId: string, saleId: string, channel: "print" | "whatsapp") {
   const sale = useDemoStore
-    ? saleLedger.find((item) => item.tenantId === tenantId && item.id === saleId && (!branchId || item.branchId === branchId))
+    ? saleLedger.find((item) => item.tenantId === tenantId && item.id === saleId && matchesBranchScope(scope, item.branchId))
     : await prisma.completedSale
-        .findFirst({ where: { tenantId, id: saleId, branchId: branchId ? branchId : undefined } })
+        .findFirst({ where: { tenantId, id: saleId, branchId: branchWhere(scope) } })
         .then((item) => (item ? toApiSale(item) : undefined));
 
   if (!sale) return { status: "sale_not_found" as const };
@@ -1013,9 +1032,9 @@ export async function queueReceiptAction(tenantId: string, branchId: string | un
   return { status: "queued" as const, delivery: { saleId: sale.id, channel, status: "queued", queuedAt } };
 }
 
-export async function voidSale(tenantId: string, branchId: string | undefined, userId: string, saleId: string, reason: string, approvalId?: string) {
+export async function voidSale(tenantId: string, scope: BranchScopeFilter, userId: string, saleId: string, reason: string, approvalId?: string) {
   if (useDemoStore) {
-    const sale = saleLedger.find((item) => item.tenantId === tenantId && item.id === saleId && (!branchId || item.branchId === branchId));
+    const sale = saleLedger.find((item) => item.tenantId === tenantId && item.id === saleId && matchesBranchScope(scope, item.branchId));
     if (!sale) return { status: "sale_not_found" as const };
     if (sale.status !== "completed") return { status: "not_completed" as const };
     const approvalValidation = await validateAppliedApproval(tenantId, approvalId, {
@@ -1052,7 +1071,7 @@ export async function voidSale(tenantId: string, branchId: string | undefined, u
     return { status: "voided" as const, sale: serializeDemoSale(sale) };
   }
 
-  const saleRecord = await prisma.completedSale.findFirst({ where: { tenantId, id: saleId, branchId: branchId ? branchId : undefined } });
+  const saleRecord = await prisma.completedSale.findFirst({ where: { tenantId, id: saleId, branchId: branchWhere(scope) } });
   if (!saleRecord) return { status: "sale_not_found" as const };
   const sale = toApiSale(saleRecord);
   if (sale.status !== "completed") return { status: "not_completed" as const };
@@ -1126,9 +1145,9 @@ export async function voidSale(tenantId: string, branchId: string | undefined, u
   return { status: "voided" as const, sale: await serializeDbSale(updatedSale) };
 }
 
-export async function refundSale(tenantId: string, branchId: string | undefined, userId: string, saleId: string, amount: number, reason: string, approvalId?: string) {
+export async function refundSale(tenantId: string, scope: BranchScopeFilter, userId: string, saleId: string, amount: number, reason: string, approvalId?: string) {
   if (useDemoStore) {
-    const sale = saleLedger.find((item) => item.tenantId === tenantId && item.id === saleId && (!branchId || item.branchId === branchId));
+    const sale = saleLedger.find((item) => item.tenantId === tenantId && item.id === saleId && matchesBranchScope(scope, item.branchId));
     if (!sale) return { status: "sale_not_found" as const };
     if (sale.status === "voided" || sale.status === "refunded") return { status: "cannot_refund" as const };
 
@@ -1185,7 +1204,7 @@ export async function refundSale(tenantId: string, branchId: string | undefined,
     return { status: "refunded" as const, sale: serializeDemoSale(sale) };
   }
 
-  const saleRecord = await prisma.completedSale.findFirst({ where: { tenantId, id: saleId, branchId: branchId ? branchId : undefined } });
+  const saleRecord = await prisma.completedSale.findFirst({ where: { tenantId, id: saleId, branchId: branchWhere(scope) } });
   if (!saleRecord) return { status: "sale_not_found" as const };
   const sale = toApiSale(saleRecord);
   if (sale.status === "voided" || sale.status === "refunded") return { status: "cannot_refund" as const };

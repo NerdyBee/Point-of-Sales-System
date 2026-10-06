@@ -16,6 +16,7 @@ import {
 import { StatusBadge } from "../../shared/components/StatusBadge";
 import { StatCard } from "../../shared/components/StatCard";
 import { TablePagination, usePaginatedRows } from "../../shared/components/TablePagination";
+import { dateRangeErrorMessage, hasInvertedDateRange } from "../../shared/utils/dateFilters";
 
 const fallbackBranches: BranchOption[] = [];
 
@@ -24,7 +25,7 @@ function blankRecord(branchId = ""): SyncQueuePayload {
     branchId,
     terminalId: "",
     recordType: "" as SyncRecordType,
-    operation: "create",
+    operation: "" as SyncQueuePayload["operation"],
     idempotencyKey: "",
     payload: {}
   };
@@ -45,7 +46,8 @@ function payloadPreview(payload: Record<string, unknown>) {
 export function SyncMonitorView() {
   const storedAuth = useMemo(() => readStoredAuth(), []);
   const activeUserId = storedAuth?.staff.id ?? "";
-  const initialBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
+  const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
+  const initialBranchId = canUseAllBranches ? "" : storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
   const [records, setRecords] = useState<SyncQueueRecord[]>([]);
   const [branchId, setBranchId] = useState(initialBranchId);
   const [branches, setBranches] = useState<BranchOption[]>(fallbackBranches);
@@ -96,23 +98,28 @@ export function SyncMonitorView() {
   const branchLocked = Boolean(branchId && branches.length === 1);
 
   async function loadSync(nextStatus = statusFilter, nextTerminal = terminalFilter, nextBranchId = branchId, nextStartDate = startDate, nextEndDate = endDate) {
+    if (hasInvertedDateRange(nextStartDate, nextEndDate)) {
+      setStatus(dateRangeErrorMessage());
+      return;
+    }
+
     setStatus("Syncing queue...");
 
     try {
       const branchResponse = await fetchBranchOptions();
       const nextBranches = branchResponse.branches;
-      const branchTerminals = branchResponse.terminals.filter((terminal) => terminal.branchId === nextBranchId);
+      const branchTerminals = nextBranchId ? branchResponse.terminals.filter((terminal) => terminal.branchId === nextBranchId) : branchResponse.terminals;
       const terminalStillVisible = nextTerminal ? branchTerminals.some((terminal) => terminal.id === nextTerminal) : true;
       setBranches(nextBranches);
       setTerminals(branchTerminals);
       if (!terminalStillVisible) setTerminalFilter("");
       setForm((current) => ({
         ...current,
-        branchId: nextBranchId,
+        branchId: nextBranchId || current.branchId,
         terminalId: current.terminalId || branchTerminals.find((terminal) => terminal.status === "online")?.id || branchTerminals[0]?.id || ""
       }));
 
-      if (!nextBranchId) {
+      if (!nextBranchId && !canUseAllBranches) {
         setRecords([]);
         setStatus("Select a branch to load sync queue");
         return;
@@ -139,8 +146,8 @@ export function SyncMonitorView() {
   async function submitQueuedRecord(event: FormEvent) {
     event.preventDefault();
 
-    if (!form.terminalId || !form.recordType) {
-      setStatus("Select terminal and record type");
+    if (!form.terminalId || !form.recordType || !form.operation) {
+      setStatus("Select terminal, record type and operation");
       return;
     }
 
@@ -189,11 +196,17 @@ export function SyncMonitorView() {
     setStatus(`Updating ${record.id}...`);
 
     try {
+      const nextServerEntityId = nextStatus === "synced" ? record.serverEntityId || `server-${record.id}` : record.serverEntityId;
+      const nextError = nextStatus === "failed"
+        ? "Retry failed during manual review"
+        : nextStatus === "conflict"
+          ? "Marked as conflict during manual review"
+          : undefined;
       const response = await updateSyncRecordStatus(
         record.id,
         nextStatus,
-        nextStatus === "synced" ? record.serverEntityId || `server-${record.id}` : record.serverEntityId,
-        nextStatus === "failed" ? "Retry failed during manual review" : undefined,
+        nextServerEntityId,
+        nextError,
         record.branchId,
         activeUserId
       );
@@ -223,6 +236,16 @@ export function SyncMonitorView() {
 
     if (!reviewRecord || !reviewForm.status) {
       setStatus("Select a sync status");
+      return;
+    }
+
+    if (reviewForm.status === "synced" && !reviewForm.serverEntityId.trim()) {
+      setStatus("Server entity ID is required for synced records");
+      return;
+    }
+
+    if ((reviewForm.status === "failed" || reviewForm.status === "conflict") && !reviewForm.error.trim()) {
+      setStatus("Review note is required for failed or conflict records");
       return;
     }
 
@@ -314,7 +337,7 @@ export function SyncMonitorView() {
               </span>
             ) : (
               <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-                <option value="">Branch</option>
+                <option value="">All accessible branches</option>
                 {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
               </select>
             )}
@@ -533,11 +556,11 @@ export function SyncMonitorView() {
               </label>
               <label>
                 Server entity ID
-                <input value={reviewForm.serverEntityId} onChange={(event) => setReviewForm((current) => ({ ...current, serverEntityId: event.target.value }))} placeholder={`server-${reviewRecord.id}`} />
+                <input value={reviewForm.serverEntityId} onChange={(event) => setReviewForm((current) => ({ ...current, serverEntityId: event.target.value }))} placeholder={`server-${reviewRecord.id}`} required={reviewForm.status === "synced"} />
               </label>
               <label className="wide-field">
                 Error or review note
-                <input value={reviewForm.error} onChange={(event) => setReviewForm((current) => ({ ...current, error: event.target.value }))} placeholder="Mismatch, duplicate record, retry reason" />
+                <input value={reviewForm.error} onChange={(event) => setReviewForm((current) => ({ ...current, error: event.target.value }))} placeholder="Mismatch, duplicate record, retry reason" required={reviewForm.status === "failed" || reviewForm.status === "conflict"} />
               </label>
               <label className="wide-field">
                 Payload

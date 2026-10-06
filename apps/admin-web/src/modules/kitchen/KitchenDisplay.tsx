@@ -41,10 +41,12 @@ function elapsedMinutes(createdAt: string) {
 
 export function KitchenDisplay() {
   const storedAuth = useMemo(() => readStoredAuth(), []);
+  const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
+  const initialBranchId = canUseAllBranches ? "" : storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
   const stationUserId = storedAuth?.staff.id ?? "";
   const [tickets, setTickets] = useState<PrepTicket[]>([]);
   const [branches, setBranches] = useState<BranchOption[]>(fallbackBranches);
-  const [branchId, setBranchId] = useState(storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "");
+  const [branchId, setBranchId] = useState(initialBranchId);
   const [station, setStation] = useState<PrepStation | "All">("All");
   const [ticketStatusFilter, setTicketStatusFilter] = useState<PrepTicketStatus | "">("");
   const [ticketQuery, setTicketQuery] = useState("");
@@ -106,6 +108,7 @@ export function KitchenDisplay() {
   const ticketPage = usePaginatedRows(filteredTickets, 8);
   const alertPage = usePaginatedRows(alertTickets, 8);
   const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
+  const branchNameById = useMemo(() => new Map(branches.map((branch) => [branch.id, `${branch.name} - ${branch.city}`])), [branches]);
   const branchLocked = Boolean(branchId && branches.length === 1);
   const hasTicketFilters = Boolean(ticketQuery || priorityFilter);
 
@@ -113,16 +116,21 @@ export function KitchenDisplay() {
     try {
       const branchResponse = await fetchBranchOptions();
       setBranches(branchResponse.branches);
+      const effectiveBranchId = nextBranchId || (canUseAllBranches ? "" : branchResponse.branches[0]?.id || "");
 
-      if (!nextBranchId) {
+      if (!effectiveBranchId && !canUseAllBranches) {
         setTickets([]);
         setStatus("Select a branch to load prep tickets");
         return;
       }
 
-      const response = await fetchPrepTickets(nextBranchId, nextStation, stationUserId, nextStatusFilter);
+      if (effectiveBranchId !== branchId) {
+        setBranchId(effectiveBranchId);
+      }
+
+      const response = await fetchPrepTickets(effectiveBranchId, nextStation, stationUserId, nextStatusFilter);
       setTickets(response.tickets);
-      setStatus("Tickets synced");
+      setStatus(effectiveBranchId ? "Tickets synced" : "Tickets synced across accessible branches");
     } catch (error) {
       setBranches(fallbackBranches);
       setTickets([]);
@@ -135,7 +143,9 @@ export function KitchenDisplay() {
   }, []);
 
   async function changeTicketStatus(ticketId: string, nextStatus: PrepTicketStatus) {
-    if (!branchId) {
+    const ticket = tickets.find((item) => item.id === ticketId);
+    const ticketBranchId = ticket?.branchId ?? branchId;
+    if (!ticketBranchId) {
       setStatus("Select a branch before updating tickets");
       return;
     }
@@ -143,8 +153,7 @@ export function KitchenDisplay() {
     setStatus(`Updating ${ticketId}...`);
 
     try {
-      const ticket = tickets.find((item) => item.id === ticketId);
-      const response = await updatePrepTicketStatus(ticketId, nextStatus, `Marked ${statusLabel[nextStatus]}`, branchId, stationUserId, ticket?.station ?? station);
+      const response = await updatePrepTicketStatus(ticketId, nextStatus, `Marked ${statusLabel[nextStatus]}`, ticketBranchId, stationUserId, ticket?.station ?? station);
       setTickets((current) => current.map((ticket) => (ticket.id === response.ticket.id ? response.ticket : ticket)));
       setStatus(`${response.ticket.id} is ${statusLabel[response.ticket.status]}`);
     } catch (error) {
@@ -153,7 +162,9 @@ export function KitchenDisplay() {
   }
 
   async function changeItemStatus(ticketId: string, itemId: string, nextStatus: Exclude<PrepTicketStatus, "served" | "cancelled">) {
-    if (!branchId) {
+    const ticket = tickets.find((item) => item.id === ticketId);
+    const ticketBranchId = ticket?.branchId ?? branchId;
+    if (!ticketBranchId) {
       setStatus("Select a branch before updating ticket items");
       return;
     }
@@ -161,8 +172,7 @@ export function KitchenDisplay() {
     setStatus(`Updating ${itemId}...`);
 
     try {
-      const ticket = tickets.find((item) => item.id === ticketId);
-      const response = await updatePrepTicketItemStatus(ticketId, itemId, nextStatus, `Item marked ${statusLabel[nextStatus]}`, branchId, stationUserId, ticket?.station ?? station);
+      const response = await updatePrepTicketItemStatus(ticketId, itemId, nextStatus, `Item marked ${statusLabel[nextStatus]}`, ticketBranchId, stationUserId, ticket?.station ?? station);
       setTickets((current) => current.map((ticket) => (ticket.id === response.ticket.id ? response.ticket : ticket)));
       setStatus(`${response.ticket.id} item is ${statusLabel[nextStatus]}`);
     } catch (error) {
@@ -171,7 +181,8 @@ export function KitchenDisplay() {
   }
 
   async function changeTicketPriority(ticket: PrepTicket) {
-    if (!branchId) {
+    const ticketBranchId = ticket.branchId || branchId;
+    if (!ticketBranchId) {
       setStatus("Select a branch before updating priority");
       return;
     }
@@ -180,7 +191,7 @@ export function KitchenDisplay() {
     setStatus(`${nextPriority === "rush" ? "Escalating" : "Normalizing"} ${ticket.id}...`);
 
     try {
-      const response = await updatePrepTicketPriority(ticket.id, nextPriority, `Marked ${nextPriority}`, branchId, stationUserId, ticket.station);
+      const response = await updatePrepTicketPriority(ticket.id, nextPriority, `Marked ${nextPriority}`, ticketBranchId, stationUserId, ticket.station);
       setTickets((current) => current.map((item) => (item.id === response.ticket.id ? response.ticket : item)));
       setStatus(`${response.ticket.id} priority is ${response.ticket.priority}`);
     } catch (error) {
@@ -225,7 +236,7 @@ export function KitchenDisplay() {
               </span>
             ) : (
               <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-                <option value="">Branch</option>
+                <option value="">{canUseAllBranches ? "All accessible branches" : "Branch"}</option>
                 {branches.map((branch) => (
                   <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
                 ))}
@@ -319,6 +330,7 @@ export function KitchenDisplay() {
               <div>
                 <h2><span className="number-cell">{ticketPage.startIndex + index + 1}</span>{ticket.id}</h2>
                 <span>{ticket.tableLabel} - {ticket.station} - {ticket.serviceType.replace("_", " ")}</span>
+                <small>{branchNameById.get(ticket.branchId) ?? ticket.branchId}</small>
                 {ticket.tableOrderId ? <small>{ticket.tableOrderId}</small> : null}
               </div>
               <div className="ticket-heading-actions">

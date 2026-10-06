@@ -32,7 +32,8 @@ function blankProduct(taxRate = defaultTaxRate, branchId = ""): ProductPayload {
 
 export function CatalogView() {
   const storedAuth = useMemo(() => readStoredAuth(), []);
-  const activeBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
+  const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
+  const activeBranchId = canUseAllBranches ? "" : storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
   const activeUserId = storedAuth?.staff.id ?? "";
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -261,7 +262,7 @@ export function CatalogView() {
           </span>
         ) : (
           <select className="compact-select" value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
-            <option value="">Branch</option>
+            <option value="">{canUseAllBranches ? "All accessible branches" : "Branch"}</option>
             {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
           </select>
         )}

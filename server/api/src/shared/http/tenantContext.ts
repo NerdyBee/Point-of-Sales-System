@@ -2,13 +2,15 @@ import type { NextFunction, Request, Response } from "express";
 import type { PermissionAction } from "@pos/types";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { getRolePermissions } from "../../modules/roles/roles.repository";
-import { authSessions, staffMembers } from "../data/demoStore";
+import { authSessions, branches, staffMembers } from "../data/demoStore";
 import { prisma } from "../db/prisma";
 import { fallbackPermissionsForRole } from "../security/accessControl";
 
 export interface TenantContext {
   tenantId: string;
   branchId?: string;
+  branchCity?: string;
+  branchScopeIds?: string[];
   userId: string;
   role: string;
   sessionId?: string;
@@ -41,7 +43,11 @@ export function permissionsForRole(role: string) {
 }
 
 export function canAccessAllBranches(context: TenantContext) {
-  return context.role === "owner" || context.role === "state_manager";
+  return context.role === "owner";
+}
+
+export function canAccessScopedBranches(context: TenantContext) {
+  return context.role === "state_manager" && Boolean(context.branchScopeIds?.length);
 }
 
 export function isSelfScopedRole(context: TenantContext) {
@@ -53,6 +59,16 @@ export function resolveBranchScope(context: TenantContext, requestedBranchId?: s
 
   if (canAccessAllBranches(context)) {
     return { branchId: requested || undefined, forbidden: false };
+  }
+
+  if (canAccessScopedBranches(context)) {
+    if (requested) {
+      return context.branchScopeIds!.includes(requested)
+        ? { branchId: requested, branchScopeIds: context.branchScopeIds, forbidden: false }
+        : { branchId: context.branchId, branchScopeIds: context.branchScopeIds, forbidden: true };
+    }
+
+    return { branchId: context.branchId, branchScopeIds: context.branchScopeIds, forbidden: false };
   }
 
   if (!context.branchId) {
@@ -117,9 +133,16 @@ async function currentContextForToken(payload: AccessTokenPayload): Promise<Tena
       member.inviteStatus === "accepted"
     );
     if (!session || !staff) return null;
+    const branchId = session.branchId || staff.branchId || payload.branchId;
+    const branch = branches.find((item) => item.tenantId === payload.tenantId && item.id === branchId);
+    const branchScopeIds = staff.role === "state_manager" && branch?.city
+      ? branches.filter((item) => item.tenantId === payload.tenantId && item.city.toLowerCase() === branch.city.toLowerCase()).map((item) => item.id)
+      : undefined;
     return {
       tenantId: payload.tenantId,
-      branchId: session.branchId || staff.branchId || payload.branchId,
+      branchId,
+      branchCity: branch?.city,
+      branchScopeIds,
       userId: staff.id,
       role: staff.role,
       sessionId: session.id,
@@ -147,10 +170,22 @@ async function currentContextForToken(payload: AccessTokenPayload): Promise<Tena
     })
   ]);
   if (!session || !staff) return null;
+  const branchId = session.branchId ?? staff.branchId ?? payload.branchId;
+  const branch = branchId
+    ? await prisma.branch.findFirst({ where: { tenantId: payload.tenantId, id: branchId }, select: { city: true } })
+    : null;
+  const branchScopeIds = staff.role === "state_manager" && branch?.city
+    ? (await prisma.branch.findMany({
+      where: { tenantId: payload.tenantId, city: branch.city },
+      select: { id: true }
+    })).map((item) => item.id)
+    : undefined;
 
   return {
     tenantId: payload.tenantId,
-    branchId: session.branchId ?? staff.branchId ?? payload.branchId,
+    branchId,
+    branchCity: branch?.city,
+    branchScopeIds,
     userId: staff.id,
     role: staff.role,
     sessionId: session.id,
@@ -177,13 +212,30 @@ export function attachTenantContext(req: Request, _res: Response, next: NextFunc
 
   if (tenantId) {
     const role = (allowHeaderAuth ? req.header("x-role") : undefined) ?? "";
+    const userId = (allowHeaderAuth ? req.header("x-user-id") : undefined) ?? "";
+    const headerStaff = userId ? staffMembers.find((member) => member.tenantId === tenantId && member.id === userId) : undefined;
+    const stateManagerFallbackBranch = role === "state_manager"
+      ? headerStaff?.branchId ?? branches.find((item) => item.tenantId === tenantId)?.id
+      : undefined;
+    const branchScopeAnchorId = role === "state_manager"
+      ? headerStaff?.branchId ?? stateManagerFallbackBranch
+      : branchId;
     const context: TenantContext = {
       tenantId,
-      branchId: branchId || undefined,
-      userId: (allowHeaderAuth ? req.header("x-user-id") : undefined) ?? "",
+      branchId: branchId || stateManagerFallbackBranch || undefined,
+      branchCity: undefined,
+      userId,
       role,
       permissions: fallbackPermissionsForRole(role)
     };
+    if (role === "state_manager") {
+      const branch = branches.find((item) => item.tenantId === tenantId && item.id === branchScopeAnchorId);
+      const city = branch?.city;
+      context.branchCity = city;
+      context.branchScopeIds = city
+        ? branches.filter((item) => item.tenantId === tenantId && item.city.toLowerCase() === city.toLowerCase()).map((item) => item.id)
+        : context.branchId ? [context.branchId] : undefined;
+    }
     req.tenantContext = context;
 
     if (role) {

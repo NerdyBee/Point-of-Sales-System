@@ -85,7 +85,7 @@ async function appendApprovalAudit(tx: Prisma.TransactionClient, event: Paramete
 
 export async function listApprovals(
   tenantId: string,
-  filters: { branchId?: string; status?: string; type?: string; startDate?: Date; endDate?: Date }
+  filters: { branchId?: string; branchIds?: string[]; status?: string; type?: string; startDate?: Date; endDate?: Date }
 ) {
   const status = filters.status ?? "all";
   const type = filters.type ?? "all";
@@ -93,7 +93,11 @@ export async function listApprovals(
   if (useDemoStore) {
     return approvalRequests
       .filter((approval) => approval.tenantId === tenantId)
-      .filter((approval) => (filters.branchId ? approval.branchId === filters.branchId : true))
+      .filter((approval) => {
+        if (filters.branchId) return approval.branchId === filters.branchId;
+        if (filters.branchIds?.length) return filters.branchIds.includes(approval.branchId);
+        return true;
+      })
       .filter((approval) => (status === "all" ? true : approval.status === status))
       .filter((approval) => (type === "all" ? true : approval.type === type))
       .filter((approval) => (filters.startDate ? new Date(approval.createdAt).getTime() >= filters.startDate.getTime() : true))
@@ -110,7 +114,7 @@ export async function listApprovals(
   const approvals = await prisma.approvalRequest.findMany({
     where: {
       tenantId,
-      branchId: filters.branchId ? filters.branchId : undefined,
+      branchId: filters.branchId ? filters.branchId : filters.branchIds?.length ? { in: filters.branchIds } : undefined,
       status: status === "all" ? undefined : status,
       type: type === "all" ? undefined : type,
       createdAt
@@ -183,9 +187,12 @@ export async function requestApproval(tenantId: string, userId: string, input: A
   return { status: "created" as const, approval };
 }
 
-export async function decideApproval(tenantId: string, branchId: string | undefined, userId: string, approvalId: string, input: ApprovalDecisionInput) {
+export async function decideApproval(tenantId: string, scope: { branchId?: string; branchIds?: string[] }, userId: string, approvalId: string, input: ApprovalDecisionInput) {
   if (useDemoStore) {
-    const approval = approvalRequests.find((item) => item.tenantId === tenantId && (!branchId || item.branchId === branchId) && item.id === approvalId);
+    const approval = approvalRequests.find((item) => {
+      const branchMatch = scope.branchId ? item.branchId === scope.branchId : scope.branchIds?.length ? scope.branchIds.includes(item.branchId) : true;
+      return item.tenantId === tenantId && branchMatch && item.id === approvalId;
+    });
 
     if (!approval) return { status: "not_found" as const };
     if (approval.status !== "pending") return { status: "already_decided" as const };
@@ -208,7 +215,9 @@ export async function decideApproval(tenantId: string, branchId: string | undefi
   }
 
   return prisma.$transaction(async (tx) => {
-    const approval = await tx.approvalRequest.findFirst({ where: { tenantId, branchId: branchId ? branchId : undefined, id: approvalId } });
+    const approval = await tx.approvalRequest.findFirst({
+      where: { tenantId, branchId: scope.branchId ? scope.branchId : scope.branchIds?.length ? { in: scope.branchIds } : undefined, id: approvalId }
+    });
 
     if (!approval) return { status: "not_found" as const };
     if (approval.status !== "pending") return { status: "already_decided" as const };
@@ -240,7 +249,14 @@ export async function decideApproval(tenantId: string, branchId: string | undefi
 export async function applyApproval(tenantContext: TenantContext, approvalId: string, input: ApprovalApplyInput) {
   if (useDemoStore) {
     const approval = approvalRequests.find(
-      (item) => item.tenantId === tenantContext.tenantId && (!tenantContext.branchId || item.branchId === tenantContext.branchId) && item.id === approvalId
+      (item) => {
+        const branchMatch = tenantContext.branchId
+          ? item.branchId === tenantContext.branchId
+          : tenantContext.branchScopeIds?.length
+            ? tenantContext.branchScopeIds.includes(item.branchId)
+            : true;
+        return item.tenantId === tenantContext.tenantId && branchMatch && item.id === approvalId;
+      }
     );
 
     if (!approval) return { status: "not_found" as const };
@@ -268,7 +284,11 @@ export async function applyApproval(tenantContext: TenantContext, approvalId: st
 
   return prisma.$transaction(async (tx) => {
     const approval = await tx.approvalRequest.findFirst({
-      where: { tenantId: tenantContext.tenantId, branchId: tenantContext.branchId ? tenantContext.branchId : undefined, id: approvalId }
+      where: {
+        tenantId: tenantContext.tenantId,
+        branchId: tenantContext.branchId ? tenantContext.branchId : tenantContext.branchScopeIds?.length ? { in: tenantContext.branchScopeIds } : undefined,
+        id: approvalId
+      }
     });
 
     if (!approval) return { status: "not_found" as const };

@@ -1,6 +1,6 @@
 import { syncQueueInputSchema, syncQueueStatusSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
-import { canAccessAllBranches, resolveBranchScope, requireAnyPermission, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, canAccessScopedBranches, resolveBranchScope, requireAnyPermission, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import { listSyncQueue, queueSyncRecord, updateSyncRecordStatus } from "./sync.repository";
 
 export const syncRouter = Router();
@@ -15,16 +15,13 @@ function requestedBranch(req: Request) {
   const requested = req.query.branchId?.toString() ?? req.header("x-branch-id");
   if (requested) return requested;
 
-  if (!canAccessAllBranches(req.tenantContext!) && req.tenantContext!.branchId) {
-    return req.tenantContext!.branchId;
-  }
-
-  return undefined;
+  if (canAccessAllBranches(req.tenantContext!) || canAccessScopedBranches(req.tenantContext!)) return undefined;
+  return req.tenantContext!.branchId;
 }
 
 function resolveSyncBranch(req: Request, res: Response) {
   const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return null;
   }
@@ -32,12 +29,18 @@ function resolveSyncBranch(req: Request, res: Response) {
   return scope;
 }
 
+function effectiveBranchScope(scope: ReturnType<typeof resolveBranchScope>, requestedBranchId?: string) {
+  return !requestedBranchId && scope.branchScopeIds?.length ? { ...scope, branchId: undefined } : scope;
+}
+
 syncRouter.get("/queue", requireTenant, requirePermission("sync.manage"), async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
+  const requestedBranchId = requestedBranch(req);
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranchId);
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
+  const effectiveScope = effectiveBranchScope(scope, requestedBranchId);
 
   const startDateValue = req.query.startDate?.toString();
   const endDateValue = req.query.endDate?.toString();
@@ -55,7 +58,8 @@ syncRouter.get("/queue", requireTenant, requirePermission("sync.manage"), async 
   }
 
   const records = await listSyncQueue(req.tenantContext!.tenantId, {
-    branchId: scope.branchId,
+    branchId: effectiveScope.branchId,
+    branchIds: !effectiveScope.branchId ? effectiveScope.branchScopeIds : undefined,
     terminalId: req.query.terminalId?.toString(),
     status: req.query.status?.toString(),
     startDate: startDate ?? undefined,
@@ -74,7 +78,7 @@ syncRouter.post("/queue", requireTenant, requireAnyPermission(["sale.create", "s
   }
 
   const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
@@ -105,12 +109,17 @@ syncRouter.patch("/queue/:recordId/status", requireTenant, requirePermission("sy
     return;
   }
 
+  const requestedBranchId = requestedBranch(req);
   const scope = resolveSyncBranch(req, res);
   if (!scope) return;
+  const effectiveScope = effectiveBranchScope(scope, requestedBranchId);
 
   const result = await updateSyncRecordStatus(
     req.tenantContext!.tenantId,
-    scope.branchId,
+    {
+      branchId: effectiveScope.branchId,
+      branchIds: !effectiveScope.branchId ? effectiveScope.branchScopeIds : undefined
+    },
     req.tenantContext!.userId,
     req.params.recordId.toString(),
     parsed.data
@@ -118,6 +127,11 @@ syncRouter.patch("/queue/:recordId/status", requireTenant, requirePermission("sy
 
   if (result.status === "not_found") {
     res.status(404).json({ error: "Sync record not found" });
+    return;
+  }
+
+  if (result.status === "finalized") {
+    res.status(409).json({ error: "Synced sync records cannot be changed" });
     return;
   }
 

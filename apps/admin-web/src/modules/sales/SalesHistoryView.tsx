@@ -47,7 +47,8 @@ interface SalesHistoryViewProps {
 
 export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }: SalesHistoryViewProps) {
   const storedAuth = useMemo(() => readStoredAuth(), []);
-  const initialBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
+  const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
+  const initialBranchId = canUseAllBranches ? "" : storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
   const activeUserId = storedAuth?.staff.id ?? "";
   const activePermissions = storedAuth?.staff.permissions ?? [];
   const canRefundSale = activePermissions.includes("sale.refund");
@@ -110,7 +111,7 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
       const branchResponse = await fetchBranchOptions();
       setBranches(branchResponse.branches);
 
-      if (!nextBranchId) {
+      if (!nextBranchId && !canUseAllBranches) {
         setSales([]);
         setSelectedSale(null);
         setRefundAmount(0);
@@ -122,7 +123,7 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
       setSales(response.sales);
       setSelectedSale((current) => response.sales.find((sale) => sale.id === current?.id) ?? response.sales[0] ?? null);
       setRefundAmount(response.sales[0]?.summary.total ?? 0);
-      setStatus("Sales synced");
+      setStatus(nextBranchId ? "Sales synced" : "Sales synced across accessible branches");
     } catch (error) {
       setBranches((current) => (current.length > 0 ? current : fallbackBranches));
       setSales([]);
@@ -339,7 +340,7 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
             </span>
           ) : (
             <select className="compact-select" value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-              <option value="">Branch</option>
+              <option value="">{canUseAllBranches ? "All accessible branches" : "Branch"}</option>
               {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
             </select>
           )}

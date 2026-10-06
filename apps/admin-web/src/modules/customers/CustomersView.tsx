@@ -22,6 +22,7 @@ import {
 import { StatusBadge } from "../../shared/components/StatusBadge";
 import { TablePagination, usePaginatedRows } from "../../shared/components/TablePagination";
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
+import { dateRangeErrorMessage, hasInvertedDateRange } from "../../shared/utils/dateFilters";
 
 const blankCustomer: CustomerPayload = {
   name: "",
@@ -39,7 +40,7 @@ const blankLedger: CustomerLedgerPayload = {
   amount: 0,
   pointsDelta: 0,
   note: "",
-  paymentMethod: "cash",
+  paymentMethod: "" as CustomerLedgerPayload["paymentMethod"],
   paymentReference: "",
   terminalId: ""
 };
@@ -51,7 +52,8 @@ interface CustomersViewProps {
 
 export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: CustomersViewProps) {
   const storedAuth = useMemo(() => readStoredAuth(), []);
-  const initialBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
+  const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
+  const initialBranchId = canUseAllBranches ? "" : storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
   const initialTerminalId = storedAuth?.session.terminalId ?? "";
   const activeUserId = storedAuth?.staff.id ?? "";
   const [branchId, setBranchId] = useState(initialBranchId);
@@ -68,6 +70,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
   const [ledgerCustomer, setLedgerCustomer] = useState<Customer | null>(null);
   const [ledgerEntries, setLedgerEntries] = useState<CustomerLedgerEntry[]>([]);
   const [ledgerForm, setLedgerForm] = useState<CustomerLedgerPayload>(blankLedger);
+  const [ledgerBranchId, setLedgerBranchId] = useState(initialBranchId);
   const [ledgerApprovalId, setLedgerApprovalId] = useState("");
   const [ledgerStartDate, setLedgerStartDate] = useState("");
   const [ledgerEndDate, setLedgerEndDate] = useState("");
@@ -103,7 +106,9 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
   const customerPage = usePaginatedRows(filteredCustomers, 10);
   const ledgerPage = usePaginatedRows(ledgerEntries, 8);
   const branchTerminals = useMemo(() => terminals.filter((terminal) => terminal.branchId === branchId), [branchId, terminals]);
+  const ledgerBranchTerminals = useMemo(() => terminals.filter((terminal) => terminal.branchId === ledgerBranchId), [ledgerBranchId, terminals]);
   const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
+  const branchNameById = useMemo(() => new Map(branches.map((branch) => [branch.id, `${branch.name} - ${branch.city}`])), [branches]);
   const branchLocked = Boolean(branchId && branches.length === 1);
   const hasCustomerFilters = Boolean(query || groupFilter || creditStatusFilter);
   const signedLedgerAmount = ledgerForm.type === "payment" || ledgerForm.type === "voucher"
@@ -120,9 +125,9 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
     return { label: "Clear", tone: "success" as const };
   }
 
-  async function loadCustomers(nextQuery = query) {
+  async function loadCustomers(nextQuery = query, nextBranchId = branchId) {
     try {
-      const response = await fetchCustomers(nextQuery);
+      const response = await fetchCustomers(nextQuery, nextBranchId);
       setCustomers(response.customers);
       setStatus("Customers synced");
     } catch (error) {
@@ -137,7 +142,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
       setBranches(response.branches);
       setTerminals(response.terminals);
 
-      const resolvedBranchId = branchId || response.branches[0]?.id || "";
+      const resolvedBranchId = branchId || (canUseAllBranches ? "" : response.branches[0]?.id || "");
       if (!branchId && resolvedBranchId) {
         setBranchId(resolvedBranchId);
       }
@@ -184,13 +189,15 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
       type: "credit_sale",
       amount: approvalHandoff.amount,
       pointsDelta: 0,
-      note: approvalHandoff.reason
+      note: approvalHandoff.reason,
+      terminalId: preferredTerminalForBranch(approvalHandoff.branchId)?.id ?? ""
     });
+    setLedgerBranchId(approvalHandoff.branchId);
     setLedgerApprovalId(approvalHandoff.id);
     setLedgerModalOpen(true);
     setStatus(`Customer credit approval ready: ${approvalHandoff.id}`);
 
-    void fetchCustomerLedger(customer.id, branchId, activeUserId, ledgerStartDate, ledgerEndDate)
+    void fetchCustomerLedger(customer.id, approvalHandoff.branchId, activeUserId, ledgerStartDate, ledgerEndDate)
       .then((response) => setLedgerEntries(response.entries))
       .catch(() => setLedgerEntries([]));
     onApprovalHandoffConsumed?.();
@@ -213,8 +220,24 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
     setBranchId(nextBranchId);
     setTerminalId(nextTerminal?.id ?? "");
     setLedgerEntries([]);
+    void loadCustomers(query, nextBranchId);
     if (ledgerModalOpen) {
       setStatus("Branch changed. Reopen the customer ledger to refresh entries.");
+    }
+  }
+
+  function preferredTerminalForBranch(nextBranchId: string) {
+    const nextTerminals = terminals.filter((terminal) => terminal.branchId === nextBranchId);
+    return nextTerminals.find((terminal) => terminal.status === "online") ?? nextTerminals[0] ?? null;
+  }
+
+  function changeLedgerBranch(nextBranchId: string) {
+    const nextTerminal = preferredTerminalForBranch(nextBranchId);
+    setLedgerBranchId(nextBranchId);
+    setLedgerForm((current) => ({ ...current, terminalId: nextTerminal?.id ?? "" }));
+    setLedgerEntries([]);
+    if (ledgerCustomer) {
+      void loadLedgerEntries(ledgerCustomer, ledgerStartDate, ledgerEndDate, nextBranchId);
     }
   }
 
@@ -245,15 +268,18 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
   }
 
   async function openLedgerModal(customer: Customer, type: CustomerLedgerPayload["type"]) {
+    const nextLedgerBranchId = branchId || (canUseAllBranches ? "" : ledgerBranchId || branches[0]?.id || "");
+    const nextTerminal = preferredTerminalForBranch(nextLedgerBranchId);
     setLedgerCustomer(customer);
+    setLedgerBranchId(nextLedgerBranchId);
     setLedgerForm({
       type,
       amount: type === "payment" ? Math.min(customer.outstandingBalance || 10000, 10000) : type === "credit_sale" ? 10000 : 0,
       pointsDelta: type === "loyalty_adjustment" ? 100 : 0,
       note: type === "payment" ? "Customer account payment" : type === "voucher" ? "Customer voucher" : type === "credit_sale" ? "Manual credit sale" : "Manual loyalty reward",
-      paymentMethod: type === "payment" ? "cash" : type === "voucher" ? "voucher" : undefined,
+      paymentMethod: type === "payment" || type === "voucher" ? "" as CustomerLedgerPayload["paymentMethod"] : undefined,
       paymentReference: "",
-      terminalId
+      terminalId: nextTerminal?.id ?? terminalId
     });
     setLedgerApprovalId("");
     setLedgerStartDate("");
@@ -262,7 +288,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
     setStatus("Loading customer ledger...");
 
     try {
-      const response = await fetchCustomerLedger(customer.id, branchId, activeUserId);
+      const response = await fetchCustomerLedger(customer.id, nextLedgerBranchId, activeUserId);
       setLedgerEntries(response.entries);
       setStatus("Customer ledger loaded");
     } catch (error) {
@@ -276,17 +302,23 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
     setLedgerCustomer(null);
     setLedgerEntries([]);
     setLedgerForm(blankLedger);
+    setLedgerBranchId(branchId);
     setLedgerApprovalId("");
     setLedgerStartDate("");
     setLedgerEndDate("");
   }
 
-  async function loadLedgerEntries(customer = ledgerCustomer, nextStartDate = ledgerStartDate, nextEndDate = ledgerEndDate) {
+  async function loadLedgerEntries(customer = ledgerCustomer, nextStartDate = ledgerStartDate, nextEndDate = ledgerEndDate, nextLedgerBranchId = ledgerBranchId) {
     if (!customer) return;
+    if (hasInvertedDateRange(nextStartDate, nextEndDate)) {
+      setStatus(dateRangeErrorMessage());
+      return;
+    }
+
     setStatus("Loading customer ledger...");
 
     try {
-      const response = await fetchCustomerLedger(customer.id, branchId, activeUserId, nextStartDate, nextEndDate);
+      const response = await fetchCustomerLedger(customer.id, nextLedgerBranchId, activeUserId, nextStartDate, nextEndDate);
       setLedgerEntries(response.entries);
       setStatus("Customer ledger loaded");
     } catch (error) {
@@ -305,7 +337,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
     setQuery("");
     setGroupFilter("");
     setCreditStatusFilter("");
-    void loadCustomers("");
+    void loadCustomers("", branchId);
   }
 
   async function saveCustomer(event: FormEvent) {
@@ -367,12 +399,18 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
       return;
     }
 
-    if (!branchId) {
+    const postingBranchId = ledgerBranchId || branchId;
+    if (!postingBranchId) {
       setStatus("Select a branch before posting customer ledger entries");
       return;
     }
 
-    if ((ledgerForm.type === "payment" || ledgerForm.type === "voucher") && ledgerForm.paymentMethod === "cash" && !terminalId) {
+    if ((ledgerForm.type === "payment" || ledgerForm.type === "voucher") && !ledgerForm.paymentMethod) {
+      setStatus("Select a payment method");
+      return;
+    }
+
+    if ((ledgerForm.type === "payment" || ledgerForm.type === "voucher") && ledgerForm.paymentMethod === "cash" && !ledgerForm.terminalId) {
       setStatus("Select a terminal for cash customer payments");
       return;
     }
@@ -381,7 +419,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
       if (isCreditSale && !ledgerApprovalId.trim()) {
         setStatus("Requesting customer credit approval...");
         const response = await createApproval({
-          branchId,
+          branchId: postingBranchId,
           type: "customer_credit",
           entityType: "customerAccount",
           entityId: ledgerCustomer.id,
@@ -403,13 +441,13 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
           signedAmount,
           ledgerForm.note,
           activeUserId,
-          branchId
+          postingBranchId
         );
       } else {
         setStatus("Posting customer ledger...");
       }
 
-      const response = await postCustomerLedger(ledgerCustomer.id, { ...ledgerForm, amount: signedAmount, terminalId: ledgerForm.paymentMethod === "cash" ? terminalId : ledgerForm.terminalId }, branchId, activeUserId);
+      const response = await postCustomerLedger(ledgerCustomer.id, { ...ledgerForm, amount: signedAmount }, postingBranchId, activeUserId);
       setCustomers((current) => current.map((item) => (item.id === response.customer.id ? response.customer : item)));
       setLedgerCustomer(response.customer);
       setLedgerEntries((current) => [response.entry, ...current]);
@@ -438,7 +476,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
               </span>
             ) : (
               <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-                <option value="">Branch</option>
+                <option value="">{canUseAllBranches ? "All accessible branches" : "Branch"}</option>
                 {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
               </select>
             )}
@@ -450,7 +488,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
               {branchTerminals.map((terminal) => <option key={terminal.id} value={terminal.id}>{terminal.name} - {terminal.status}</option>)}
             </select>
           </label>
-          <button className="secondary-button" onClick={() => { void loadBranchOptions(); void loadCustomers(); }}><RefreshCcw size={18} /> Sync</button>
+          <button className="secondary-button" onClick={() => { void loadBranchOptions(); void loadCustomers(query, branchId); }}><RefreshCcw size={18} /> Sync</button>
           <button className="primary-button" onClick={resetForm}><Plus size={18} /> Add customer</button>
         </div>
       </div>
@@ -480,7 +518,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") void loadCustomers(query);
+                if (event.key === "Enter") void loadCustomers(query, branchId);
               }}
               placeholder="Search customer"
             />
@@ -620,6 +658,20 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
                 </select>
               </label>
               <label>
+                Ledger branch
+                <select value={ledgerBranchId} onChange={(event) => changeLedgerBranch(event.target.value)} required>
+                  <option value="">{canUseAllBranches ? "All accessible branches" : "Ledger branch"}</option>
+                  {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>)}
+                </select>
+              </label>
+              <label>
+                Terminal
+                <select value={ledgerForm.terminalId ?? ""} onChange={(event) => updateLedgerForm("terminalId", event.target.value)}>
+                  <option value="">Terminal</option>
+                  {ledgerBranchTerminals.map((terminal) => <option key={terminal.id} value={terminal.id}>{terminal.name} - {terminal.status}</option>)}
+                </select>
+              </label>
+              <label>
                 Amount
                 <input
                   min="0"
@@ -695,14 +747,15 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
                 </div>
                 <div className="table-wrap">
                   <table>
-                    <thead><tr><th>#</th><th>Created</th><th>Type</th><th>Note</th><th>Amount</th><th>Balance</th><th>Points</th></tr></thead>
+                    <thead><tr><th>#</th><th>Created</th><th>Branch</th><th>Type</th><th>Note</th><th>Amount</th><th>Balance</th><th>Points</th></tr></thead>
                     <tbody>
                       {ledgerPage.pageRows.length === 0 ? (
-                        <tr><td colSpan={7}>No ledger entries yet.</td></tr>
+                        <tr><td colSpan={8}>No ledger entries yet.</td></tr>
                       ) : ledgerPage.pageRows.map((entry, index) => (
                         <tr key={entry.id}>
                           <td className="number-cell">{ledgerPage.startIndex + index + 1}</td>
                           <td>{new Date(entry.createdAt).toLocaleString()}</td>
+                          <td>{branchNameById.get(entry.branchId) ?? entry.branchId}</td>
                           <td>{entry.type.replace("_", " ")}</td>
                           <td>{entry.note}</td>
                           <td>{displayMoney(entry.amount)}</td>

@@ -18,11 +18,12 @@ function toApiAuditEvent(event: DbAuditEvent): AuditEvent {
   };
 }
 
-export async function listAuditEvents(tenantId: string, filters: { branchId?: string; userId?: string; action?: string; startDate?: Date; endDate?: Date } = {}) {
+export async function listAuditEvents(tenantId: string, filters: { branchId?: string; branchIds?: string[]; userId?: string; action?: string; startDate?: Date; endDate?: Date } = {}) {
   if (useDemoStore) {
     return auditEvents
       .filter((event) => event.tenantId === tenantId)
       .filter((event) => !filters.branchId || event.branchId === filters.branchId)
+      .filter((event) => !filters.branchIds?.length || !event.branchId || filters.branchIds.includes(event.branchId))
       .filter((event) => !filters.userId || event.userId === filters.userId)
       .filter((event) => !filters.action || event.action === filters.action)
       .filter((event) => !filters.startDate || new Date(event.createdAt).getTime() >= filters.startDate.getTime())
@@ -32,7 +33,7 @@ export async function listAuditEvents(tenantId: string, filters: { branchId?: st
   const events = await prisma.auditEvent.findMany({
     where: {
       tenantId,
-      branchId: filters.branchId ? filters.branchId : undefined,
+      branchId: filters.branchId ? filters.branchId : filters.branchIds?.length ? { in: filters.branchIds } : undefined,
       userId: filters.userId ? filters.userId : undefined,
       action: filters.action ? filters.action : undefined,
       createdAt: filters.startDate || filters.endDate

@@ -1,22 +1,27 @@
 import { prepTicketItemStatusUpdateSchema, prepTicketPriorityUpdateSchema, prepTicketStatusUpdateSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
-import { canAccessAllBranches, resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, canAccessScopedBranches, resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import { listPrepTickets, updatePrepTicketItemStatus, updatePrepTicketPriority, updatePrepTicketStatus } from "../restaurant/restaurant.repository";
 
 export const kitchenRouter = Router();
 
 function requestedBranch(req: Request) {
-  return req.query.branchId?.toString() ?? req.header("x-branch-id") ?? req.tenantContext!.branchId;
+  const queryBranchId = req.query.branchId?.toString();
+  if (queryBranchId) return queryBranchId;
+  const headerBranchId = req.header("x-branch-id");
+  if (headerBranchId) return headerBranchId;
+  if (canAccessAllBranches(req.tenantContext!) || req.tenantContext!.branchScopeIds?.length) return undefined;
+  return req.tenantContext!.branchId;
 }
 
 function resolveKitchenBranch(req: Request, res: Response, requestedBranchId?: string) {
   const scope = resolveBranchScope(req.tenantContext!, requestedBranchId);
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return null;
   }
 
-  return scope;
+  return !requestedBranchId && scope.branchScopeIds?.length ? { ...scope, branchId: undefined, branchIds: scope.branchScopeIds } : { ...scope, branchIds: undefined };
 }
 
 kitchenRouter.get("/tickets", requireTenant, requirePermission("kitchen.manage"), async (req, res) => {
@@ -25,6 +30,7 @@ kitchenRouter.get("/tickets", requireTenant, requirePermission("kitchen.manage")
 
   const tickets = await listPrepTickets(req.tenantContext!.tenantId, {
     branchId: scope.branchId,
+    branchIds: scope.branchIds,
     station: req.query.station?.toString(),
     status: req.query.status?.toString()
   });
@@ -45,7 +51,7 @@ kitchenRouter.patch("/tickets/:ticketId/status", requireTenant, requirePermissio
 
   const result = await updatePrepTicketStatus(
     req.tenantContext!.tenantId,
-    scope.branchId,
+    { branchId: scope.branchId, branchIds: scope.branchIds },
     req.tenantContext!.userId,
     req.params.ticketId.toString(),
     parsed.data
@@ -72,7 +78,7 @@ kitchenRouter.patch("/tickets/:ticketId/priority", requireTenant, requirePermiss
 
   const result = await updatePrepTicketPriority(
     req.tenantContext!.tenantId,
-    scope.branchId,
+    { branchId: scope.branchId, branchIds: scope.branchIds },
     req.tenantContext!.userId,
     req.params.ticketId.toString(),
     parsed.data
@@ -99,7 +105,7 @@ kitchenRouter.patch("/tickets/:ticketId/items/:itemId/status", requireTenant, re
 
   const result = await updatePrepTicketItemStatus(
     req.tenantContext!.tenantId,
-    scope.branchId,
+    { branchId: scope.branchId, branchIds: scope.branchIds },
     req.tenantContext!.userId,
     req.params.ticketId.toString(),
     req.params.itemId.toString(),

@@ -25,7 +25,6 @@ import {
   type ApprovalRequest,
   type BranchOption,
   type InventoryTransfer,
-  type PaymentMethodCode,
   type PurchaseOrder,
   type PurchaseOrderPayload,
   type PurchaseReceiptPayload,
@@ -37,6 +36,7 @@ import {
   type SupplierInvoice,
   type SupplierInvoicePayload,
   type SupplierInvoicePaymentPayload,
+  type SupplierPaymentMethodCode,
   type SupplierReturn,
   type SupplierReturnPayload,
   type SupplierStatement,
@@ -104,7 +104,7 @@ function defaultSupplierInvoice(branchId = defaultBranchId): SupplierInvoicePayl
 function defaultSupplierPayment(balanceDue = 0): SupplierInvoicePaymentPayload {
   return {
     amount: balanceDue,
-    paymentMethod: "" as PaymentMethodCode,
+    paymentMethod: "" as SupplierPaymentMethodCode,
     reference: "",
     paidAt: new Date().toISOString(),
     note: ""
@@ -157,7 +157,8 @@ interface InventoryViewProps {
 
 export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: InventoryViewProps) {
   const storedAuth = useMemo(() => readStoredAuth(), []);
-  const initialBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? defaultBranchId;
+  const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
+  const initialBranchId = canUseAllBranches ? "" : storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? defaultBranchId;
   const activeUserId = storedAuth?.staff.id ?? "";
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
@@ -296,6 +297,13 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
     () => products.find((product) => product.id === supplierReturnDraft.productId) ?? null,
     [products, supplierReturnDraft.productId]
   );
+  const movementPage = usePaginatedRows(movements, 6);
+  const transferPage = usePaginatedRows(transfers, 6);
+  const purchaseOrderPage = usePaginatedRows(purchaseOrders, 6);
+  const supplierInvoicePage = usePaginatedRows(supplierInvoices, 6);
+  const supplierReturnPage = usePaginatedRows(supplierReturns, 6);
+  const supplierPage = usePaginatedRows(suppliers, 6);
+  const supplierStatementPage = usePaginatedRows(supplierStatement?.entries ?? [], 10);
   const stockPage = usePaginatedRows(filteredStockProducts, 10);
   const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
   const branchLocked = Boolean(branchId && branches.length === 1);
@@ -315,7 +323,7 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
 
   async function loadInventory(nextBranchId = branchId) {
     try {
-      if (!nextBranchId) {
+      if (!nextBranchId && !canUseAllBranches) {
         setProducts([]);
         setMovements([]);
         setSuppliers([]);
@@ -346,7 +354,7 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
       setSupplierReturns(supplierReturnResponse.supplierReturns);
       setTransfers(transferResponse.transfers);
       setCountValues(Object.fromEntries(stockResponse.products.filter((product) => !isServiceCategory(product.category)).map((product) => [product.id, product.stock])));
-      setStatus("Inventory synced");
+      setStatus(nextBranchId ? "Inventory synced" : "Inventory synced across accessible branches");
     } catch (error) {
       setProducts([]);
       setMovements([]);
@@ -667,7 +675,7 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
       );
       const response = await createStockAdjustment(adjustment, activeUserId);
       setProducts((current) => current.map((product) => (product.id === response.product.id ? response.product : product)));
-      setMovements((current) => [response.movement, ...current].slice(0, 20));
+      setMovements((current) => [response.movement, ...current]);
       setAdjustmentApprovalId("");
       setStatus(`Stock movement recorded with ${approvalResponse.approval.id}`);
     } catch (error) {
@@ -688,7 +696,7 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
     try {
       const response = await receivePurchase(purchase, activeUserId);
       setProducts((current) => current.map((product) => (product.id === response.product.id ? response.product : product)));
-      setMovements((current) => [response.movement, ...current].slice(0, 20));
+      setMovements((current) => [response.movement, ...current]);
       if (response.purchaseOrder) {
         setPurchaseOrders((current) => current.map((order) => (order.id === response.purchaseOrder?.id ? response.purchaseOrder : order)));
       }
@@ -803,7 +811,7 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
       const response = await createSupplierReturn(supplierReturnDraft, activeUserId);
       setSupplierReturns((current) => [response.supplierReturn, ...current]);
       setProducts((current) => current.map((product) => (product.id === response.product.id ? response.product : product)));
-      setMovements((current) => [response.movement, ...current].slice(0, 20));
+      setMovements((current) => [response.movement, ...current]);
       if (response.supplierInvoice) {
         setSupplierInvoices((current) => current.map((invoice) => (invoice.id === response.supplierInvoice?.id ? response.supplierInvoice : invoice)));
       }
@@ -838,15 +846,16 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
 
     try {
       const response = await createInventoryTransfer(transferDraft, activeUserId);
+      const isAllBranchView = !branchId;
       setProducts((current) => current.map((product) => (product.id === response.sourceProduct.id ? response.sourceProduct : product)));
-      if (response.destinationProduct.branchId === branchId) {
+      if (isAllBranchView || response.destinationProduct.branchId === branchId) {
         setProducts((current) => current.map((product) => (product.id === response.destinationProduct.id ? response.destinationProduct : product)));
       }
       setDestinationProducts((current) => current.map((product) => (product.id === response.destinationProduct.id ? response.destinationProduct : product)));
       setMovements((current) => {
         const nextMovements = [response.sourceMovement];
-        if (response.destinationMovement.branchId === branchId) nextMovements.push(response.destinationMovement);
-        return [...nextMovements, ...current].slice(0, 20);
+        if (isAllBranchView || response.destinationMovement.branchId === branchId) nextMovements.push(response.destinationMovement);
+        return [...nextMovements, ...current];
       });
       setTransfers((current) => [response.transfer, ...current]);
       setTransferModalOpen(false);
@@ -868,10 +877,17 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
   }
 
   async function openSupplierStatement(supplier: Supplier) {
-    setStatus(`Loading ${supplier.name} statement...`);
+    const supplierBranchId = supplier.branchId || branchId;
+
+    if (!supplierBranchId) {
+      setStatus("Supplier branch is required to load statement");
+      return;
+    }
+
+    setStatus(`Loading ${supplier.name} statement for ${branchLabel(supplierBranchId)}...`);
 
     try {
-      const response = await fetchSupplierStatement(branchId, supplier.id, activeUserId);
+      const response = await fetchSupplierStatement(supplierBranchId, supplier.id, activeUserId);
       setSupplierStatement(response.statement);
       setStatus(`Statement loaded for ${supplier.name}`);
     } catch (error) {
@@ -971,7 +987,7 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
       }
       const response = await createStockCount(payload, activeUserId);
       setProducts((current) => current.map((product) => response.products.find((item) => item.id === product.id) ?? product));
-      setMovements((current) => [...response.movements, ...current].slice(0, 20));
+      setMovements((current) => [...response.movements, ...current]);
       setCountModalOpen(false);
       setCountApprovalId("");
       setStatus(`Stock count posted with ${response.movements.length} variances`);
@@ -997,7 +1013,7 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
               </span>
             ) : (
               <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-                <option value="">Branch</option>
+                <option value="">{canUseAllBranches ? "All accessible branches" : "Branch"}</option>
                 {branches.map((branch) => (
                   <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
                 ))}
@@ -1151,8 +1167,9 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
             {movements.length === 0 ? (
               <div className="empty-state">No stock movements yet.</div>
             ) : (
-              movements.map((movement) => (
+              movementPage.pageRows.map((movement, index) => (
                 <div className="list-row" key={movement.id}>
+                  <span className="list-row-number">{movementPage.startIndex + index + 1}</span>
                   <div>
                     <strong>{movement.productName}</strong>
                     <span>{movement.type} - {movement.reason}{movement.supplierName ? ` - ${movement.supplierName}` : ""}</span>
@@ -1162,6 +1179,16 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
               ))
             )}
           </div>
+          <TablePagination
+            page={movementPage.page}
+            pageCount={movementPage.pageCount}
+            pageSize={movementPage.pageSize}
+            totalRows={movementPage.totalRows}
+            startIndex={movementPage.startIndex}
+            visibleCount={movementPage.pageRows.length}
+            onPageChange={movementPage.setPage}
+            onPageSizeChange={movementPage.setPageSize}
+          />
           <div className="panel-header register-history-header">
             <h2>Branch transfers</h2>
             <span>{transfers.length} records</span>
@@ -1169,8 +1196,9 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
           <div className="stack">
             {transfers.length === 0 ? (
               <div className="empty-state">No branch transfers posted.</div>
-            ) : transfers.slice(0, 6).map((transfer) => (
+            ) : transferPage.pageRows.map((transfer, index) => (
               <div className="list-row" key={transfer.id}>
+                <span className="list-row-number">{transferPage.startIndex + index + 1}</span>
                 <div>
                   <strong>{transfer.reference}</strong>
                   <span>{transfer.productName} - {branchLabel(transfer.sourceBranchId)} to {branchLabel(transfer.destinationBranchId)}</span>
@@ -1179,6 +1207,16 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
               </div>
             ))}
           </div>
+          <TablePagination
+            page={transferPage.page}
+            pageCount={transferPage.pageCount}
+            pageSize={transferPage.pageSize}
+            totalRows={transferPage.totalRows}
+            startIndex={transferPage.startIndex}
+            visibleCount={transferPage.pageRows.length}
+            onPageChange={transferPage.setPage}
+            onPageSizeChange={transferPage.setPageSize}
+          />
           <div className="panel-header register-history-header">
             <h2>Purchase orders</h2>
             <span>{purchaseOrders.length} orders</span>
@@ -1186,11 +1224,12 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
           <div className="stack">
             {purchaseOrders.length === 0 ? (
               <div className="empty-state">No purchase orders created.</div>
-            ) : purchaseOrders.slice(0, 6).map((order) => {
+            ) : purchaseOrderPage.pageRows.map((order, index) => {
               const orderedQuantity = order.lines.reduce((sum, line) => sum + line.quantity, 0);
               const receivedQuantity = order.lines.reduce((sum, line) => sum + line.receivedQuantity, 0);
               return (
                 <div className="list-row" key={order.id}>
+                  <span className="list-row-number">{purchaseOrderPage.startIndex + index + 1}</span>
                   <div>
                     <strong>{order.orderNumber}</strong>
                     <span>{order.supplierName} - {receivedQuantity}/{orderedQuantity} received - {displayMoney(order.subtotal)}</span>
@@ -1205,6 +1244,16 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
               );
             })}
           </div>
+          <TablePagination
+            page={purchaseOrderPage.page}
+            pageCount={purchaseOrderPage.pageCount}
+            pageSize={purchaseOrderPage.pageSize}
+            totalRows={purchaseOrderPage.totalRows}
+            startIndex={purchaseOrderPage.startIndex}
+            visibleCount={purchaseOrderPage.pageRows.length}
+            onPageChange={purchaseOrderPage.setPage}
+            onPageSizeChange={purchaseOrderPage.setPageSize}
+          />
           <div className="panel-header register-history-header">
             <h2>Supplier invoices</h2>
             <span>{supplierInvoices.length} invoices</span>
@@ -1212,8 +1261,9 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
           <div className="stack">
             {supplierInvoices.length === 0 ? (
               <div className="empty-state">No supplier invoices captured.</div>
-            ) : supplierInvoices.slice(0, 6).map((invoice) => (
+            ) : supplierInvoicePage.pageRows.map((invoice, index) => (
               <div className="list-row" key={invoice.id}>
+                <span className="list-row-number">{supplierInvoicePage.startIndex + index + 1}</span>
                 <div>
                   <strong>{invoice.invoiceNumber}</strong>
                   <span>{invoice.supplierName} - paid {displayMoney(invoice.amountPaid)} - credits {displayMoney(invoice.creditTotal)}</span>
@@ -1225,6 +1275,16 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
               </div>
             ))}
           </div>
+          <TablePagination
+            page={supplierInvoicePage.page}
+            pageCount={supplierInvoicePage.pageCount}
+            pageSize={supplierInvoicePage.pageSize}
+            totalRows={supplierInvoicePage.totalRows}
+            startIndex={supplierInvoicePage.startIndex}
+            visibleCount={supplierInvoicePage.pageRows.length}
+            onPageChange={supplierInvoicePage.setPage}
+            onPageSizeChange={supplierInvoicePage.setPageSize}
+          />
           <div className="panel-header register-history-header">
             <h2>Supplier returns</h2>
             <span>{supplierReturns.length} returns</span>
@@ -1232,8 +1292,9 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
           <div className="stack">
             {supplierReturns.length === 0 ? (
               <div className="empty-state">No supplier returns recorded.</div>
-            ) : supplierReturns.slice(0, 5).map((item) => (
+            ) : supplierReturnPage.pageRows.map((item, index) => (
               <div className="list-row" key={item.id}>
+                <span className="list-row-number">{supplierReturnPage.startIndex + index + 1}</span>
                 <div>
                   <strong>{item.reference}</strong>
                   <span>{item.supplierName} - {item.quantity} {item.productName} - {displayMoney(item.creditAmount)}</span>
@@ -1242,6 +1303,16 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
               </div>
             ))}
           </div>
+          <TablePagination
+            page={supplierReturnPage.page}
+            pageCount={supplierReturnPage.pageCount}
+            pageSize={supplierReturnPage.pageSize}
+            totalRows={supplierReturnPage.totalRows}
+            startIndex={supplierReturnPage.startIndex}
+            visibleCount={supplierReturnPage.pageRows.length}
+            onPageChange={supplierReturnPage.setPage}
+            onPageSizeChange={supplierReturnPage.setPageSize}
+          />
           <div className="panel-header register-history-header">
             <h2>Suppliers</h2>
             <span>{suppliers.length} active</span>
@@ -1249,10 +1320,11 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
           <div className="supplier-grid">
             {suppliers.length === 0 ? (
               <div className="empty-state">No suppliers configured.</div>
-            ) : suppliers.map((supplier) => {
+            ) : supplierPage.pageRows.map((supplier, index) => {
               const reorderCount = lowStockProducts.filter((product) => supplier.productIds.includes(product.id)).length;
               return (
                 <article className="supplier-card" key={supplier.id}>
+                  <span className="list-row-number">{supplierPage.startIndex + index + 1}</span>
                   <div>
                     <strong>{supplier.name}</strong>
                     <span>{supplier.contactPerson} - {supplier.phone}</span>
@@ -1266,6 +1338,16 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
               );
             })}
           </div>
+          <TablePagination
+            page={supplierPage.page}
+            pageCount={supplierPage.pageCount}
+            pageSize={supplierPage.pageSize}
+            totalRows={supplierPage.totalRows}
+            startIndex={supplierPage.startIndex}
+            visibleCount={supplierPage.pageRows.length}
+            onPageChange={supplierPage.setPage}
+            onPageSizeChange={supplierPage.setPageSize}
+          />
         </section>
       </div>
 
@@ -1683,7 +1765,7 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
               </label>
               <label>
                 Method
-                <select value={supplierPaymentDraft.paymentMethod} onChange={(event) => updateSupplierPaymentDraft("paymentMethod", event.target.value as PaymentMethodCode)}>
+                <select value={supplierPaymentDraft.paymentMethod} onChange={(event) => updateSupplierPaymentDraft("paymentMethod", event.target.value as SupplierPaymentMethodCode)}>
                   <option value="">Payment method</option>
                   <option value="cash">Cash</option>
                   <option value="card">Card</option>
@@ -1756,9 +1838,9 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
                 <tbody>
                   {supplierStatement.entries.length === 0 ? (
                     <tr><td colSpan={8}>No supplier ledger entries found.</td></tr>
-                  ) : supplierStatement.entries.map((entry, index) => (
+                  ) : supplierStatementPage.pageRows.map((entry, index) => (
                     <tr key={entry.id}>
-                      <td className="number-cell">{index + 1}</td>
+                      <td className="number-cell">{supplierStatementPage.startIndex + index + 1}</td>
                       <td>{new Date(entry.date).toLocaleDateString()}</td>
                       <td>{entry.type}</td>
                       <td>{entry.reference}</td>
@@ -1771,6 +1853,16 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
                 </tbody>
               </table>
             </div>
+            <TablePagination
+              page={supplierStatementPage.page}
+              pageCount={supplierStatementPage.pageCount}
+              pageSize={supplierStatementPage.pageSize}
+              totalRows={supplierStatementPage.totalRows}
+              startIndex={supplierStatementPage.startIndex}
+              visibleCount={supplierStatementPage.pageRows.length}
+              onPageChange={supplierStatementPage.setPage}
+              onPageSizeChange={supplierStatementPage.setPageSize}
+            />
           </section>
         </div>
       ) : null}

@@ -4,6 +4,7 @@ import { fetchBranchOptions, fetchDashboardReport, readStoredAuth, type BranchOp
 import { StatCard } from "../../shared/components/StatCard";
 import { TablePagination, usePaginatedRows } from "../../shared/components/TablePagination";
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
+import { dateRangeErrorMessage, hasInvertedDateRange } from "../../shared/utils/dateFilters";
 
 type ReportFocus = "sales" | "inventory" | "staff" | "cash" | "customers" | "approvals";
 
@@ -90,7 +91,8 @@ function formatStaffStatus(status: "active" | "inactive") {
 export function ReportsView() {
   const storedAuth = useMemo(() => readStoredAuth(), []);
   const activeUserId = storedAuth?.staff.id ?? "";
-  const initialBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
+  const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
+  const initialBranchId = canUseAllBranches ? "" : storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
   const [period, setPeriod] = useState<ReportPeriod | "">("");
   const [branchId, setBranchId] = useState(initialBranchId);
   const [branches, setBranches] = useState<BranchOption[]>(fallbackBranches);
@@ -142,13 +144,18 @@ export function ReportsView() {
   const branchLocked = Boolean(branchId && branches.length === 1);
 
   async function loadReport(nextPeriod = period, nextBranchId = branchId, nextStartDate = startDate, nextEndDate = endDate) {
+    if (hasInvertedDateRange(nextStartDate, nextEndDate)) {
+      setStatus(dateRangeErrorMessage());
+      return;
+    }
+
     setStatus("Building report...");
 
     try {
       const branchResponse = await fetchBranchOptions();
       setBranches(branchResponse.branches);
 
-      if (!nextBranchId) {
+      if (!nextBranchId && !canUseAllBranches) {
         setReport(emptyReport);
         setStatus("Select a branch to build reports");
         return;
@@ -345,7 +352,7 @@ export function ReportsView() {
               </span>
             ) : (
               <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-                <option value="">Branch</option>
+                <option value="">{canUseAllBranches ? "All accessible branches" : "Branch"}</option>
                 {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
               </select>
             )}
@@ -386,7 +393,7 @@ export function ReportsView() {
             <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
           </label>
         </div>
-        <button className="secondary-button" type="button" onClick={() => loadReport(period, branchId)}>Apply dates</button>
+        <button className="secondary-button" type="button" onClick={() => loadReport(period, branchId, startDate, endDate)}>Apply dates</button>
         {(searchTerm || reportFocus || startDate || endDate) ? (
           <button className="secondary-button" type="button" onClick={clearReportFilters}>Clear filters</button>
         ) : null}

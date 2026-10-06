@@ -55,5 +55,10 @@ subscriptionsRouter.patch("/invoices/:invoiceId", requireTenant, requirePermissi
     return;
   }
 
+  if (result.status === "finalized") {
+    res.status(409).json({ error: "Paid or void subscription invoices cannot be changed" });
+    return;
+  }
+
   res.json({ invoice: result.invoice });
 });

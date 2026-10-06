@@ -1,6 +1,6 @@
 import { Check, IdCard, KeyRound, Mail, MapPin, MonitorSmartphone, Phone, Settings, ShieldCheck, UserRound } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { fetchMyProfile, readStoredAuth, updateMyProfile, updateMySecurity, updateStoredAuthStaff, type AuthResponse } from "../../shared/api/client";
+import { fetchBranchOptions, fetchMyProfile, readStoredAuth, updateMyProfile, updateMySecurity, updateStoredAuthStaff, type AuthResponse, type BranchOption } from "../../shared/api/client";
 
 interface ProfileViewProps {
   user: {
@@ -17,11 +17,15 @@ export function ProfileView({ user }: ProfileViewProps) {
   const [profile, setProfile] = useState(user);
   const [profileMeta, setProfileMeta] = useState({
     staffId: storedAuth?.staff.id ?? "",
+    branchId: storedAuth?.staff.branchId ?? "",
     inviteStatus: "accepted",
     pinEnabled: false,
+    active: true,
+    salesTotal: 0,
     createdAt: "",
     lastSeenAt: ""
   });
+  const [branches, setBranches] = useState<BranchOption[]>([]);
   const [securityForm, setSecurityForm] = useState({
     currentPassword: "",
     newPassword: "",
@@ -31,6 +35,10 @@ export function ProfileView({ user }: ProfileViewProps) {
   const [status, setStatus] = useState("Ready");
   const permissions = storedAuth?.staff.permissions ?? [];
   const session = storedAuth?.session;
+  const branchName = useMemo(() => {
+    const branch = branches.find((item) => item.id === profileMeta.branchId);
+    return branch ? `${branch.name}, ${branch.city}` : profile.branch || profileMeta.branchId || "No branch assigned";
+  }, [branches, profile.branch, profileMeta.branchId]);
   const initials = useMemo(
     () => profile.name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase(),
     [profile.name]
@@ -58,20 +66,26 @@ export function ProfileView({ user }: ProfileViewProps) {
   useEffect(() => {
     let mounted = true;
     setStatus("Loading profile...");
-    fetchMyProfile()
-      .then((response) => {
+    Promise.all([fetchMyProfile(), fetchBranchOptions().catch(() => ({ branches: [] as BranchOption[], terminals: [] }))])
+      .then(([response, branchResponse]) => {
         if (!mounted) return;
+        const nextBranch = branchResponse.branches.find((branch) => branch.id === response.staff.branchId);
+        setBranches(branchResponse.branches);
         setProfile((current) => ({
           ...current,
           name: response.staff.name,
           email: response.staff.email,
           phone: response.staff.phone,
-          role: response.staff.role
+          role: response.staff.role,
+          branch: nextBranch ? `${nextBranch.name}, ${nextBranch.city}` : response.staff.branchId
         }));
         setProfileMeta({
           staffId: response.staff.id,
+          branchId: response.staff.branchId,
           inviteStatus: response.staff.inviteStatus,
           pinEnabled: response.staff.pinEnabled,
+          active: response.staff.active,
+          salesTotal: response.staff.salesTotal,
           createdAt: response.staff.createdAt,
           lastSeenAt: response.staff.lastSeenAt ?? ""
         });
@@ -114,8 +128,11 @@ export function ProfileView({ user }: ProfileViewProps) {
       }));
       setProfileMeta({
         staffId: response.staff.id,
+        branchId: response.staff.branchId,
         inviteStatus: response.staff.inviteStatus,
         pinEnabled: response.staff.pinEnabled,
+        active: response.staff.active,
+        salesTotal: response.staff.salesTotal,
         createdAt: response.staff.createdAt,
         lastSeenAt: response.staff.lastSeenAt ?? ""
       });
@@ -157,8 +174,11 @@ export function ProfileView({ user }: ProfileViewProps) {
       });
       setProfileMeta({
         staffId: response.staff.id,
+        branchId: response.staff.branchId,
         inviteStatus: response.staff.inviteStatus,
         pinEnabled: response.staff.pinEnabled,
+        active: response.staff.active,
+        salesTotal: response.staff.salesTotal,
         createdAt: response.staff.createdAt,
         lastSeenAt: response.staff.lastSeenAt ?? ""
       });
@@ -181,7 +201,7 @@ export function ProfileView({ user }: ProfileViewProps) {
         <div className="profile-hero-copy">
           <span>{status}</span>
           <h2>{profile.name || "Current user"}</h2>
-          <p>{roleLabel || "Staff"} at {profile.branch || "No branch assigned"}</p>
+          <p>{roleLabel || "Staff"} at {branchName}</p>
         </div>
         <div className="profile-hero-meta">
           <span><IdCard size={16} /> {profileMeta.staffId || "No staff ID"}</span>
@@ -210,10 +230,26 @@ export function ProfileView({ user }: ProfileViewProps) {
             </label>
             <label>
               Role
-              <input value={profile.role} readOnly />
+              <input value={roleLabel || profile.role} readOnly />
+            </label>
+            <label>
+              Staff ID
+              <input value={profileMeta.staffId} readOnly />
+            </label>
+            <label>
+              Assigned branch
+              <input value={branchName} readOnly />
+            </label>
+            <label>
+              Active status
+              <input value={profileMeta.active ? "Active" : "Inactive"} readOnly />
+            </label>
+            <label>
+              Terminal session
+              <input value={session?.terminalId ?? "No terminal session"} readOnly />
             </label>
             <div className="form-summary wide-field">
-              <em>{profile.email}</em>
+              <em>{profileMeta.staffId ? `${profileMeta.staffId} - ${profile.email}` : profile.email}</em>
               <button className="primary-button" type="submit"><Check size={18} /> Save profile</button>
             </div>
           </div>
@@ -227,13 +263,13 @@ export function ProfileView({ user }: ProfileViewProps) {
           <div className="profile-info-list">
             <span><Mail size={16} /> {profile.email || "No email"}</span>
             <span><Phone size={16} /> {profile.phone || "No phone"}</span>
-            <span><MapPin size={16} /> {profile.branch || "No branch assigned"}</span>
+            <span><MapPin size={16} /> {branchName}</span>
             <span><MonitorSmartphone size={16} /> {session?.terminalId ?? "No terminal session"}</span>
           </div>
           <div className="profile-account-grid">
             <div>
               <small>Status</small>
-              <strong>{profileMeta.inviteStatus}</strong>
+              <strong>{profileMeta.active ? profileMeta.inviteStatus : "inactive"}</strong>
             </div>
             <div>
               <small>PIN access</small>
@@ -251,6 +287,10 @@ export function ProfileView({ user }: ProfileViewProps) {
           <div className="profile-session-card">
             <small>Session expires</small>
             <strong>{sessionExpiry}</strong>
+          </div>
+          <div className="profile-session-card">
+            <small>Sales total</small>
+            <strong>NGN {profileMeta.salesTotal.toLocaleString()}</strong>
           </div>
         </section>
 

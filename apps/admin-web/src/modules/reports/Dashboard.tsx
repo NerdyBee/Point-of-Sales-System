@@ -75,11 +75,12 @@ interface DashboardProps {
 export function Dashboard({ onNewSale, onOpenApprovals, onOpenAudit, onOpenInventory, onOpenRegisters }: DashboardProps) {
   const storedAuth = useMemo(() => readStoredAuth(), []);
   const activeUserId = storedAuth?.staff.id ?? "";
-  const initialBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? defaultBranchId;
+  const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
+  const initialBranchId = canUseAllBranches ? "" : storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? defaultBranchId;
   const [report, setReport] = useState<DashboardReport>(fallbackReport);
   const [branchId, setBranchId] = useState(initialBranchId);
   const [branches, setBranches] = useState<BranchOption[]>(fallbackBranches);
-  const [reportPeriod, setReportPeriod] = useState<ReportPeriod | "">("today");
+  const [reportPeriod, setReportPeriod] = useState<ReportPeriod | "">("");
   const [status, setStatus] = useState("Ready");
   const { displayMoney } = useTenantSettings();
   const maxHourlySale = useMemo(() => Math.max(...report.hourlySales.map((item) => item.amount), 1), [report.hourlySales]);
@@ -94,7 +95,7 @@ export function Dashboard({ onNewSale, onOpenApprovals, onOpenAudit, onOpenInven
     setStatus("Syncing dashboard...");
 
     try {
-      if (!nextBranchId) {
+      if (!nextBranchId && !canUseAllBranches) {
         setBranches([]);
         setReport(fallbackReport);
         setStatus("Select a branch");
@@ -107,7 +108,7 @@ export function Dashboard({ onNewSale, onOpenApprovals, onOpenAudit, onOpenInven
       ]);
       setBranches(branchResponse.branches.length ? branchResponse.branches : fallbackBranches);
       setReport(response);
-      setStatus(`${response.periodLabel} synced`);
+      setStatus(nextBranchId ? `${response.periodLabel} synced` : `${response.periodLabel} synced across accessible branches`);
     } catch (error) {
       setBranches(fallbackBranches);
       setReport(fallbackReport);
@@ -120,7 +121,6 @@ export function Dashboard({ onNewSale, onOpenApprovals, onOpenAudit, onOpenInven
   }, [reportPeriod, branchId]);
 
   function changeBranch(nextBranchId: string) {
-    if (!nextBranchId) return;
     setBranchId(nextBranchId);
   }
 
@@ -141,7 +141,7 @@ export function Dashboard({ onNewSale, onOpenApprovals, onOpenAudit, onOpenInven
               </span>
             ) : (
               <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-                <option value="">Branch</option>
+                <option value="">{canUseAllBranches ? "All accessible branches" : "Branch"}</option>
                 {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
               </select>
             )}
@@ -173,7 +173,7 @@ export function Dashboard({ onNewSale, onOpenApprovals, onOpenAudit, onOpenInven
       <div className="content-grid">
         <section className="panel wide-panel">
           <div className="panel-header">
-            <h2>{reportPeriod === "today" ? "Hourly sales trends" : "Period sales trends"}</h2>
+            <h2>{report.period === "today" ? "Hourly sales trends" : "Period sales trends"}</h2>
             <span>{report.periodLabel} - {report.summary.auditEventCount} audit events</span>
           </div>
           <div className="bar-chart" aria-label="Hourly sales chart">

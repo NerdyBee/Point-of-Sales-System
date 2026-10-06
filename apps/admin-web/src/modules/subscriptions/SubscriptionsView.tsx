@@ -12,6 +12,7 @@ import {
   type SubscriptionPlan,
   type SubscriptionPlanOption,
   type SubscriptionStatus,
+  type SubscriptionUsage,
   type SubscriptionUpdatePayload,
   type TenantProfile,
   type TenantSubscription
@@ -22,6 +23,7 @@ import { TablePagination, usePaginatedRows } from "../../shared/components/Table
 import { formatMoney } from "../../shared/utils/money";
 
 const fallbackPlans: SubscriptionPlanOption[] = [];
+const fallbackUsage: SubscriptionUsage = { branches: 0, users: 0, terminals: 0 };
 
 const blankForm: SubscriptionUpdatePayload = {
   plan: "" as SubscriptionPlan,
@@ -38,7 +40,8 @@ const blankInvoiceForm = (): SubscriptionInvoiceCreatePayload => ({
   amount: undefined,
   status: "open",
   issuedAt: dateToIso(todayValue),
-  dueAt: dateToIso(new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString().slice(0, 10))
+  dueAt: dateToIso(new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString().slice(0, 10)),
+  paymentReference: ""
 });
 
 function statusTone(status: SubscriptionStatus | SubscriptionInvoice["status"]): "success" | "warning" | "danger" | "info" {
@@ -59,10 +62,12 @@ function dateToIso(value: string) {
 export function SubscriptionsView() {
   const storedAuth = useMemo(() => readStoredAuth(), []);
   const activeUserId = storedAuth?.staff.id ?? "";
-  const activeBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
+  const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
+  const activeBranchId = canUseAllBranches ? "" : storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
   const [tenant, setTenant] = useState<TenantProfile | null>(null);
   const [subscription, setSubscription] = useState<TenantSubscription | null>(null);
   const [plans, setPlans] = useState<SubscriptionPlanOption[]>(fallbackPlans);
+  const [usage, setUsage] = useState<SubscriptionUsage>(fallbackUsage);
   const [invoices, setInvoices] = useState<SubscriptionInvoice[]>([]);
   const [form, setForm] = useState<SubscriptionUpdatePayload>(blankForm);
   const [invoiceQuery, setInvoiceQuery] = useState("");
@@ -105,10 +110,11 @@ export function SubscriptionsView() {
     setStatus("Syncing subscription...");
 
     try {
-      if (!activeUserId || !activeBranchId) {
+      if (!activeUserId || (!activeBranchId && !canUseAllBranches)) {
         setTenant(null);
         setSubscription(null);
         setPlans(fallbackPlans);
+        setUsage(fallbackUsage);
         setInvoices([]);
         setStatus("Sign in with a branch to load subscription");
         return;
@@ -121,6 +127,7 @@ export function SubscriptionsView() {
       setTenant(tenantResponse.tenant);
       setSubscription(subscriptionResponse.subscription);
       setPlans(subscriptionResponse.plans);
+      setUsage(subscriptionResponse.usage ?? fallbackUsage);
       setInvoices(subscriptionResponse.invoices);
       const nextSubscription = subscriptionResponse.subscription;
       if (nextSubscription) {
@@ -143,6 +150,7 @@ export function SubscriptionsView() {
       setTenant(null);
       setSubscription(null);
       setPlans(fallbackPlans);
+      setUsage(fallbackUsage);
       setInvoices([]);
       setStatus(error instanceof Error ? error.message : "Unable to load subscription");
     }
@@ -168,7 +176,7 @@ export function SubscriptionsView() {
       return;
     }
 
-    if (!activeUserId || !activeBranchId) {
+    if (!activeUserId || (!activeBranchId && !canUseAllBranches)) {
       setStatus("Sign in with a branch before saving subscription");
       return;
     }
@@ -217,7 +225,12 @@ export function SubscriptionsView() {
       return;
     }
 
-    if (!activeUserId || !activeBranchId) {
+    if (statusForm.status === "paid" && !statusForm.paymentReference.trim()) {
+      setStatus("Enter a payment reference for paid invoices");
+      return;
+    }
+
+    if (!activeUserId || (!activeBranchId && !canUseAllBranches)) {
       setStatus("Sign in with a branch before updating invoices");
       return;
     }
@@ -247,7 +260,12 @@ export function SubscriptionsView() {
       return;
     }
 
-    if (!activeUserId || !activeBranchId) {
+    if (invoiceForm.status === "paid" && !invoiceForm.paymentReference?.trim()) {
+      setStatus("Enter a payment reference for paid invoices");
+      return;
+    }
+
+    if (!activeUserId || (!activeBranchId && !canUseAllBranches)) {
       setStatus("Sign in with a branch before creating invoices");
       return;
     }
@@ -257,7 +275,8 @@ export function SubscriptionsView() {
     try {
       const response = await createSubscriptionInvoice({
         ...invoiceForm,
-        amount: invoiceForm.amount ?? selectedInvoicePlan?.amount
+        amount: invoiceForm.amount ?? selectedInvoicePlan?.amount,
+        paymentReference: invoiceForm.paymentReference?.trim() || undefined
       }, activeBranchId);
       setInvoices((current) => [response.invoice, ...current]);
       setInvoiceForm(blankInvoiceForm());
@@ -274,7 +293,7 @@ export function SubscriptionsView() {
   }
 
   return (
-    <div className="module-view">
+    <div className="module-view subscription-module">
       <div className="module-heading">
         <div>
           <p className="eyebrow">SaaS administration</p>
@@ -287,7 +306,7 @@ export function SubscriptionsView() {
 
       <section className="stats-grid">
         <StatCard label="Current plan" value={subscription?.plan ?? tenant?.plan ?? "Not set"} detail={status} icon={CreditCard} tone="dark" />
-        <StatCard label="Branch limit" value={`${tenant?.activeBranches ?? 0}/${subscription?.branchLimit ?? tenant?.branchLimit ?? 0}`} detail="Active branches" icon={ShieldCheck} />
+        <StatCard label="Plan usage" value={`${usage.branches}/${subscription?.branchLimit ?? tenant?.branchLimit ?? 0}`} detail={`${usage.users}/${subscription?.userLimit ?? 0} users, ${usage.terminals}/${subscription?.terminalLimit ?? 0} terminals`} icon={ShieldCheck} />
         <StatCard label="Open balance" value={formatMoney(openBalance)} detail={`${formatMoney(paidTotal)} paid history`} icon={SlidersHorizontal} />
       </section>
 
@@ -334,7 +353,7 @@ export function SubscriptionsView() {
               <input value={form.notes ?? ""} onChange={(event) => updateForm("notes", event.target.value)} />
             </label>
             <div className="form-summary wide-field">
-              <span>{selectedPlan ? `${formatMoney(selectedPlan.amount)} monthly, ${selectedPlan.branchLimit} branches, ${selectedPlan.terminalLimit} terminals` : "Select a plan to apply tenant limits"}</span>
+              <span>{selectedPlan ? `${formatMoney(selectedPlan.amount)} monthly, ${selectedPlan.branchLimit} branches, ${selectedPlan.userLimit} users, ${selectedPlan.terminalLimit} terminals` : "Select a plan to apply tenant limits"}</span>
               <button className="primary-button" type="submit"><Check size={18} /> Save subscription</button>
             </div>
           </div>
@@ -407,6 +426,10 @@ export function SubscriptionsView() {
             Due
             <input type="date" value={dateValue(invoiceForm.dueAt)} onChange={(event) => updateInvoiceForm("dueAt", dateToIso(event.target.value))} required />
           </label>
+          <label>
+            Reference
+            <input value={invoiceForm.paymentReference ?? ""} onChange={(event) => updateInvoiceForm("paymentReference", event.target.value)} required={invoiceForm.status === "paid"} />
+          </label>
           <button className="primary-button" type="submit"><FilePlus size={18} /> Create invoice</button>
         </form>
         <div className="table-toolbar subscription-invoice-toolbar">
@@ -455,7 +478,7 @@ export function SubscriptionsView() {
                   <td>{invoice.paymentReference ?? "None"}</td>
                   <td className="row-actions">
                     <button disabled={invoice.status === "paid" || invoice.status === "void"} onClick={() => markInvoicePaid(invoice)}>Mark paid</button>
-                    <button onClick={() => editInvoiceStatus(invoice)}>Update</button>
+                    <button disabled={invoice.status === "paid" || invoice.status === "void"} onClick={() => editInvoiceStatus(invoice)}>Update</button>
                   </td>
                 </tr>
               ))}

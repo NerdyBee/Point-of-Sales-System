@@ -46,7 +46,8 @@ function inviteTone(status: StaffMember["inviteStatus"]): "success" | "warning" 
 
 export function StaffView() {
   const storedAuth = useMemo(() => readStoredAuth(), []);
-  const initialBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
+  const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
+  const initialBranchId = canUseAllBranches ? "" : storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
   const activeUserId = storedAuth?.staff.id ?? "";
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [branches, setBranches] = useState<BranchOption[]>(fallbackBranches);
@@ -117,7 +118,7 @@ export function StaffView() {
       setBranches(branchResponse.branches);
       setRoles(roleResponse.roles);
 
-      if (!nextBranchId) {
+      if (!nextBranchId && !canUseAllBranches) {
         setStaff([]);
         setStatus("Select a branch to load staff");
         return;
@@ -125,7 +126,7 @@ export function StaffView() {
 
       const response = await fetchStaff(nextBranchId, activeUserId);
       setStaff(response.staff);
-      setStatus("Staff synced");
+      setStatus(nextBranchId ? "Staff synced" : "Staff synced across accessible branches");
     } catch (error) {
       setBranches(fallbackBranches);
       setStaff([]);
@@ -217,7 +218,7 @@ export function StaffView() {
 
     try {
       const response = selectedStaff
-        ? await updateStaff(selectedStaff.id, form, branchId, activeUserId)
+        ? await updateStaff(selectedStaff.id, form, selectedStaff.branchId || branchId, activeUserId)
         : await createStaff(form, activeUserId);
       if (response.staff.branchId === branchId) {
         applyStaffUpdate(response.staff);
@@ -340,7 +341,7 @@ export function StaffView() {
               </span>
             ) : (
               <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-                <option value="">Branch</option>
+                <option value="">{canUseAllBranches ? "All accessible branches" : "Branch"}</option>
                 {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
               </select>
             )}

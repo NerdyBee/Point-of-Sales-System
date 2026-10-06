@@ -1,6 +1,6 @@
 import { purchaseOrderInputSchema, purchaseOrderStatusSchema, stockAdjustmentSchema, stockCountSchema, stockTransferInputSchema, supplierInputSchema, supplierInvoiceInputSchema, supplierInvoicePaymentSchema, supplierReceiptSchema, supplierReturnInputSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
-import { canAccessAllBranches, resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, canAccessScopedBranches, resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import {
   appendInventoryAudit,
   applyInventoryAdjustment,
@@ -28,16 +28,26 @@ function requestedBranch(req: Request) {
   const requested = req.query.branchId?.toString() ?? req.header("x-branch-id");
   if (requested) return requested;
 
-  if (!canAccessAllBranches(req.tenantContext!) && req.tenantContext!.branchId) {
+  if (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && req.tenantContext!.branchId) {
     return req.tenantContext!.branchId;
   }
 
   return undefined;
 }
 
+function effectiveBranchScope(req: Request) {
+  const branchId = requestedBranch(req);
+  const scope = resolveBranchScope(req.tenantContext!, branchId);
+  if (!branchId && scope.branchScopeIds?.length) {
+    return { ...scope, branchId: undefined, branchIds: scope.branchScopeIds };
+  }
+
+  return { ...scope, branchIds: undefined };
+}
+
 function resolveInventoryBranch(req: Request, res: Response) {
   const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return null;
   }
@@ -46,48 +56,51 @@ function resolveInventoryBranch(req: Request, res: Response) {
 }
 
 inventoryRouter.get("/stock", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
+  const scope = effectiveBranchScope(req);
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
 
-  const { products, movements } = await listInventoryStock(req.tenantContext!.tenantId, scope.branchId);
+  const { products, movements } = await listInventoryStock(req.tenantContext!.tenantId, {
+    branchId: scope.branchId,
+    branchIds: scope.branchIds
+  });
 
   res.json({ products, movements });
 });
 
 inventoryRouter.get("/transfers", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
+  const scope = effectiveBranchScope(req);
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
 
-  const transfers = await listInventoryTransfers(req.tenantContext!.tenantId, { branchId: scope.branchId });
+  const transfers = await listInventoryTransfers(req.tenantContext!.tenantId, { branchId: scope.branchId, branchIds: scope.branchIds });
   res.json({ transfers });
 });
 
 inventoryRouter.get("/suppliers", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
+  const scope = effectiveBranchScope(req);
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
 
-  const tenantSuppliers = await listInventorySuppliers(req.tenantContext!.tenantId, scope.branchId);
+  const tenantSuppliers = await listInventorySuppliers(req.tenantContext!.tenantId, { branchId: scope.branchId, branchIds: scope.branchIds });
 
   res.json({ suppliers: tenantSuppliers });
 });
 
 inventoryRouter.get("/suppliers/:supplierId/statement", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
+  const scope = effectiveBranchScope(req);
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
 
-  const result = await getSupplierStatement(req.tenantContext!.tenantId, scope.branchId, String(req.params.supplierId));
+  const result = await getSupplierStatement(req.tenantContext!.tenantId, { branchId: scope.branchId, branchIds: scope.branchIds }, String(req.params.supplierId));
   if (result.status === "supplier_not_found") {
     res.status(404).json({ error: "Supplier not found" });
     return;
@@ -97,7 +110,7 @@ inventoryRouter.get("/suppliers/:supplierId/statement", requireTenant, requirePe
 });
 
 inventoryRouter.get("/purchase-orders", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
+  const scope = effectiveBranchScope(req);
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
@@ -105,6 +118,7 @@ inventoryRouter.get("/purchase-orders", requireTenant, requirePermission("invent
 
   const orders = await listPurchaseOrders(req.tenantContext!.tenantId, {
     branchId: scope.branchId,
+    branchIds: scope.branchIds,
     status: req.query.status?.toString()
   });
 
@@ -112,7 +126,7 @@ inventoryRouter.get("/purchase-orders", requireTenant, requirePermission("invent
 });
 
 inventoryRouter.get("/supplier-invoices", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
+  const scope = effectiveBranchScope(req);
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
@@ -120,6 +134,7 @@ inventoryRouter.get("/supplier-invoices", requireTenant, requirePermission("inve
 
   const invoices = await listSupplierInvoices(req.tenantContext!.tenantId, {
     branchId: scope.branchId,
+    branchIds: scope.branchIds,
     supplierId: req.query.supplierId?.toString(),
     status: req.query.status?.toString()
   });
@@ -128,7 +143,7 @@ inventoryRouter.get("/supplier-invoices", requireTenant, requirePermission("inve
 });
 
 inventoryRouter.get("/supplier-returns", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
+  const scope = effectiveBranchScope(req);
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
@@ -136,6 +151,7 @@ inventoryRouter.get("/supplier-returns", requireTenant, requirePermission("inven
 
   const returns = await listSupplierReturns(req.tenantContext!.tenantId, {
     branchId: scope.branchId,
+    branchIds: scope.branchIds,
     supplierId: req.query.supplierId?.toString()
   });
 

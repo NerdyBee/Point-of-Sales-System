@@ -43,7 +43,8 @@ function normalizeCategoryName(value: string) {
 export function SettingsView() {
   const storedAuth = useMemo(() => readStoredAuth(), []);
   const activeUserId = storedAuth?.staff.id ?? "";
-  const activeBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
+  const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
+  const activeBranchId = canUseAllBranches ? "" : storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
   const [tenant, setTenant] = useState<TenantProfile | null>(null);
   const [settings, setSettings] = useState<TenantSettings>(emptySettings);
   const [branches, setBranches] = useState<BranchOption[]>(emptyBranches);

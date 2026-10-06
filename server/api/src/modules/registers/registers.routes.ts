@@ -1,10 +1,11 @@
 import { cashMovementSchema, closeRegisterShiftSchema, openRegisterShiftSchema, paymentReconciliationSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
-import { canAccessAllBranches, resolveBranchScope, requirePermission, requireTenant, selfScopedUserId } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, canAccessScopedBranches, resolveBranchScope, requirePermission, requireTenant, selfScopedUserId } from "../../shared/http/tenantContext";
 import {
   closeRegisterShift,
   createCashMovement,
   getCurrentRegister,
+  listRegisterShiftHistory,
   openRegisterShift,
   reconcilePayment
 } from "./registers.repository";
@@ -13,10 +14,10 @@ export const registersRouter = Router();
 
 function requireBranchContext(req: Request, res: Response) {
   const requestedBranchId = req.query.branchId?.toString() ?? req.header("x-branch-id") ?? (
-    canAccessAllBranches(req.tenantContext!) ? undefined : req.tenantContext!.branchId
+    canAccessAllBranches(req.tenantContext!) || canAccessScopedBranches(req.tenantContext!) ? undefined : req.tenantContext!.branchId
   );
   const scope = resolveBranchScope(req.tenantContext!, requestedBranchId);
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return null;
   }
@@ -24,14 +25,32 @@ function requireBranchContext(req: Request, res: Response) {
   return scope;
 }
 
+function effectiveReadScope(scope: ReturnType<typeof resolveBranchScope>, requestedBranchId?: string) {
+  return !requestedBranchId && scope.branchScopeIds?.length ? { ...scope, branchId: undefined, branchIds: scope.branchScopeIds } : { ...scope, branchIds: undefined };
+}
+
 registersRouter.get("/current", requireTenant, requirePermission("register.manage"), async (req, res) => {
   const terminalId = req.query.terminalId?.toString();
+  const requestedBranchId = req.query.branchId?.toString() ?? req.header("x-branch-id");
   const scope = requireBranchContext(req, res);
   if (!scope) return;
+  const readScope = effectiveReadScope(scope, requestedBranchId);
 
-  const register = await getCurrentRegister(req.tenantContext!.tenantId, scope.branchId, terminalId, selfScopedUserId(req.tenantContext!));
+  const register = await getCurrentRegister(req.tenantContext!.tenantId, { branchId: readScope.branchId, branchIds: readScope.branchIds }, terminalId, selfScopedUserId(req.tenantContext!));
 
   res.json(register);
+});
+
+registersRouter.get("/history", requireTenant, requirePermission("register.manage"), async (req, res) => {
+  const terminalId = req.query.terminalId?.toString();
+  const requestedBranchId = req.query.branchId?.toString() ?? req.header("x-branch-id");
+  const scope = requireBranchContext(req, res);
+  if (!scope) return;
+  const readScope = effectiveReadScope(scope, requestedBranchId);
+
+  const shifts = await listRegisterShiftHistory(req.tenantContext!.tenantId, { branchId: readScope.branchId, branchIds: readScope.branchIds }, terminalId, selfScopedUserId(req.tenantContext!));
+
+  res.json({ shifts });
 });
 
 registersRouter.post("/open", requireTenant, requirePermission("register.manage"), async (req, res) => {
@@ -43,7 +62,7 @@ registersRouter.post("/open", requireTenant, requirePermission("register.manage"
   }
 
   const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !scope.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }

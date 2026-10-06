@@ -1,26 +1,35 @@
 import { roleInputSchema, rolePermissionUpdateSchema, staffRoleAssignmentSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
-import { canAccessAllBranches, requirePermission, requireTenant, resolveBranchScope } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, canAccessScopedBranches, requirePermission, requireTenant, resolveBranchScope } from "../../shared/http/tenantContext";
 import { assignStaffRole, createRole, listPermissionCatalog, listRoleOptions, listRoles, updateRole, updateRolePermissions } from "./roles.repository";
 
 export const rolesRouter = Router();
 
 function requestedBranch(req: Request) {
-  if (!canAccessAllBranches(req.tenantContext!) && req.tenantContext!.branchId) {
-    return req.tenantContext!.branchId;
-  }
-
-  return req.query.branchId?.toString() ?? req.header("x-branch-id") ?? req.tenantContext!.branchId;
+  const requested = req.query.branchId?.toString() ?? req.header("x-branch-id");
+  if (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!)) return req.tenantContext!.branchId;
+  if (requested) return requested;
+  if (canAccessAllBranches(req.tenantContext!) || canAccessScopedBranches(req.tenantContext!)) return undefined;
+  return req.tenantContext!.branchId;
 }
 
 function resolveRoleBranch(req: Request, res: Response) {
+  if (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !req.tenantContext!.branchId) {
+    res.status(403).json({ error: "Branch access denied" });
+    return null;
+  }
+
   const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !scope.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return null;
   }
 
   return scope;
+}
+
+function effectiveRoleScope(scope: ReturnType<typeof resolveBranchScope>) {
+  return scope.branchScopeIds?.length ? { ...scope, branchId: undefined, branchIds: scope.branchScopeIds } : { ...scope, branchIds: undefined };
 }
 
 rolesRouter.get("/", requireTenant, requirePermission("roles.manage"), async (req, res) => {
@@ -85,9 +94,10 @@ rolesRouter.post("/assign-staff", requireTenant, requirePermission("roles.manage
   }
   const scope = resolveRoleBranch(req, res);
   if (!scope) return;
+  const effectiveScope = effectiveRoleScope(scope);
   const result = await assignStaffRole(
     req.tenantContext!.tenantId,
-    scope.branchId,
+    { branchId: effectiveScope.branchId, branchIds: effectiveScope.branchIds },
     req.tenantContext!.userId,
     parsed.data.staffId,
     parsed.data.role

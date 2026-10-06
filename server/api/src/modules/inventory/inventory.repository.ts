@@ -94,9 +94,28 @@ type SupplierStatementEntry = {
   credit: number;
   balance: number;
 };
+type BranchScopeFilter = { branchId?: string; branchIds?: string[] };
 
 function isServiceProduct(product: { category: string }) {
   return product.category.trim().toLowerCase() === "services";
+}
+
+function matchesBranchScope(scope: BranchScopeFilter, branchId: string) {
+  if (scope.branchId) return branchId === scope.branchId;
+  if (scope.branchIds?.length) return scope.branchIds.includes(branchId);
+  return true;
+}
+
+function branchWhere(scope: BranchScopeFilter) {
+  if (scope.branchId) return scope.branchId;
+  if (scope.branchIds?.length) return { in: scope.branchIds };
+  return undefined;
+}
+
+function transferWhere(scope: BranchScopeFilter) {
+  if (scope.branchId) return [{ sourceBranchId: scope.branchId }, { destinationBranchId: scope.branchId }];
+  if (scope.branchIds?.length) return [{ sourceBranchId: { in: scope.branchIds } }, { destinationBranchId: { in: scope.branchIds } }];
+  return undefined;
 }
 
 function toApiProduct(product: DbProduct): DemoProduct {
@@ -291,21 +310,21 @@ async function branchBelongsToTenant(tenantId: string, branchId: string) {
   return Boolean(branch);
 }
 
-export async function listInventoryStock(tenantId: string, branchId?: string) {
+export async function listInventoryStock(tenantId: string, scope: BranchScopeFilter = {}) {
   if (useDemoStore) {
     return {
-      products: demoProducts.filter((product) => product.tenantId === tenantId && (!branchId || product.branchId === branchId)),
-      movements: stockMovements.filter((movement) => movement.tenantId === tenantId && (!branchId || movement.branchId === branchId)).slice(0, 20)
+      products: demoProducts.filter((product) => product.tenantId === tenantId && matchesBranchScope(scope, product.branchId)),
+      movements: stockMovements.filter((movement) => movement.tenantId === tenantId && matchesBranchScope(scope, movement.branchId)).slice(0, 20)
     };
   }
 
   const [products, movements] = await Promise.all([
     prisma.product.findMany({
-      where: { tenantId, branchId: branchId ? branchId : undefined },
+      where: { tenantId, branchId: branchWhere(scope) },
       orderBy: { name: "asc" }
     }),
     prisma.stockMovement.findMany({
-      where: { tenantId, branchId: branchId ? branchId : undefined },
+      where: { tenantId, branchId: branchWhere(scope) },
       orderBy: { createdAt: "desc" },
       take: 20
     })
@@ -317,13 +336,13 @@ export async function listInventoryStock(tenantId: string, branchId?: string) {
   };
 }
 
-export async function listInventorySuppliers(tenantId: string, branchId?: string) {
+export async function listInventorySuppliers(tenantId: string, scope: BranchScopeFilter = {}) {
   if (useDemoStore) {
-    return suppliers.filter((supplier) => supplier.tenantId === tenantId && (!branchId || supplier.branchId === branchId));
+    return suppliers.filter((supplier) => supplier.tenantId === tenantId && matchesBranchScope(scope, supplier.branchId));
   }
 
   const supplierRecords = await prisma.supplier.findMany({
-    where: { tenantId, branchId: branchId ? branchId : undefined },
+    where: { tenantId, branchId: branchWhere(scope) },
     include: { products: true },
     orderBy: { name: "asc" }
   });
@@ -331,11 +350,11 @@ export async function listInventorySuppliers(tenantId: string, branchId?: string
   return supplierRecords.map(toApiSupplier);
 }
 
-export async function getSupplierStatement(tenantId: string, branchId: string | undefined, supplierId: string) {
+export async function getSupplierStatement(tenantId: string, scope: BranchScopeFilter, supplierId: string) {
   if (useDemoStore) {
-    const supplier = suppliers.find((item) => item.tenantId === tenantId && (!branchId || item.branchId === branchId) && item.id === supplierId);
+    const supplier = suppliers.find((item) => item.tenantId === tenantId && matchesBranchScope(scope, item.branchId) && item.id === supplierId);
     if (!supplier) return { status: "supplier_not_found" as const };
-    const supplierInvoiceRows = supplierInvoices.filter((invoice) => invoice.tenantId === tenantId && invoice.supplierId === supplierId && (!branchId || invoice.branchId === branchId));
+    const supplierInvoiceRows = supplierInvoices.filter((invoice) => invoice.tenantId === tenantId && invoice.supplierId === supplierId && matchesBranchScope(scope, invoice.branchId));
     const entries = supplierInvoiceRows.flatMap((invoice) => [
       {
         id: invoice.id,
@@ -382,12 +401,12 @@ export async function getSupplierStatement(tenantId: string, branchId: string | 
   }
 
   const supplier = await prisma.supplier.findFirst({
-    where: { tenantId, id: supplierId, branchId: branchId ? branchId : undefined },
+    where: { tenantId, id: supplierId, branchId: branchWhere(scope) },
     include: { products: true }
   });
   if (!supplier) return { status: "supplier_not_found" as const };
   const supplierInvoiceRows = (await prisma.supplierInvoice.findMany({
-    where: { tenantId, supplierId, branchId: branchId ? branchId : undefined },
+    where: { tenantId, supplierId, branchId: branchWhere(scope) },
     orderBy: { invoiceDate: "asc" }
   })).map(toApiSupplierInvoice);
   const entries = supplierInvoiceRows.flatMap((invoice) => [
@@ -435,10 +454,10 @@ export async function getSupplierStatement(tenantId: string, branchId: string | 
   return { status: "found" as const, statement: { supplier: toApiSupplier(supplier), totals, entries: statementEntries } };
 }
 
-export async function listPurchaseOrders(tenantId: string, filters: { branchId?: string; status?: string }) {
+export async function listPurchaseOrders(tenantId: string, filters: BranchScopeFilter & { status?: string }) {
   if (useDemoStore) {
     return purchaseOrders.filter((order) => {
-      const branchMatch = filters.branchId ? order.branchId === filters.branchId : true;
+      const branchMatch = matchesBranchScope(filters, order.branchId);
       const statusMatch = filters.status && filters.status !== "all" ? order.status === filters.status : true;
       return order.tenantId === tenantId && branchMatch && statusMatch;
     });
@@ -447,7 +466,7 @@ export async function listPurchaseOrders(tenantId: string, filters: { branchId?:
   const orders = await prisma.purchaseOrder.findMany({
     where: {
       tenantId,
-      branchId: filters.branchId ? filters.branchId : undefined,
+      branchId: branchWhere(filters),
       status: filters.status && filters.status !== "all" ? filters.status : undefined
     },
     orderBy: { createdAt: "desc" }
@@ -684,10 +703,10 @@ export async function updatePurchaseOrderStatus(tenantId: string, branchId: stri
   });
 }
 
-export async function listSupplierInvoices(tenantId: string, filters: { branchId?: string; supplierId?: string; status?: string }) {
+export async function listSupplierInvoices(tenantId: string, filters: BranchScopeFilter & { supplierId?: string; status?: string }) {
   if (useDemoStore) {
     return supplierInvoices.filter((invoice) => {
-      const branchMatch = filters.branchId ? invoice.branchId === filters.branchId : true;
+      const branchMatch = matchesBranchScope(filters, invoice.branchId);
       const supplierMatch = filters.supplierId ? invoice.supplierId === filters.supplierId : true;
       const statusMatch = filters.status && filters.status !== "all" ? invoice.status === filters.status : true;
       return invoice.tenantId === tenantId && branchMatch && supplierMatch && statusMatch;
@@ -697,7 +716,7 @@ export async function listSupplierInvoices(tenantId: string, filters: { branchId
   const records = await prisma.supplierInvoice.findMany({
     where: {
       tenantId,
-      branchId: filters.branchId ? filters.branchId : undefined,
+      branchId: branchWhere(filters),
       supplierId: filters.supplierId ? filters.supplierId : undefined,
       status: filters.status && filters.status !== "all" ? filters.status : undefined
     },
@@ -864,15 +883,15 @@ export async function recordSupplierInvoicePayment(tenantId: string, branchId: s
   });
 }
 
-export async function listSupplierReturns(tenantId: string, filters: { branchId?: string; supplierId?: string }) {
+export async function listSupplierReturns(tenantId: string, filters: BranchScopeFilter & { supplierId?: string }) {
   if (useDemoStore) {
-    return supplierReturns.filter((item) => item.tenantId === tenantId && (!filters.branchId || item.branchId === filters.branchId) && (!filters.supplierId || item.supplierId === filters.supplierId));
+    return supplierReturns.filter((item) => item.tenantId === tenantId && matchesBranchScope(filters, item.branchId) && (!filters.supplierId || item.supplierId === filters.supplierId));
   }
 
   const records = await prisma.supplierReturn.findMany({
     where: {
       tenantId,
-      branchId: filters.branchId ? filters.branchId : undefined,
+      branchId: branchWhere(filters),
       supplierId: filters.supplierId ? filters.supplierId : undefined
     },
     orderBy: { returnedAt: "desc" }
@@ -1145,10 +1164,10 @@ export async function receiveSupplierPurchase(
   return result;
 }
 
-export async function listInventoryTransfers(tenantId: string, filters: { branchId?: string }) {
+export async function listInventoryTransfers(tenantId: string, filters: BranchScopeFilter) {
   if (useDemoStore) {
     return inventoryTransfers.filter((transfer) => {
-      const branchMatch = filters.branchId ? transfer.sourceBranchId === filters.branchId || transfer.destinationBranchId === filters.branchId : true;
+      const branchMatch = matchesBranchScope(filters, transfer.sourceBranchId) || matchesBranchScope(filters, transfer.destinationBranchId);
       return transfer.tenantId === tenantId && branchMatch;
     });
   }
@@ -1156,7 +1175,7 @@ export async function listInventoryTransfers(tenantId: string, filters: { branch
   const records = await prisma.inventoryTransfer.findMany({
     where: {
       tenantId,
-      OR: filters.branchId ? [{ sourceBranchId: filters.branchId }, { destinationBranchId: filters.branchId }] : undefined
+      OR: transferWhere(filters)
     },
     orderBy: { createdAt: "desc" }
   });

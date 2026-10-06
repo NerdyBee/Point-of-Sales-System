@@ -2,7 +2,7 @@ import { authLoginSchema, authPinLoginSchema, authRefreshSchema } from "@pos/val
 import { type Request, Router } from "express";
 import { listBranchOptions } from "../branches/branches.repository";
 import { listStaff } from "../staff/staff.repository";
-import { canAccessAllBranches, requireAuthenticatedUser, requirePermission, requireTenant, resolveBranchScope } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, canAccessScopedBranches, requireAuthenticatedUser, requirePermission, requireTenant, resolveBranchScope } from "../../shared/http/tenantContext";
 import { branches, staffMembers, terminals } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
 import { findOrCreateSeededStaff, listAuthSessions, loginWithPassword, loginWithPin, refreshAuthSession, revokeAuthSession } from "./auth.repository";
@@ -17,7 +17,18 @@ function requestMeta(req: Request) {
 }
 
 function requestedBranch(req: Request) {
-  return req.query.branchId?.toString() ?? req.header("x-branch-id") ?? (canAccessAllBranches(req.tenantContext!) ? undefined : req.tenantContext!.branchId);
+  const queryBranchId = req.query.branchId?.toString();
+  if (queryBranchId) return queryBranchId;
+
+  const headerBranchId = req.header("x-branch-id");
+  if (headerBranchId) return headerBranchId;
+
+  if (canAccessAllBranches(req.tenantContext!) || canAccessScopedBranches(req.tenantContext!)) return undefined;
+  return req.tenantContext!.branchId;
+}
+
+function effectiveBranchScope(scope: ReturnType<typeof resolveBranchScope>, requestedBranchId?: string) {
+  return !requestedBranchId && scope.branchScopeIds?.length ? { ...scope, branchId: undefined } : scope;
 }
 
 const useDemoStore = process.env.NODE_ENV === "test";
@@ -148,7 +159,7 @@ authRouter.get("/bootstrap", async (req, res) => {
   }
 
   const branchId = req.query.branchId?.toString();
-  const [branchOptions, staff] = await Promise.all([listBranchOptions(tenantId), listStaff(tenantId, branchId)]);
+  const [branchOptions, staff] = await Promise.all([listBranchOptions(tenantId), listStaff(tenantId, branchId ? { branchId } : {})]);
 
   res.json({
     ...branchOptions,
@@ -249,7 +260,11 @@ authRouter.get("/sessions", requireTenant, requirePermission("staff.manage"), as
     return;
   }
 
-  const sessions = await listAuthSessions(req.tenantContext!.tenantId, scope.branchId);
+  const effectiveScope = effectiveBranchScope(scope, requestedBranchId);
+  const sessions = await listAuthSessions(req.tenantContext!.tenantId, {
+    branchId: effectiveScope.branchId,
+    branchIds: !effectiveScope.branchId ? effectiveScope.branchScopeIds : undefined
+  });
   res.json({ sessions });
 });
 
@@ -261,7 +276,11 @@ authRouter.post("/sessions/:sessionId/revoke", requireTenant, requirePermission(
     return;
   }
 
-  const result = await revokeAuthSession(req.tenantContext!.tenantId, req.tenantContext!.userId, req.params.sessionId.toString(), scope.branchId);
+  const effectiveScope = effectiveBranchScope(scope, requestedBranchId);
+  const result = await revokeAuthSession(req.tenantContext!.tenantId, req.tenantContext!.userId, req.params.sessionId.toString(), {
+    branchId: effectiveScope.branchId,
+    branchIds: !effectiveScope.branchId ? effectiveScope.branchScopeIds : undefined
+  });
 
   if (result.status === "not_found") {
     res.status(404).json({ error: "Session not found" });

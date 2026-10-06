@@ -15,6 +15,7 @@ import {
 import { StatusBadge } from "../../shared/components/StatusBadge";
 import { TablePagination, usePaginatedRows } from "../../shared/components/TablePagination";
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
+import { dateRangeErrorMessage, hasInvertedDateRange } from "../../shared/utils/dateFilters";
 
 const approvalTypes: ApprovalType[] = ["discount", "void", "refund", "cash_movement", "register_close", "stock_adjustment", "customer_credit", "expense"];
 const approvalStatuses: ApprovalStatus[] = ["pending", "approved", "rejected", "applied"];
@@ -87,13 +88,14 @@ interface ApprovalsViewProps {
 
 export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
   const storedAuth = useMemo(() => readStoredAuth(), []);
-  const initialBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
+  const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
+  const initialBranchId = canUseAllBranches ? "" : storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
   const activeUserId = storedAuth?.staff.id ?? "";
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [branches, setBranches] = useState<BranchOption[]>(fallbackBranches);
   const [branchId, setBranchId] = useState(initialBranchId);
   const [selectedApproval, setSelectedApproval] = useState<ApprovalRequest | null>(null);
-  const [statusFilter, setStatusFilter] = useState<ApprovalStatus | "all" | "">("pending");
+  const [statusFilter, setStatusFilter] = useState<ApprovalStatus | "all" | "">("");
   const [typeFilter, setTypeFilter] = useState<ApprovalType | "all" | "">("");
   const [sourceFilter, setSourceFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
@@ -135,13 +137,18 @@ export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
   const highPriorityCount = useMemo(() => approvals.filter((approval) => approval.status === "pending" && approval.amount >= 100000).length, [approvals]);
 
   async function loadApprovals(nextStatus = statusFilter, nextType = typeFilter, nextBranchId = branchId, nextStartDate = startDate, nextEndDate = endDate) {
+    if (hasInvertedDateRange(nextStartDate, nextEndDate)) {
+      setStatus(dateRangeErrorMessage());
+      return;
+    }
+
     setStatus("Syncing approvals...");
 
     try {
       const branchResponse = await fetchBranchOptions();
       setBranches(branchResponse.branches);
 
-      if (!nextBranchId) {
+      if (!nextBranchId && !canUseAllBranches) {
         setApprovals([]);
         setSelectedApproval(null);
         setStatus("Select a branch to load approvals");
@@ -231,14 +238,15 @@ export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
 
   async function handleDecision(decision: "approved" | "rejected") {
     if (!selectedApproval) return;
-    if (!branchId) {
+    const decisionBranchId = branchId || selectedApproval.branchId;
+    if (!decisionBranchId) {
       setStatus("Select a branch before deciding approvals");
       return;
     }
     setStatus(decision === "approved" ? "Approving request..." : "Rejecting request...");
 
     try {
-      const response = await decideApproval(selectedApproval.id, decision, decisionNote, branchId, activeUserId);
+      const response = await decideApproval(selectedApproval.id, decision, decisionNote, decisionBranchId, activeUserId);
       setApprovals((current) => {
         const nextApprovals = current
           .map((approval) => (approval.id === response.approval.id ? response.approval : approval))
@@ -269,7 +277,7 @@ export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
               </span>
             ) : (
               <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-                <option value="">Branch</option>
+                <option value="">{canUseAllBranches ? "All accessible branches" : "Branch"}</option>
                 {branches.map((branch) => (
                   <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
                 ))}
@@ -449,6 +457,22 @@ export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
                   <option value="">Type</option>
                   {approvalTypes.map((type) => <option key={type} value={type}>{formatLabel(type)}</option>)}
                 </select>
+              </label>
+              <label>
+                Branch
+                {branchLocked ? (
+                  <span className="locked-select-value">
+                    <strong>{selectedBranch?.name ?? branchId}</strong>
+                    <small>{selectedBranch?.city ?? "assigned"}</small>
+                  </span>
+                ) : (
+                  <select value={requestForm.branchId} onChange={(event) => updateRequestForm("branchId", event.target.value)}>
+                    <option value="">Branch</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
+                    ))}
+                  </select>
+                )}
               </label>
               <label>
                 Amount

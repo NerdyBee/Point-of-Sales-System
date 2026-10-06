@@ -54,8 +54,10 @@ async function terminalBelongsToBranch(tenantId: string, branchId: string, termi
   return Boolean(terminal);
 }
 
-function branchFilter(branchId?: string) {
-  return branchId ? { branchId } : {};
+function branchFilter(filters: { branchId?: string; branchIds?: string[] } = {}) {
+  if (filters.branchId) return { branchId: filters.branchId };
+  if (filters.branchIds?.length) return { branchId: { in: filters.branchIds } };
+  return {};
 }
 
 async function appendSyncAudit(event: Parameters<typeof appendAudit>[0]) {
@@ -80,12 +82,16 @@ async function appendSyncAudit(event: Parameters<typeof appendAudit>[0]) {
 
 export async function listSyncQueue(
   tenantId: string,
-  filters: { branchId?: string; terminalId?: string; status?: string; startDate?: Date; endDate?: Date }
+  filters: { branchId?: string; branchIds?: string[]; terminalId?: string; status?: string; startDate?: Date; endDate?: Date }
 ) {
   if (useDemoStore) {
     return syncQueueRecords
       .filter((record) => record.tenantId === tenantId)
-      .filter((record) => !filters.branchId || record.branchId === filters.branchId)
+      .filter((record) => {
+        if (filters.branchId) return record.branchId === filters.branchId;
+        if (filters.branchIds?.length) return filters.branchIds.includes(record.branchId);
+        return true;
+      })
       .filter((record) => !filters.terminalId || record.terminalId === filters.terminalId)
       .filter((record) => !filters.status || filters.status === "all" || record.status === filters.status)
       .filter((record) => (filters.startDate ? new Date(record.createdAt).getTime() >= filters.startDate.getTime() : true))
@@ -102,7 +108,7 @@ export async function listSyncQueue(
   const records = await prisma.syncQueueRecord.findMany({
     where: {
       tenantId,
-      branchId: filters.branchId ? filters.branchId : undefined,
+      ...branchFilter(filters),
       terminalId: filters.terminalId ? filters.terminalId : undefined,
       status: filters.status && filters.status !== "all" ? filters.status : undefined,
       createdAt
@@ -183,20 +189,30 @@ export async function queueSyncRecord(tenantId: string, userId: string, input: S
 
 export async function updateSyncRecordStatus(
   tenantId: string,
-  branchId: string | undefined,
+  filters: { branchId?: string; branchIds?: string[] },
   userId: string,
   recordId: string,
   input: { status: Exclude<SyncRecordStatus, "processing">; serverEntityId?: string; error?: string }
 ) {
   const now = new Date().toISOString();
+  const serverEntityId = input.serverEntityId?.trim();
+  const error = input.error?.trim();
 
   if (useDemoStore) {
-    const record = syncQueueRecords.find((item) => item.tenantId === tenantId && item.id === recordId && (!branchId || item.branchId === branchId));
+    const record = syncQueueRecords.find((item) => {
+      const branchMatch = filters.branchId
+        ? item.branchId === filters.branchId
+        : filters.branchIds?.length
+          ? filters.branchIds.includes(item.branchId)
+          : true;
+      return item.tenantId === tenantId && item.id === recordId && branchMatch;
+    });
     if (!record) return { status: "not_found" as const };
+    if (record.status === "synced") return { status: "finalized" as const };
 
     record.status = input.status;
-    record.serverEntityId = input.serverEntityId || record.serverEntityId;
-    record.error = input.error || undefined;
+    record.serverEntityId = serverEntityId || record.serverEntityId;
+    record.error = input.status === "failed" || input.status === "conflict" ? error : undefined;
     record.attempts += input.status === "queued" ? 1 : 0;
     record.lastAttemptAt = input.status === "queued" ? now : record.lastAttemptAt;
     record.syncedAt = input.status === "synced" ? now : record.syncedAt;
@@ -209,21 +225,22 @@ export async function updateSyncRecordStatus(
       action: "sync.record_updated",
       entityType: "sync_queue_record",
       entityId: record.id,
-      metadata: { status: input.status, serverEntityId: input.serverEntityId, error: input.error }
+      metadata: { status: input.status, serverEntityId, error }
     });
 
     return { status: "updated" as const, record };
   }
 
-  const existing = await prisma.syncQueueRecord.findFirst({ where: { tenantId, id: recordId, ...branchFilter(branchId) } });
+  const existing = await prisma.syncQueueRecord.findFirst({ where: { tenantId, id: recordId, ...branchFilter(filters) } });
   if (!existing) return { status: "not_found" as const };
+  if (existing.status === "synced") return { status: "finalized" as const };
 
   const record = await prisma.syncQueueRecord.update({
     where: { id: existing.id },
     data: {
       status: input.status,
-      serverEntityId: input.serverEntityId || existing.serverEntityId,
-      error: input.error || null,
+      serverEntityId: serverEntityId || existing.serverEntityId,
+      error: input.status === "failed" || input.status === "conflict" ? error : null,
       attempts: input.status === "queued" ? { increment: 1 } : undefined,
       lastAttemptAt: input.status === "queued" ? new Date() : existing.lastAttemptAt,
       syncedAt: input.status === "synced" ? new Date() : existing.syncedAt
@@ -237,7 +254,7 @@ export async function updateSyncRecordStatus(
     action: "sync.record_updated",
     entityType: "sync_queue_record",
     entityId: record.id,
-    metadata: { status: input.status, serverEntityId: input.serverEntityId, error: input.error }
+    metadata: { status: input.status, serverEntityId, error }
   });
 
   return { status: "updated" as const, record: toApiSyncRecord(record) };

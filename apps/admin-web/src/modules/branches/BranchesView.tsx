@@ -64,7 +64,7 @@ export function BranchesView() {
   const storedAuth = useMemo(() => readStoredAuth(), []);
   const activeUserId = storedAuth?.staff.id ?? "";
   const activeBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
-  const canCreateBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
+  const canCreateBranches = storedAuth?.staff.role === "owner";
   const [branches, setBranches] = useState<BranchProfile[]>([]);
   const [terminals, setTerminals] = useState<TerminalDevice[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<BranchProfile | null>(null);
@@ -245,7 +245,7 @@ export function BranchesView() {
     setStatus(selectedTerminal ? "Updating terminal..." : "Provisioning terminal...");
 
     try {
-      const response = selectedTerminal ? await updateTerminal(selectedTerminal.id, terminalForm, terminalForm.branchId) : await createTerminal(terminalForm);
+      const response = selectedTerminal ? await updateTerminal(selectedTerminal.id, terminalForm, selectedTerminal.branchId) : await createTerminal(terminalForm);
       applyTerminalUpdate(response.terminal);
       setStatus(selectedTerminal ? "Terminal updated" : "Terminal provisioned");
       closeTerminalModal();

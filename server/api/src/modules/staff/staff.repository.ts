@@ -1,8 +1,9 @@
 import type { Prisma, StaffMember as DbStaffMember } from "@prisma/client";
-import { appendAudit, branches, demoSecretHash, demoTenants, staffMembers } from "../../shared/data/demoStore";
+import { appendAudit, branches, demoSecretHash, demoTenants, staffMembers, tenantSubscriptions } from "../../shared/data/demoStore";
 import type { StaffMember } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
 import { getRolePermissions } from "../roles/roles.repository";
+import { planCatalog } from "../subscriptions/subscriptions.repository";
 
 const useDemoStore = process.env.NODE_ENV === "test";
 
@@ -17,6 +18,7 @@ type StaffInput = {
 };
 
 type StaffPatchInput = Partial<StaffInput>;
+export type BranchScopeFilter = { branchId?: string; branchIds?: string[] };
 type ProfileSecurityInput = {
   currentPassword: string;
   newPassword?: string;
@@ -126,8 +128,40 @@ async function branchBelongsToTenant(tenantId: string, branchId: string) {
   return Boolean(branch);
 }
 
-function staffBranchFilter(branchId?: string) {
-  return branchId ? { branchId } : {};
+async function getTenantUserLimit(tenantId: string) {
+  if (useDemoStore) {
+    const tenant = demoTenants.find((item) => item.id === tenantId);
+    const subscription = tenantSubscriptions.find((item) => item.tenantId === tenantId);
+    const plan = tenant?.plan && tenant.plan in planCatalog ? tenant.plan : "Professional";
+    return subscription?.userLimit ?? planCatalog[plan].userLimit;
+  }
+
+  const [tenant, subscription] = await Promise.all([
+    prisma.tenant.findUnique({ where: { id: tenantId }, select: { plan: true } }),
+    prisma.tenantSubscription.findUnique({ where: { tenantId }, select: { userLimit: true } })
+  ]);
+  const plan = tenant?.plan && tenant.plan in planCatalog ? tenant.plan as keyof typeof planCatalog : "Professional";
+  return subscription?.userLimit ?? planCatalog[plan].userLimit;
+}
+
+async function countBillableStaff(tenantId: string) {
+  if (useDemoStore) {
+    return staffMembers.filter((member) => member.tenantId === tenantId && member.inviteStatus !== "revoked").length;
+  }
+
+  return prisma.staffMember.count({ where: { tenantId, inviteStatus: { not: "revoked" } } });
+}
+
+function matchesBranchScope(scope: BranchScopeFilter, branchId: string) {
+  if (scope.branchId) return branchId === scope.branchId;
+  if (scope.branchIds?.length) return scope.branchIds.includes(branchId);
+  return true;
+}
+
+function staffBranchFilter(scope: BranchScopeFilter) {
+  if (scope.branchId) return { branchId: scope.branchId };
+  if (scope.branchIds?.length) return { branchId: { in: scope.branchIds } };
+  return {};
 }
 
 async function appendStaffAudit(event: Parameters<typeof appendAudit>[0]) {
@@ -150,23 +184,23 @@ async function appendStaffAudit(event: Parameters<typeof appendAudit>[0]) {
   });
 }
 
-export async function listStaff(tenantId: string, branchId?: string) {
+export async function listStaff(tenantId: string, scope: BranchScopeFilter = {}) {
   if (useDemoStore) {
     return await Promise.all(staffMembers
-      .filter((member) => member.tenantId === tenantId && (branchId ? member.branchId === branchId : true))
+      .filter((member) => member.tenantId === tenantId && matchesBranchScope(scope, member.branchId))
       .map(serializeStaff));
   }
 
   const staff = await prisma.staffMember.findMany({
-    where: { tenantId, branchId: branchId ? branchId : undefined },
+    where: { tenantId, ...staffBranchFilter(scope) },
     orderBy: { name: "asc" }
   });
 
   return await Promise.all(staff.map((member) => serializeStaff(toApiStaff(member))));
 }
 
-export async function listStaffOptions(tenantId: string, branchId?: string) {
-  const staff = await listStaff(tenantId, branchId);
+export async function listStaffOptions(tenantId: string, scope: string | BranchScopeFilter = {}) {
+  const staff = await listStaff(tenantId, typeof scope === "string" ? { branchId: scope } : scope);
   return staff
     .filter((member) => member.active)
     .map((member) => ({
@@ -335,6 +369,7 @@ export async function createStaff(tenantId: string, userId: string, input: Staff
     const duplicateEmail = staffMembers.some((member) => member.tenantId === tenantId && member.email === input.email);
 
     if (duplicateEmail) return { status: "duplicate_email" as const };
+    if (await countBillableStaff(tenantId) >= await getTenantUserLimit(tenantId)) return { status: "user_limit_reached" as const };
 
     const member = {
       id: await nextStaffId(tenantId, input.branchId, input.name),
@@ -371,6 +406,7 @@ export async function createStaff(tenantId: string, userId: string, input: Staff
   const duplicateEmail = await prisma.staffMember.findFirst({ where: { tenantId, email: input.email } });
 
   if (duplicateEmail) return { status: "duplicate_email" as const };
+  if (await countBillableStaff(tenantId) >= await getTenantUserLimit(tenantId)) return { status: "user_limit_reached" as const };
 
   const member = await prisma.staffMember.create({
     data: {
@@ -404,7 +440,7 @@ export async function createStaff(tenantId: string, userId: string, input: Staff
   return { status: "created" as const, staff: await serializeStaff(toApiStaff(member)) };
 }
 
-export async function updateStaff(tenantId: string, requestBranchId: string | undefined, userId: string, staffId: string, input: StaffPatchInput) {
+export async function updateStaff(tenantId: string, scope: BranchScopeFilter, userId: string, staffId: string, input: StaffPatchInput) {
   if (input.branchId) {
     const validBranch = await branchBelongsToTenant(tenantId, input.branchId);
 
@@ -413,7 +449,7 @@ export async function updateStaff(tenantId: string, requestBranchId: string | un
 
   if (useDemoStore) {
     const staffIndex = staffMembers.findIndex(
-      (member) => member.tenantId === tenantId && member.id === staffId && (!requestBranchId || member.branchId === requestBranchId)
+      (member) => member.tenantId === tenantId && member.id === staffId && matchesBranchScope(scope, member.branchId)
     );
 
     if (staffIndex === -1) return { status: "not_found" as const };
@@ -439,7 +475,7 @@ export async function updateStaff(tenantId: string, requestBranchId: string | un
     return { status: "updated" as const, staff: await serializeStaff(member) };
   }
 
-  const existingStaff = await prisma.staffMember.findFirst({ where: { tenantId, id: staffId, ...staffBranchFilter(requestBranchId) } });
+  const existingStaff = await prisma.staffMember.findFirst({ where: { tenantId, id: staffId, ...staffBranchFilter(scope) } });
 
   if (!existingStaff) return { status: "not_found" as const };
 
@@ -479,7 +515,7 @@ export async function updateStaff(tenantId: string, requestBranchId: string | un
 
 export async function setStaffStatus(
   tenantId: string,
-  requestBranchId: string | undefined,
+  scope: BranchScopeFilter,
   userId: string,
   staffId: string,
   input: { active: boolean; reason: string }
@@ -487,7 +523,7 @@ export async function setStaffStatus(
   if (staffId === userId && !input.active) return { status: "self_deactivate" as const };
 
   if (useDemoStore) {
-    const member = staffMembers.find((item) => item.tenantId === tenantId && item.id === staffId && (!requestBranchId || item.branchId === requestBranchId));
+    const member = staffMembers.find((item) => item.tenantId === tenantId && item.id === staffId && matchesBranchScope(scope, item.branchId));
 
     if (!member) return { status: "not_found" as const };
 
@@ -506,7 +542,7 @@ export async function setStaffStatus(
     return { status: "updated" as const, staff: await serializeStaff(member) };
   }
 
-  const existingStaff = await prisma.staffMember.findFirst({ where: { tenantId, id: staffId, ...staffBranchFilter(requestBranchId) } });
+  const existingStaff = await prisma.staffMember.findFirst({ where: { tenantId, id: staffId, ...staffBranchFilter(scope) } });
 
   if (!existingStaff) return { status: "not_found" as const };
 
@@ -533,7 +569,7 @@ export async function setStaffStatus(
 
 export async function updateStaffSecurity(
   tenantId: string,
-  requestBranchId: string | undefined,
+  scope: BranchScopeFilter,
   userId: string,
   staffId: string,
   input: StaffSecurityInput
@@ -545,7 +581,7 @@ export async function updateStaffSecurity(
   if (input.pinEnabled === true && !pin) return { status: "pin_required" as const };
 
   if (useDemoStore) {
-    const member = staffMembers.find((item) => item.tenantId === tenantId && item.id === staffId && (!requestBranchId || item.branchId === requestBranchId)) as (StaffMember & { passwordHash?: string; pinHash?: string }) | undefined;
+    const member = staffMembers.find((item) => item.tenantId === tenantId && item.id === staffId && matchesBranchScope(scope, item.branchId)) as (StaffMember & { passwordHash?: string; pinHash?: string }) | undefined;
 
     if (!member) return { status: "not_found" as const };
 
@@ -579,7 +615,7 @@ export async function updateStaffSecurity(
     return { status: "updated" as const, staff: await serializeStaff(member) };
   }
 
-  const existingStaff = await prisma.staffMember.findFirst({ where: { tenantId, id: staffId, ...staffBranchFilter(requestBranchId) } });
+  const existingStaff = await prisma.staffMember.findFirst({ where: { tenantId, id: staffId, ...staffBranchFilter(scope) } });
   if (!existingStaff) return { status: "not_found" as const };
 
   const changedFields: string[] = [];
@@ -618,9 +654,9 @@ export async function updateStaffSecurity(
   return { status: "updated" as const, staff: await serializeStaff(toApiStaff(member)) };
 }
 
-export async function resendStaffInvite(tenantId: string, requestBranchId: string | undefined, userId: string, staffId: string) {
+export async function resendStaffInvite(tenantId: string, scope: BranchScopeFilter, userId: string, staffId: string) {
   if (useDemoStore) {
-    const member = staffMembers.find((item) => item.tenantId === tenantId && item.id === staffId && (!requestBranchId || item.branchId === requestBranchId));
+    const member = staffMembers.find((item) => item.tenantId === tenantId && item.id === staffId && matchesBranchScope(scope, item.branchId));
 
     if (!member) return { status: "not_found" as const };
 
@@ -642,7 +678,7 @@ export async function resendStaffInvite(tenantId: string, requestBranchId: strin
     return { status: "resent" as const, staff: await serializeStaff(member) };
   }
 
-  const existingStaff = await prisma.staffMember.findFirst({ where: { tenantId, id: staffId, ...staffBranchFilter(requestBranchId) } });
+  const existingStaff = await prisma.staffMember.findFirst({ where: { tenantId, id: staffId, ...staffBranchFilter(scope) } });
 
   if (!existingStaff) return { status: "not_found" as const };
 
@@ -671,11 +707,11 @@ export async function resendStaffInvite(tenantId: string, requestBranchId: strin
   return { status: "resent" as const, staff: await serializeStaff(toApiStaff(member)) };
 }
 
-export async function revokeStaffInvite(tenantId: string, requestBranchId: string | undefined, userId: string, staffId: string) {
+export async function revokeStaffInvite(tenantId: string, scope: BranchScopeFilter, userId: string, staffId: string) {
   if (staffId === userId) return { status: "self_revoke" as const };
 
   if (useDemoStore) {
-    const member = staffMembers.find((item) => item.tenantId === tenantId && item.id === staffId && (!requestBranchId || item.branchId === requestBranchId));
+    const member = staffMembers.find((item) => item.tenantId === tenantId && item.id === staffId && matchesBranchScope(scope, item.branchId));
 
     if (!member) return { status: "not_found" as const };
 
@@ -695,7 +731,7 @@ export async function revokeStaffInvite(tenantId: string, requestBranchId: strin
     return { status: "revoked" as const, staff: await serializeStaff(member) };
   }
 
-  const existingStaff = await prisma.staffMember.findFirst({ where: { tenantId, id: staffId, ...staffBranchFilter(requestBranchId) } });
+  const existingStaff = await prisma.staffMember.findFirst({ where: { tenantId, id: staffId, ...staffBranchFilter(scope) } });
 
   if (!existingStaff) return { status: "not_found" as const };
 

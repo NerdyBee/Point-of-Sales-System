@@ -1,7 +1,8 @@
 import type { Branch as DbBranch, Prisma, Terminal as DbTerminal } from "@prisma/client";
-import { appendAudit, branches, demoTenants, terminals } from "../../shared/data/demoStore";
+import { appendAudit, branches, demoTenants, tenantSubscriptions, terminals } from "../../shared/data/demoStore";
 import type { BranchProfile, TerminalDevice } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
+import { planCatalog } from "../subscriptions/subscriptions.repository";
 
 const useDemoStore = process.env.NODE_ENV === "test";
 
@@ -49,11 +50,17 @@ function readDefaultBranchId(settings: Prisma.JsonValue | unknown) {
 async function getTenantBranchPolicy(tenantId: string) {
   if (useDemoStore) {
     const tenant = demoTenants.find((item) => item.id === tenantId);
-    return tenant ? { branchLimit: tenant.branchLimit, defaultBranchId: tenant.settings.defaultBranchId } : null;
+    const subscription = tenantSubscriptions.find((item) => item.tenantId === tenantId);
+    const plan = tenant?.plan && tenant.plan in planCatalog ? tenant.plan : "Professional";
+    return tenant ? { branchLimit: tenant.branchLimit, terminalLimit: subscription?.terminalLimit ?? planCatalog[plan].terminalLimit, defaultBranchId: tenant.settings.defaultBranchId } : null;
   }
 
-  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { branchLimit: true, settings: true } });
-  return tenant ? { branchLimit: tenant.branchLimit, defaultBranchId: readDefaultBranchId(tenant.settings) } : null;
+  const [tenant, subscription] = await Promise.all([
+    prisma.tenant.findUnique({ where: { id: tenantId }, select: { branchLimit: true, settings: true, plan: true } }),
+    prisma.tenantSubscription.findUnique({ where: { tenantId }, select: { terminalLimit: true } })
+  ]);
+  const plan = tenant?.plan && tenant.plan in planCatalog ? tenant.plan as keyof typeof planCatalog : "Professional";
+  return tenant ? { branchLimit: tenant.branchLimit, terminalLimit: subscription?.terminalLimit ?? planCatalog[plan].terminalLimit, defaultBranchId: readDefaultBranchId(tenant.settings) } : null;
 }
 
 async function countActiveBranches(tenantId: string) {
@@ -62,6 +69,14 @@ async function countActiveBranches(tenantId: string) {
   }
 
   return prisma.branch.count({ where: { tenantId, status: "active" } });
+}
+
+async function countTerminals(tenantId: string) {
+  if (useDemoStore) {
+    return terminals.filter((terminal) => terminal.tenantId === tenantId).length;
+  }
+
+  return prisma.terminal.count({ where: { tenantId } });
 }
 
 function toApiBranch(branch: DbBranch): BranchProfile {
@@ -308,6 +323,9 @@ export async function createTerminal(tenantId: string, userId: string, input: Te
     if (!branch) return { status: "branch_not_found" as const };
     if (input.status === "online" && branch.status !== "active") return { status: "branch_not_active" as const };
 
+    const policy = await getTenantBranchPolicy(tenantId);
+    if (policy && await countTerminals(tenantId) >= policy.terminalLimit) return { status: "terminal_limit_reached" as const };
+
     const duplicateDeviceCode = terminals.some((terminal) => terminal.tenantId === tenantId && terminal.deviceCode === input.deviceCode);
     if (duplicateDeviceCode) return { status: "duplicate_device_code" as const };
 
@@ -336,6 +354,9 @@ export async function createTerminal(tenantId: string, userId: string, input: Te
   const branch = await prisma.branch.findFirst({ where: { tenantId, id: input.branchId } });
   if (!branch) return { status: "branch_not_found" as const };
   if (input.status === "online" && branch.status !== "active") return { status: "branch_not_active" as const };
+
+  const policy = await getTenantBranchPolicy(tenantId);
+  if (policy && await countTerminals(tenantId) >= policy.terminalLimit) return { status: "terminal_limit_reached" as const };
 
   const duplicateDeviceCode = await prisma.terminal.findFirst({ where: { tenantId, deviceCode: input.deviceCode } });
   if (duplicateDeviceCode) return { status: "duplicate_device_code" as const };

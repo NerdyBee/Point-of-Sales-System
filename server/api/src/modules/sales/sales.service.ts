@@ -1,8 +1,17 @@
 import { z } from "zod";
 import { paymentMethodSchema, saleLineSchema } from "@pos/validation";
-import { demoProducts, type DemoProduct } from "../../shared/data/demoStore";
 
 const referenceRequiredMethods = new Set(["card", "bank_transfer", "mobile_money"]);
+
+export type SaleCatalogProduct = {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  name: string;
+  category: string;
+  price: number;
+  taxRate: number;
+};
 
 export const createSaleSchema = z.object({
   branchId: z.string().min(1),
@@ -34,13 +43,13 @@ export function previewSaleTotal(
   tenantId: string,
   payload: z.infer<typeof createSaleSchema>,
   chargeDefaults: { vatRate?: number; serviceChargeEnabled?: boolean; serviceChargeRate?: number } = {},
-  productCatalog: DemoProduct[] = demoProducts
+  productCatalog: SaleCatalogProduct[]
 ) {
   const serviceChargeEnabled = chargeDefaults.serviceChargeEnabled ?? true;
   const serviceChargeRate = chargeDefaults.serviceChargeRate ?? 0.05;
   const vatRate = chargeDefaults.vatRate;
   const lines = payload.lines.map((line) => {
-    const product = productCatalog.find((item) => item.tenantId === tenantId && item.id === line.productId);
+    const product = productCatalog.find((item) => item.tenantId === tenantId && item.branchId === payload.branchId && item.id === line.productId);
 
     if (!product) {
       throw new Error(`Product ${line.productId} is not available for this tenant`);

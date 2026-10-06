@@ -20,6 +20,7 @@ export interface AccessRoleDto {
 }
 
 const demoRoles = new Map<string, AccessRoleDto[]>();
+type BranchScopeFilter = { branchId?: string; branchIds?: string[] };
 
 function nextRoleId(name: string) {
   return `role-${name}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -235,14 +236,22 @@ export async function updateRolePermissions(tenantId: string, userId: string, ro
   return { status: "updated" as const, role: (await listRoles(tenantId)).find((item) => item.id === roleId)! };
 }
 
-function staffBranchFilter(branchId?: string) {
-  return branchId ? { branchId } : {};
+function matchesBranchScope(scope: BranchScopeFilter, branchId: string) {
+  if (scope.branchId) return branchId === scope.branchId;
+  if (scope.branchIds?.length) return scope.branchIds.includes(branchId);
+  return true;
 }
 
-export async function assignStaffRole(tenantId: string, branchId: string | undefined, userId: string, staffId: string, roleName: string) {
+function staffBranchFilter(scope: BranchScopeFilter) {
+  if (scope.branchId) return { branchId: scope.branchId };
+  if (scope.branchIds?.length) return { branchId: { in: scope.branchIds } };
+  return {};
+}
+
+export async function assignStaffRole(tenantId: string, scope: BranchScopeFilter, userId: string, staffId: string, roleName: string) {
   if (useDemoStore) {
     const role = demoTenantRoles(tenantId).find((item) => item.name === roleName);
-    const staff = staffMembers.find((member) => member.tenantId === tenantId && member.id === staffId && (!branchId || member.branchId === branchId));
+    const staff = staffMembers.find((member) => member.tenantId === tenantId && member.id === staffId && matchesBranchScope(scope, member.branchId));
     if (!role) return { status: "role_not_found" as const };
     if (!staff) return { status: "staff_not_found" as const };
     staff.role = roleName as typeof staff.role;
@@ -251,7 +260,7 @@ export async function assignStaffRole(tenantId: string, branchId: string | undef
 
   const [role, staff] = await Promise.all([
     prisma.accessRole.findFirst({ where: { tenantId, name: roleName } }),
-    prisma.staffMember.findFirst({ where: { tenantId, id: staffId, ...staffBranchFilter(branchId) } })
+    prisma.staffMember.findFirst({ where: { tenantId, id: staffId, ...staffBranchFilter(scope) } })
   ]);
   if (!role) return { status: "role_not_found" as const };
   if (!staff) return { status: "staff_not_found" as const };

@@ -11,18 +11,19 @@ import {
   type ApprovalRequest,
   type BranchOption,
   type Expense,
+  type ExpensePaymentMethodCode,
   type ExpensePayload,
-  type ExpenseStatus,
-  type PaymentMethodCode
+  type ExpenseStatus
 } from "../../shared/api/client";
 import { StatusBadge } from "../../shared/components/StatusBadge";
 import { StatCard } from "../../shared/components/StatCard";
 import { TablePagination, usePaginatedRows } from "../../shared/components/TablePagination";
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
+import { dateRangeErrorMessage, hasInvertedDateRange } from "../../shared/utils/dateFilters";
 
 const fallbackBranches: BranchOption[] = [];
 const expenseCategories = ["Utilities", "Repairs", "Rent", "Transport", "Marketing", "Supplies", "Staff welfare", "Other"];
-const paymentMethods: Array<{ value: PaymentMethodCode; label: string }> = [
+const paymentMethods: Array<{ value: ExpensePaymentMethodCode; label: string }> = [
   { value: "cash", label: "Cash" },
   { value: "card", label: "Card" },
   { value: "bank_transfer", label: "Bank transfer" },
@@ -37,7 +38,7 @@ function blankExpense(branchId = ""): ExpensePayload {
     description: "",
     vendor: "",
     amount: 0,
-    paymentMethod: "" as PaymentMethodCode,
+    paymentMethod: "" as ExpensePaymentMethodCode,
     reference: "",
     status: "" as ExpenseStatus,
     spentAt: new Date().toISOString(),
@@ -59,7 +60,8 @@ interface ExpensesViewProps {
 
 export function ExpensesView({ approvalHandoff, onApprovalHandoffConsumed }: ExpensesViewProps) {
   const storedAuth = useMemo(() => readStoredAuth(), []);
-  const initialBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
+  const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
+  const initialBranchId = canUseAllBranches ? "" : storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
   const activeUserId = storedAuth?.staff.id ?? "";
   const handledApprovalIdRef = useRef<string | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -103,13 +105,18 @@ export function ExpensesView({ approvalHandoff, onApprovalHandoffConsumed }: Exp
   const branchLocked = Boolean(branchId && branches.length === 1);
 
   async function loadExpenses(nextStatus = statusFilter, nextBranchId = branchId, nextStartDate = startDate, nextEndDate = endDate) {
+    if (hasInvertedDateRange(nextStartDate, nextEndDate)) {
+      setStatus(dateRangeErrorMessage());
+      return;
+    }
+
     setStatus("Syncing expenses...");
 
     try {
       const branchResponse = await fetchBranchOptions();
       setBranches(branchResponse.branches);
 
-      if (!nextBranchId) {
+      if (!nextBranchId && !canUseAllBranches) {
         setExpenses([]);
         setStatus("Select a branch to load expenses");
         return;
@@ -304,7 +311,7 @@ export function ExpensesView({ approvalHandoff, onApprovalHandoffConsumed }: Exp
               </span>
             ) : (
               <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-                <option value="">Branch</option>
+                <option value="">{canUseAllBranches ? "All accessible branches" : "Branch"}</option>
                 {branches.map((branch) => (
                   <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
                 ))}
@@ -418,7 +425,7 @@ export function ExpensesView({ approvalHandoff, onApprovalHandoffConsumed }: Exp
               </label>
               <label>
                 Payment method
-                <select value={form.paymentMethod} onChange={(event) => updateForm("paymentMethod", event.target.value as PaymentMethodCode)}>
+                <select value={form.paymentMethod} onChange={(event) => updateForm("paymentMethod", event.target.value as ExpensePaymentMethodCode)}>
                   <option value="">Payment method</option>
                   {paymentMethods.map((method) => <option key={method.value} value={method.value}>{method.label}</option>)}
                 </select>
@@ -432,6 +439,22 @@ export function ExpensesView({ approvalHandoff, onApprovalHandoffConsumed }: Exp
                   <option value="approved">Approved</option>
                   <option value="paid">Paid</option>
                 </select>
+              </label>
+              <label>
+                Branch
+                {branchLocked ? (
+                  <span className="locked-select-value">
+                    <strong>{selectedBranch?.name ?? branchId}</strong>
+                    <small>{selectedBranch?.city ?? "assigned"}</small>
+                  </span>
+                ) : (
+                  <select value={form.branchId} onChange={(event) => updateForm("branchId", event.target.value)} required>
+                    <option value="">Branch</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
+                    ))}
+                  </select>
+                )}
               </label>
               <label>
                 Amount

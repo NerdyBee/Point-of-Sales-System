@@ -304,12 +304,17 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
 
         setBranches(response.branches.length > 0 ? response.branches : fallbackBranches);
         setTerminals(response.terminals);
-        const branchTerminals = response.terminals.filter((terminal) => terminal.branchId === branchId);
+        const effectiveBranchId = branchId || response.branches[0]?.id || "";
+        if (effectiveBranchId && effectiveBranchId !== branchId) {
+          setBranchId(effectiveBranchId);
+        }
+
+        const branchTerminals = response.terminals.filter((terminal) => terminal.branchId === effectiveBranchId);
         const currentTerminal = branchTerminals.find((terminal) => terminal.id === terminalId);
         const defaultTerminal = currentTerminal ?? branchTerminals.find((terminal) => terminal.status === "online");
         if (defaultTerminal) {
           setTerminalId(defaultTerminal.id);
-          await loadRegister(defaultTerminal.id, branchId);
+          await loadRegister(defaultTerminal.id, effectiveBranchId);
         } else {
           setRegisterShift(null);
           setRegisterMessage("No terminal provisioned for this branch");
@@ -409,6 +414,25 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
     setLastSaleReceipt(null);
     setLastSettledReceipt(null);
     setSyncState({ status: "success", message: "Branch changed. Select a terminal to continue.", saleId: nextBranchId });
+  }
+
+  function changeTerminal(nextTerminalId: string) {
+    setTerminalId(nextTerminalId);
+    setRegisterShift(null);
+    setPaymentReference("");
+    setPaymentAmount(0);
+    setTenderPayments([]);
+    setSaleDiscountApprovalId("");
+
+    if (!nextTerminalId) {
+      setRegisterMessage("Select a terminal");
+      setSyncState({ status: "success", message: "Select a terminal to continue.", saleId: branchId });
+      return;
+    }
+
+    setRegisterMessage("Checking register shift...");
+    setSyncState({ status: "loading", message: "Checking register shift..." });
+    void loadRegister(nextTerminalId, branchId);
   }
 
   function addProduct(product: Product) {
@@ -1009,12 +1033,12 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
               <strong>{selectedBranch?.name ?? branchId}</strong>
               <small>{selectedBranch?.status ?? "assigned"}</small>
             </span>
-          ) : (
-            <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
+            ) : (
+              <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
               <option value="">Branch</option>
               {branches.map((branch) => (
                 <option key={branch.id} value={branch.id} disabled={branch.status !== "active"}>
-                  {branch.name} - {branch.status}
+                  {branch.name} - {branch.city} - {branch.status}
                 </option>
               ))}
             </select>
@@ -1022,7 +1046,7 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
         </label>
         <label className="terminal-selector">
           Terminal
-          <select value={terminalId} onChange={(event) => setTerminalId(event.target.value)}>
+          <select value={terminalId} onChange={(event) => changeTerminal(event.target.value)}>
             <option value="">Terminal</option>
             {branchTerminals.map((terminal) => (
               <option key={terminal.id} value={terminal.id} disabled={terminal.status !== "online"}>

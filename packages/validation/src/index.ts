@@ -136,7 +136,7 @@ export const supplierInvoiceInputSchema = z.object({
 
 export const supplierInvoicePaymentSchema = z.object({
   amount: z.number().int().positive(),
-  paymentMethod: z.enum(["cash", "card", "bank_transfer", "mobile_money", "customer_credit", "voucher"]),
+  paymentMethod: z.enum(["cash", "card", "bank_transfer", "mobile_money"]),
   reference: z.string().min(2).max(80),
   paidAt: z.string().datetime(),
   note: z.string().max(160).optional().or(z.literal(""))
@@ -407,7 +407,7 @@ export const expenseInputSchema = z.object({
   description: z.string().min(3).max(180),
   vendor: z.string().max(120).optional().or(z.literal("")),
   amount: z.number().int().positive(),
-  paymentMethod: z.enum(["cash", "card", "bank_transfer", "mobile_money", "customer_credit", "voucher"]),
+  paymentMethod: z.enum(["cash", "card", "bank_transfer", "mobile_money", "voucher"]),
   reference: z.string().max(100).optional().or(z.literal("")),
   spentAt: z.string().datetime(),
   status: expenseStatusSchema.default("draft"),
@@ -530,6 +530,9 @@ export const subscriptionInvoiceStatusSchema = z.enum(["draft", "open", "paid", 
 export const subscriptionInvoiceUpdateSchema = z.object({
   status: subscriptionInvoiceStatusSchema,
   paymentReference: z.string().max(100).optional().or(z.literal(""))
+}).refine((payload) => payload.status !== "paid" || Boolean(payload.paymentReference?.trim()), {
+  message: "Payment reference is required for paid invoices",
+  path: ["paymentReference"]
 });
 
 export const subscriptionInvoiceCreateSchema = z.object({
@@ -537,10 +540,14 @@ export const subscriptionInvoiceCreateSchema = z.object({
   amount: z.number().int().nonnegative().optional(),
   status: subscriptionInvoiceStatusSchema.default("open"),
   issuedAt: z.string().datetime(),
-  dueAt: z.string().datetime()
+  dueAt: z.string().datetime(),
+  paymentReference: z.string().max(100).optional().or(z.literal(""))
 }).refine((payload) => new Date(payload.dueAt).getTime() >= new Date(payload.issuedAt).getTime(), {
   message: "Due date must be on or after issue date",
   path: ["dueAt"]
+}).refine((payload) => payload.status !== "paid" || Boolean(payload.paymentReference?.trim()), {
+  message: "Payment reference is required for paid invoices",
+  path: ["paymentReference"]
 });
 
 export const syncRecordStatusSchema = z.enum(["queued", "processing", "synced", "failed", "conflict"]);
@@ -559,4 +566,10 @@ export const syncQueueStatusSchema = z.object({
   status: z.enum(["queued", "synced", "failed", "conflict"]),
   serverEntityId: z.string().max(80).optional().or(z.literal("")),
   error: z.string().max(240).optional().or(z.literal(""))
+}).refine((payload) => payload.status !== "synced" || Boolean(payload.serverEntityId?.trim()), {
+  message: "Server entity ID is required for synced records",
+  path: ["serverEntityId"]
+}).refine((payload) => !["failed", "conflict"].includes(payload.status) || Boolean(payload.error?.trim()), {
+  message: "Review note is required for failed or conflict records",
+  path: ["error"]
 });

@@ -24,7 +24,8 @@ const fallbackBranches: BranchOption[] = [];
 
 export function RolesView() {
   const storedAuth = useMemo(() => readStoredAuth(), []);
-  const initialBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
+  const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
+  const initialBranchId = canUseAllBranches ? "" : storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
   const activeUserId = storedAuth?.staff.id ?? "";
   const activeRole = storedAuth?.staff.role ?? "";
   const [roles, setRoles] = useState<AccessRole[]>([]);
@@ -84,13 +85,13 @@ export function RolesView() {
         fetchRoles(),
         fetchBranchOptions()
       ]);
-      const staffResponse = nextBranchId ? await fetchStaff(nextBranchId, activeUserId) : { staff: [] };
+      const staffResponse = nextBranchId || canUseAllBranches ? await fetchStaff(nextBranchId, activeUserId) : { staff: [] };
       setRoles(roleResponse.roles);
       setPermissions(roleResponse.permissions);
       setStaff(staffResponse.staff);
       setBranches(branchResponse.branches);
       setSelectedRoleId((current) => current || roleResponse.roles[0]?.id || "");
-      setStatus(nextBranchId ? "Roles synced" : "Select a branch to load staff assignments");
+      setStatus(nextBranchId || canUseAllBranches ? "Roles synced" : "Select a branch to load staff assignments");
     } catch (error) {
       setBranches(fallbackBranches);
       setStaff([]);
@@ -176,14 +177,16 @@ export function RolesView() {
       return;
     }
 
-    if (!branchId) {
+    const assignmentStaff = staff.find((member) => member.id === assignment.staffId);
+    const assignmentBranchId = assignmentStaff?.branchId || branchId;
+    if (!assignmentBranchId) {
       setStatus("Select a branch before assigning roles");
       return;
     }
 
     setStatus("Assigning role...");
     try {
-      const response = await assignStaffRole(assignment.staffId, assignment.role, branchId);
+      const response = await assignStaffRole(assignment.staffId, assignment.role, assignmentBranchId);
       setStaff((current) => current.map((member) => member.id === response.staffId ? { ...member, role: response.role, permissions: permissionsForRole(response.role) } : member));
       if (response.staffId === activeUserId) {
         void refreshCurrentAuth();
@@ -233,7 +236,7 @@ export function RolesView() {
               </span>
             ) : (
               <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-                <option value="">Staff branch</option>
+                <option value="">{canUseAllBranches ? "All accessible branches" : "Staff branch"}</option>
                 {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
               </select>
             )}

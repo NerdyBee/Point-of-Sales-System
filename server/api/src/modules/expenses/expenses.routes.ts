@@ -1,7 +1,7 @@
 import { expenseInputSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
-import { canAccessAllBranches, resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, canAccessScopedBranches, resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import { createExpense, listExpenses, updateExpenseStatus } from "./expenses.repository";
 
 export const expensesRouter = Router();
@@ -21,16 +21,13 @@ function requestedBranch(req: Request) {
   const requested = req.query.branchId?.toString() ?? req.header("x-branch-id");
   if (requested) return requested;
 
-  if (!canAccessAllBranches(req.tenantContext!) && req.tenantContext!.branchId) {
-    return req.tenantContext!.branchId;
-  }
-
-  return undefined;
+  if (canAccessAllBranches(req.tenantContext!) || canAccessScopedBranches(req.tenantContext!)) return undefined;
+  return req.tenantContext!.branchId;
 }
 
 function resolveExpenseBranch(req: Request, res: Response) {
   const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !scope.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return null;
   }
@@ -38,12 +35,18 @@ function resolveExpenseBranch(req: Request, res: Response) {
   return scope;
 }
 
+function effectiveBranchScope(scope: ReturnType<typeof resolveBranchScope>, requestedBranchId?: string) {
+  return !requestedBranchId && scope.branchScopeIds?.length ? { ...scope, branchId: undefined } : scope;
+}
+
 expensesRouter.get("/", requireTenant, requirePermission("expense.manage"), async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
+  const requestedBranchId = requestedBranch(req);
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranchId);
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !scope.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
+  const effectiveScope = effectiveBranchScope(scope, requestedBranchId);
 
   const startDateValue = req.query.startDate?.toString();
   const endDateValue = req.query.endDate?.toString();
@@ -62,7 +65,8 @@ expensesRouter.get("/", requireTenant, requirePermission("expense.manage"), asyn
 
   const status = req.query.status?.toString();
   const expenses = await listExpenses(req.tenantContext!.tenantId, {
-    branchId: scope.branchId,
+    branchId: effectiveScope.branchId,
+    branchIds: !effectiveScope.branchId ? effectiveScope.branchScopeIds : undefined,
     status,
     startDate: startDate ?? undefined,
     endDate: endDate ?? undefined
@@ -80,7 +84,7 @@ expensesRouter.post("/", requireTenant, requirePermission("expense.manage"), asy
   }
 
   const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !scope.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
@@ -106,8 +110,10 @@ expensesRouter.patch("/:expenseId/status", requireTenant, requirePermission("exp
     return;
   }
 
+  const requestedBranchId = requestedBranch(req);
   const scope = resolveExpenseBranch(req, res);
   if (!scope) return;
+  const effectiveScope = effectiveBranchScope(scope, requestedBranchId);
 
   const result = await updateExpenseStatus(
     req.tenantContext!.tenantId,
@@ -115,7 +121,10 @@ expensesRouter.patch("/:expenseId/status", requireTenant, requirePermission("exp
     req.params.expenseId.toString(),
     parsed.data.status,
     parsed.data.note,
-    scope.branchId
+    {
+      branchId: effectiveScope.branchId,
+      branchIds: !effectiveScope.branchId ? effectiveScope.branchScopeIds : undefined
+    }
   );
 
   if (result.status === "not_found") {

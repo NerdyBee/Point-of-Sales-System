@@ -3,8 +3,21 @@ import { appendAudit, branches, demoProducts, demoTenants, type DemoProduct } fr
 import { prisma } from "../../shared/db/prisma";
 
 export type ProductInput = Omit<DemoProduct, "id" | "tenantId" | "taxRate"> & { taxRate?: number };
+type BranchScopeFilter = { branchId?: string; branchIds?: string[] };
 
 const useDemoStore = process.env.NODE_ENV === "test";
+
+function matchesBranchScope(scope: BranchScopeFilter, branchId: string) {
+  if (scope.branchId) return branchId === scope.branchId;
+  if (scope.branchIds?.length) return scope.branchIds.includes(branchId);
+  return true;
+}
+
+function branchWhere(scope: BranchScopeFilter) {
+  if (scope.branchId) return scope.branchId;
+  if (scope.branchIds?.length) return { in: scope.branchIds };
+  return undefined;
+}
 
 function isServiceCategory(category: string) {
   return category.trim().toLowerCase() === "services";
@@ -46,13 +59,13 @@ function nextProductId() {
   return `p${demoProducts.length + 1}`;
 }
 
-export async function listCatalogProducts(tenantId: string, branchId?: string) {
+export async function listCatalogProducts(tenantId: string, scope: BranchScopeFilter = {}) {
   if (useDemoStore) {
-    return demoProducts.filter((product) => product.tenantId === tenantId && (!branchId || product.branchId === branchId));
+    return demoProducts.filter((product) => product.tenantId === tenantId && matchesBranchScope(scope, product.branchId));
   }
 
   const products = await prisma.product.findMany({
-    where: { tenantId, branchId: branchId ? branchId : undefined },
+    where: { tenantId, branchId: branchWhere(scope) },
     orderBy: { name: "asc" }
   });
 

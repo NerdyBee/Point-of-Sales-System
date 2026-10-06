@@ -1,6 +1,6 @@
 import { customerInputSchema, customerLedgerInputSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
-import { canAccessAllBranches, requireAnyPermission, requirePermission, requireTenant, resolveBranchScope } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, canAccessScopedBranches, requireAnyPermission, requirePermission, requireTenant, resolveBranchScope } from "../../shared/http/tenantContext";
 import { createCustomer, listCustomerLedger, listCustomers, postCustomerLedger, updateCustomer } from "./customers.repository";
 
 export const customersRouter = Router();
@@ -12,7 +12,11 @@ function parseCustomerLedgerDate(value: string | undefined, endOfDay = false) {
 }
 
 function requestedBranch(req: Request) {
-  return req.query.branchId?.toString() ?? req.header("x-branch-id") ?? req.tenantContext!.branchId;
+  const requested = req.query.branchId?.toString() ?? req.header("x-branch-id");
+  if (requested) return requested;
+
+  if (canAccessAllBranches(req.tenantContext!) || canAccessScopedBranches(req.tenantContext!)) return undefined;
+  return req.tenantContext!.branchId;
 }
 
 function resolveCustomerBranch(req: Request, res: Response, requireBranch = false) {
@@ -25,9 +29,21 @@ function resolveCustomerBranch(req: Request, res: Response, requireBranch = fals
   return scope;
 }
 
+function effectiveBranchScope(scope: ReturnType<typeof resolveBranchScope>, requestedBranchId?: string) {
+  return !requestedBranchId && scope.branchScopeIds?.length ? { ...scope, branchId: undefined } : scope;
+}
+
 customersRouter.get("/", requireTenant, requireAnyPermission(["sale.create", "customer.manage"]), async (req, res) => {
   const query = req.query.q?.toString().toLowerCase() ?? "";
-  const customers = await listCustomers(req.tenantContext!.tenantId, query);
+  const canManageCustomers = req.tenantContext!.permissions.includes("customer.manage");
+  const requestedBranchId = canManageCustomers ? requestedBranch(req) : undefined;
+  const scope = canManageCustomers ? resolveCustomerBranch(req, res) : undefined;
+  if (canManageCustomers && !scope) return;
+  const effectiveScope = scope ? effectiveBranchScope(scope, requestedBranchId) : undefined;
+  const customers = await listCustomers(req.tenantContext!.tenantId, query, {
+    branchId: effectiveScope?.branchId,
+    branchIds: effectiveScope && !effectiveScope.branchId ? effectiveScope.branchScopeIds : undefined
+  });
 
   res.json({ customers });
 });
@@ -86,8 +102,10 @@ customersRouter.patch("/:customerId", requireTenant, requirePermission("customer
 });
 
 customersRouter.get("/:customerId/ledger", requireTenant, requirePermission("customer.manage"), async (req, res) => {
+  const requestedBranchId = requestedBranch(req);
   const scope = resolveCustomerBranch(req, res);
   if (!scope) return;
+  const effectiveScope = effectiveBranchScope(scope, requestedBranchId);
 
   const startDateValue = req.query.startDate?.toString();
   const endDateValue = req.query.endDate?.toString();
@@ -107,7 +125,10 @@ customersRouter.get("/:customerId/ledger", requireTenant, requirePermission("cus
   const result = await listCustomerLedger(
     req.tenantContext!.tenantId,
     req.params.customerId.toString(),
-    scope.branchId,
+    {
+      branchId: effectiveScope.branchId,
+      branchIds: !effectiveScope.branchId ? effectiveScope.branchScopeIds : undefined
+    },
     { startDate: startDate ?? undefined, endDate: endDate ?? undefined }
   );
 

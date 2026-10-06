@@ -1,7 +1,7 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app";
-import { appendAudit, demoProducts, staffMembers, stockMovements } from "./shared/data/demoStore";
+import { appendAudit, appendCompletedSale, authSessions, branches, demoProducts, paymentRecords, prepTickets, registerShifts, staffMembers, stockMovements, terminals } from "./shared/data/demoStore";
 
 const app = createApp();
 
@@ -81,6 +81,49 @@ async function applySaleDraftDiscountApproval(input: { terminalId: string; branc
       entityType: "saleDraft",
       entityId: input.terminalId,
       type: "discount",
+      amount: input.amount,
+      note: input.reason
+    });
+
+  expect(approvalResponse.status).toBe(201);
+  expect(decisionResponse.status).toBe(200);
+  expect(applyResponse.status).toBe(200);
+  return approvalResponse.body.approval.id as string;
+}
+
+async function applyRegisterCloseApproval(input: { shiftId: string; branchId?: string; amount: number; reason: string }) {
+  const branchId = input.branchId ?? "branch-lagos-main";
+  const approvalResponse = await request(app)
+    .post("/api/v1/approvals")
+    .set("x-tenant-id", "tenant-lagos-foods")
+    .set("x-branch-id", branchId)
+    .set("x-role", "manager")
+    .set("x-user-id", "manager-1")
+    .send({
+      branchId,
+      type: "register_close",
+      entityType: "registerShift",
+      entityId: input.shiftId,
+      amount: input.amount,
+      reason: input.reason
+    });
+  const decisionResponse = await request(app)
+    .patch(`/api/v1/approvals/${approvalResponse.body.approval.id}/decision`)
+    .set("x-tenant-id", "tenant-lagos-foods")
+    .set("x-branch-id", branchId)
+    .set("x-role", "manager")
+    .set("x-user-id", "manager-1")
+    .send({ decision: "approved", note: "Register close approved" });
+  const applyResponse = await request(app)
+    .post(`/api/v1/approvals/${approvalResponse.body.approval.id}/apply`)
+    .set("x-tenant-id", "tenant-lagos-foods")
+    .set("x-branch-id", branchId)
+    .set("x-role", "manager")
+    .set("x-user-id", "manager-1")
+    .send({
+      entityType: "registerShift",
+      entityId: input.shiftId,
+      type: "register_close",
       amount: input.amount,
       note: input.reason
     });
@@ -211,6 +254,79 @@ describe("api foundation", () => {
     expect(otherBranchResponse.body.products.every((product: { branchId: string }) => product.branchId === "branch-lagos-ikeja")).toBe(true);
   });
 
+  it("lets city managers read catalog products across only branches in their city", async () => {
+    if (!branches.some((branch) => branch.id === "branch-lagos-outside-city")) {
+      branches.push({
+        id: "branch-lagos-outside-city",
+        tenantId: "tenant-lagos-foods",
+        name: "Ibadan Road Test Branch",
+        address: "1 Test Road",
+        city: "Ibadan",
+        phone: "+2348099990000",
+        status: "active",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const ikejaProductResponse = await request(app)
+      .post("/api/v1/catalog/products")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        branchId: "branch-lagos-ikeja",
+        name: "City Scope Catalog Cake",
+        sku: "CITY-SCOPE-CATALOG-CAKE",
+        barcode: "2341000951",
+        category: "Bakery",
+        price: 4500,
+        cost: 1800,
+        taxRate: 0.075,
+        image: "/uploads/products/city-scope-catalog-cake.png",
+        stock: 12,
+        reorderPoint: 3,
+        station: "Kitchen",
+        modifiers: []
+      });
+    const outsideProductResponse = await request(app)
+      .post("/api/v1/catalog/products")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        branchId: "branch-lagos-outside-city",
+        name: "Outside Scope Catalog Cake",
+        sku: "OUTSIDE-SCOPE-CATALOG-CAKE",
+        barcode: "2341000952",
+        category: "Bakery",
+        price: 4500,
+        cost: 1800,
+        taxRate: 0.075,
+        image: "/uploads/products/outside-scope-catalog-cake.png",
+        stock: 12,
+        reorderPoint: 3,
+        station: "Kitchen",
+        modifiers: []
+      });
+    const catalogResponse = await request(app)
+      .get("/api/v1/catalog/products")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+    const outsideResponse = await request(app)
+      .get("/api/v1/catalog/products?branchId=branch-lagos-outside-city")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+
+    expect(ikejaProductResponse.status).toBe(201);
+    expect(outsideProductResponse.status).toBe(201);
+    expect(catalogResponse.status).toBe(200);
+    expect(catalogResponse.body.products.some((product: { id: string }) => product.id === ikejaProductResponse.body.product.id)).toBe(true);
+    expect(catalogResponse.body.products.some((product: { id: string }) => product.id === outsideProductResponse.body.product.id)).toBe(false);
+    expect(outsideResponse.status).toBe(403);
+  });
+
   it("blocks staff without POS, catalog, inventory, or floor permissions from catalog reads", async () => {
     const response = await request(app)
       .get("/api/v1/catalog/products?branchId=branch-lagos-main")
@@ -293,6 +409,8 @@ describe("api foundation", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.branches.length).toBeGreaterThan(1);
+    expect(response.body.branches.every((branch: { city: string }) => branch.city === "Lagos")).toBe(true);
+    expect(response.body.branches.some((branch: { id: string }) => branch.id === "branch-abuja-main")).toBe(false);
   });
 
   it("lets seeded state managers log in and keep cross-branch access", async () => {
@@ -315,6 +433,7 @@ describe("api foundation", () => {
 
     expect(branchResponse.status).toBe(200);
     expect(branchResponse.body.branches.length).toBeGreaterThan(1);
+    expect(branchResponse.body.branches.every((branch: { city: string }) => branch.city === "Lagos")).toBe(true);
   });
 
   it("allows owners to update tenant settings", async () => {
@@ -679,6 +798,11 @@ describe("api foundation", () => {
       .set("x-user-id", "LCF-MAI-ADA");
     const openInvoice = overviewResponse.body.invoices.find((invoice: { status: string }) => invoice.status === "open");
     const renewalDate = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString();
+    const expectedUsage = {
+      branches: branches.filter((branch) => branch.tenantId === "tenant-lagos-foods" && branch.status === "active").length,
+      users: staffMembers.filter((member) => member.tenantId === "tenant-lagos-foods" && member.inviteStatus !== "revoked").length,
+      terminals: terminals.filter((terminal) => terminal.tenantId === "tenant-lagos-foods").length
+    };
 
     const updateResponse = await request(app)
       .patch("/api/v1/subscriptions/current")
@@ -704,12 +828,30 @@ describe("api foundation", () => {
         issuedAt: new Date("2026-07-29T09:00:00.000Z").toISOString(),
         dueAt: new Date("2026-08-05T09:00:00.000Z").toISOString()
       });
+    const paidInvoiceWithoutReferenceResponse = await request(app)
+      .post("/api/v1/subscriptions/invoices")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        plan: "Business",
+        amount: 25000,
+        status: "paid",
+        issuedAt: new Date("2026-07-29T09:00:00.000Z").toISOString(),
+        dueAt: new Date("2026-08-05T09:00:00.000Z").toISOString()
+      });
     const invoiceResponse = await request(app)
       .patch(`/api/v1/subscriptions/invoices/${openInvoice.id}`)
       .set("x-tenant-id", "tenant-lagos-foods")
       .set("x-role", "owner")
       .set("x-user-id", "LCF-MAI-ADA")
       .send({ status: "paid", paymentReference: "MANUAL-SUB-1002" });
+    const finalizedInvoiceResponse = await request(app)
+      .patch(`/api/v1/subscriptions/invoices/${openInvoice.id}`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({ status: "void" });
     const branchLimitResponse = await request(app)
       .post("/api/v1/branches")
       .set("x-tenant-id", "tenant-lagos-foods")
@@ -722,9 +864,58 @@ describe("api foundation", () => {
         phone: "+2348010000066",
         status: "active"
       });
+    const freeTrialLimitResponse = await request(app)
+      .patch("/api/v1/subscriptions/current")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        plan: "Free Trial",
+        status: "active",
+        billingEmail: "billing@lagoscentral.example",
+        renewalDate
+      });
+    const terminalLimitResponse = await request(app)
+      .post("/api/v1/branches/terminals")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        branchId: "branch-lagos-main",
+        name: "Trial Limit POS",
+        deviceCode: "LAG-MAIN-TRIAL-LIMIT",
+        status: "offline",
+        appVersion: "1.0.0"
+      });
+    const userLimitResponse = await request(app)
+      .post("/api/v1/staff")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        branchId: "branch-lagos-main",
+        name: "Trial Limit User",
+        email: "trial-limit@example.com",
+        phone: "+2348010000077",
+        role: "cashier",
+        pinEnabled: true,
+        active: true
+      });
+    const restoreSubscriptionResponse = await request(app)
+      .patch("/api/v1/subscriptions/current")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        plan: "Professional",
+        status: "active",
+        billingEmail: "accounts@lagoscentral.example",
+        renewalDate
+      });
 
     expect(overviewResponse.status).toBe(200);
     expect(overviewResponse.body.subscription).toMatchObject({ plan: "Professional", status: "active" });
+    expect(overviewResponse.body.usage).toEqual(expectedUsage);
     expect(updateResponse.status).toBe(200);
     expect(updateResponse.body.subscription).toMatchObject({ plan: "Business", branchLimit: 3, billingEmail: "billing@lagoscentral.example" });
     expect(createInvoiceResponse.status).toBe(201);
@@ -734,10 +925,19 @@ describe("api foundation", () => {
       status: "open",
       invoiceNumber: expect.stringMatching(/^SUB-LF-\d+$/)
     });
+    expect(paidInvoiceWithoutReferenceResponse.status).toBe(400);
     expect(invoiceResponse.status).toBe(200);
     expect(invoiceResponse.body.invoice).toMatchObject({ id: openInvoice.id, status: "paid", paymentReference: "MANUAL-SUB-1002" });
+    expect(finalizedInvoiceResponse.status).toBe(409);
+    expect(finalizedInvoiceResponse.body.error).toBe("Paid or void subscription invoices cannot be changed");
     expect(branchLimitResponse.status).toBe(409);
     expect(branchLimitResponse.body.error).toBe("Active branch limit reached for this tenant plan");
+    expect(freeTrialLimitResponse.status).toBe(200);
+    expect(terminalLimitResponse.status).toBe(409);
+    expect(terminalLimitResponse.body.error).toBe("Terminal limit reached for this tenant plan");
+    expect(userLimitResponse.status).toBe(409);
+    expect(userLimitResponse.body.error).toBe("User limit reached for this tenant plan");
+    expect(restoreSubscriptionResponse.status).toBe(200);
   });
 
   it("queues offline sync records idempotently and lets managers resolve conflicts", async () => {
@@ -790,6 +990,20 @@ describe("api foundation", () => {
       .set("x-branch-id", "branch-lagos-main")
       .set("x-role", "manager")
       .set("x-user-id", "manager-1");
+    const conflictWithoutNoteResponse = await request(app)
+      .patch(`/api/v1/sync/queue/${createResponse.body.record.id}/status`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1")
+      .send({ status: "conflict" });
+    const syncedWithoutServerIdResponse = await request(app)
+      .patch(`/api/v1/sync/queue/${createResponse.body.record.id}/status`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1")
+      .send({ status: "synced" });
     const conflictResponse = await request(app)
       .patch(`/api/v1/sync/queue/${createResponse.body.record.id}/status`)
       .set("x-tenant-id", "tenant-lagos-foods")
@@ -797,6 +1011,13 @@ describe("api foundation", () => {
       .set("x-role", "manager")
       .set("x-user-id", "manager-1")
       .send({ status: "conflict", error: "Server record changed after offline capture" });
+    const retryResponse = await request(app)
+      .patch(`/api/v1/sync/queue/${createResponse.body.record.id}/status`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1")
+      .send({ status: "queued" });
     const resolvedResponse = await request(app)
       .patch(`/api/v1/sync/queue/${createResponse.body.record.id}/status`)
       .set("x-tenant-id", "tenant-lagos-foods")
@@ -804,6 +1025,13 @@ describe("api foundation", () => {
       .set("x-role", "manager")
       .set("x-user-id", "manager-1")
       .send({ status: "synced", serverEntityId: "INV-OFFLINE-1" });
+    const finalizedResponse = await request(app)
+      .patch(`/api/v1/sync/queue/${createResponse.body.record.id}/status`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1")
+      .send({ status: "queued" });
 
     expect(createResponse.status).toBe(201);
     expect(createResponse.body.record).toMatchObject({ status: "queued", idempotencyKey: payload.idempotencyKey });
@@ -814,8 +1042,14 @@ describe("api foundation", () => {
     expect(dateRangeResponse.body.records).toEqual(expect.arrayContaining([expect.objectContaining({ id: createResponse.body.record.id })]));
     expect(invalidDateResponse.status).toBe(400);
     expect(invertedDateResponse.status).toBe(400);
+    expect(conflictWithoutNoteResponse.status).toBe(400);
+    expect(syncedWithoutServerIdResponse.status).toBe(400);
     expect(conflictResponse.body.record).toMatchObject({ status: "conflict", error: "Server record changed after offline capture" });
+    expect(retryResponse.body.record).toMatchObject({ status: "queued", attempts: 1 });
+    expect(retryResponse.body.record.error).toBeUndefined();
     expect(resolvedResponse.body.record).toMatchObject({ status: "synced", serverEntityId: "INV-OFFLINE-1", syncedAt: expect.any(String) });
+    expect(finalizedResponse.status).toBe(409);
+    expect(finalizedResponse.body.error).toBe("Synced sync records cannot be changed");
   });
 
   it("blocks staff without sales or sync permissions from queueing offline records", async () => {
@@ -899,6 +1133,87 @@ describe("api foundation", () => {
 
     expect(updateResponse.status).toBe(404);
     expect(updateResponse.body.error).toBe("Sync record not found");
+  });
+
+  it("lets city managers supervise sync records only inside their branch city", async () => {
+    if (!branches.some((branch) => branch.id === "branch-lagos-outside-city")) {
+      branches.push({
+        id: "branch-lagos-outside-city",
+        tenantId: "tenant-lagos-foods",
+        name: "Ibadan Road Test Branch",
+        address: "1 Test Road",
+        city: "Ibadan",
+        phone: "+2348099990000",
+        status: "active",
+        createdAt: new Date().toISOString()
+      });
+    }
+    if (!terminals.some((terminal) => terminal.id === "terminal-outside-city-1")) {
+      terminals.push({
+        id: "terminal-outside-city-1",
+        tenantId: "tenant-lagos-foods",
+        branchId: "branch-lagos-outside-city",
+        name: "Outside City Terminal",
+        deviceCode: "IBD-TEST-01",
+        status: "online",
+        appVersion: "1.0.0",
+        lastSeenAt: new Date().toISOString(),
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const ikejaResponse = await request(app)
+      .post("/api/v1/sync/queue")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        branchId: "branch-lagos-ikeja",
+        terminalId: "terminal-ikeja-1",
+        recordType: "sale",
+        operation: "create",
+        idempotencyKey: "city-manager-sync-ikeja",
+        payload: { total: 4500 }
+      });
+    const outsideResponse = await request(app)
+      .post("/api/v1/sync/queue")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        branchId: "branch-lagos-outside-city",
+        terminalId: "terminal-outside-city-1",
+        recordType: "sale",
+        operation: "create",
+        idempotencyKey: "city-manager-sync-outside",
+        payload: { total: 4500 }
+      });
+    const listResponse = await request(app)
+      .get("/api/v1/sync/queue?status=all")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+    const updateResponse = await request(app)
+      .patch(`/api/v1/sync/queue/${ikejaResponse.body.record.id}/status`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN")
+      .send({ status: "synced", serverEntityId: "INV-CITY-SYNC" });
+    const outsideUpdateResponse = await request(app)
+      .patch(`/api/v1/sync/queue/${outsideResponse.body.record.id}/status`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN")
+      .send({ status: "synced", serverEntityId: "INV-OUTSIDE-SYNC" });
+
+    expect(ikejaResponse.status).toBe(201);
+    expect(outsideResponse.status).toBe(201);
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.body.records.some((record: { id: string }) => record.id === ikejaResponse.body.record.id)).toBe(true);
+    expect(listResponse.body.records.some((record: { id: string }) => record.id === outsideResponse.body.record.id)).toBe(false);
+    expect(updateResponse.status).toBe(200);
+    expect(updateResponse.body.record).toMatchObject({ id: ikejaResponse.body.record.id, status: "synced", serverEntityId: "INV-CITY-SYNC" });
+    expect(outsideUpdateResponse.status).toBe(404);
   });
 
   it("blocks branch-scoped sync users from cross-branch and missing-branch workflows", async () => {
@@ -1066,8 +1381,14 @@ describe("api foundation", () => {
     expect(mainResponse.status).toBe(200);
     expect(ikejaResponse.status).toBe(200);
     expect(mainResponse.body.summary.customerAccountCreditIssued).toBeGreaterThan(0);
+    expect(mainResponse.body.summary.customerOutstandingBalance).toBeGreaterThan(0);
+    expect(mainResponse.body.summary.customerCount).toBeGreaterThan(0);
     expect(ikejaResponse.body.summary.customerAccountCreditIssued).toBe(0);
     expect(ikejaResponse.body.summary.customerAccountPayments).toBe(0);
+    expect(ikejaResponse.body.summary.customerOutstandingBalance).toBe(0);
+    expect(ikejaResponse.body.summary.customerCreditLimit).toBe(0);
+    expect(ikejaResponse.body.summary.customerLoyaltyPoints).toBe(0);
+    expect(ikejaResponse.body.summary.customerCount).toBe(0);
   });
 
   it("rejects reports for branches outside the tenant", async () => {
@@ -1132,6 +1453,24 @@ describe("api foundation", () => {
       entityId: "audit-filter-2",
       metadata: { source: "audit-filter-test" }
     });
+    appendAudit({
+      tenantId: "tenant-lagos-foods",
+      branchId: "branch-lagos-ikeja",
+      userId: "audit-ikeja-user",
+      action: "auth.login",
+      entityType: "testProbe",
+      entityId: "audit-filter-ikeja",
+      metadata: { source: "audit-filter-test" }
+    });
+    appendAudit({
+      tenantId: "tenant-lagos-foods",
+      branchId: "branch-outside-lagos-city",
+      userId: "audit-outside-city-user",
+      action: "auth.login",
+      entityType: "testProbe",
+      entityId: "audit-filter-outside-city",
+      metadata: { source: "audit-filter-test" }
+    });
     const missingBranchResponse = await request(app)
       .get("/api/v1/audit")
       .set("x-tenant-id", "tenant-lagos-foods")
@@ -1188,6 +1527,8 @@ describe("api foundation", () => {
     expect(branchResponse.status).toBe(200);
     expect(branchResponse.body.events.every((event: { branchId?: string }) => !event.branchId || event.branchId === "branch-lagos-main")).toBe(true);
     expect(stateManagerResponse.status).toBe(200);
+    expect(stateManagerResponse.body.events).toEqual(expect.arrayContaining([expect.objectContaining({ entityId: "audit-filter-ikeja" })]));
+    expect(stateManagerResponse.body.events).not.toEqual(expect.arrayContaining([expect.objectContaining({ entityId: "audit-filter-outside-city" })]));
     expect(filteredResponse.status).toBe(200);
     expect(filteredResponse.body.events).toHaveLength(1);
     expect(filteredResponse.body.events[0]).toMatchObject({
@@ -1444,6 +1785,21 @@ describe("api foundation", () => {
     expect(updateResponse.body.error).toBe("Branch access denied");
   });
 
+  it("blocks product image uploads outside the assigned branch", async () => {
+    const response = await request(app)
+      .post("/api/v1/catalog/product-images")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-abuja-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1")
+      .set("x-file-name", "cross-branch.png")
+      .set("content-type", "image/png")
+      .send(Buffer.from("fake-png"));
+
+    expect(response.status).toBe(404);
+    expect(response.body.error).toBe("Product branch not found for this tenant");
+  });
+
   it("renames tenant product categories and updates linked products", async () => {
     const renameResponse = await request(app)
       .patch("/api/v1/tenants/current/product-categories/rename")
@@ -1502,6 +1858,121 @@ describe("api foundation", () => {
       quantityDelta: 5,
       balanceAfter: 23
     });
+  });
+
+  it("lets city managers read inventory only across branches in their city", async () => {
+    if (!branches.some((branch) => branch.id === "branch-lagos-outside-city")) {
+      branches.push({
+        id: "branch-lagos-outside-city",
+        tenantId: "tenant-lagos-foods",
+        name: "Ibadan Road Test Branch",
+        address: "1 Test Road",
+        city: "Ibadan",
+        phone: "+2348099990000",
+        status: "active",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const ikejaProductResponse = await request(app)
+      .post("/api/v1/catalog/products")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        branchId: "branch-lagos-ikeja",
+        name: "City Scope Inventory Cake",
+        sku: "CITY-SCOPE-INV-CAKE",
+        barcode: "2341000901",
+        category: "Bakery",
+        price: 4500,
+        cost: 1800,
+        taxRate: 0.075,
+        image: "/uploads/products/city-scope-cake.png",
+        stock: 12,
+        reorderPoint: 3,
+        station: "Kitchen",
+        modifiers: []
+      });
+    const outsideProductResponse = await request(app)
+      .post("/api/v1/catalog/products")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        branchId: "branch-lagos-outside-city",
+        name: "Outside Scope Inventory Cake",
+        sku: "OUTSIDE-SCOPE-INV-CAKE",
+        barcode: "2341000902",
+        category: "Bakery",
+        price: 4500,
+        cost: 1800,
+        taxRate: 0.075,
+        image: "/uploads/products/outside-scope-cake.png",
+        stock: 12,
+        reorderPoint: 3,
+        station: "Kitchen",
+        modifiers: []
+      });
+
+    const ikejaSupplierResponse = await request(app)
+      .post("/api/v1/inventory/suppliers")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        branchId: "branch-lagos-ikeja",
+        name: "City Scope Foods",
+        contactPerson: "Ikeja Buyer",
+        phone: "+2348011111111",
+        email: "city-scope@example.com",
+        leadTimeDays: 2,
+        active: true,
+        productIds: [ikejaProductResponse.body.product.id]
+      });
+    const outsideSupplierResponse = await request(app)
+      .post("/api/v1/inventory/suppliers")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        branchId: "branch-lagos-outside-city",
+        name: "Outside Scope Foods",
+        contactPerson: "Ibadan Buyer",
+        phone: "+2348022222222",
+        email: "outside-scope@example.com",
+        leadTimeDays: 2,
+        active: true,
+        productIds: [outsideProductResponse.body.product.id]
+      });
+
+    const stockResponse = await request(app)
+      .get("/api/v1/inventory/stock")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+    const suppliersResponse = await request(app)
+      .get("/api/v1/inventory/suppliers")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+    const outsideStockResponse = await request(app)
+      .get("/api/v1/inventory/stock?branchId=branch-lagos-outside-city")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+
+    expect(ikejaProductResponse.status).toBe(201);
+    expect(outsideProductResponse.status).toBe(201);
+    expect(ikejaSupplierResponse.status).toBe(201);
+    expect(outsideSupplierResponse.status).toBe(201);
+    expect(stockResponse.status).toBe(200);
+    expect(stockResponse.body.products.some((product: { id: string }) => product.id === ikejaProductResponse.body.product.id)).toBe(true);
+    expect(stockResponse.body.products.some((product: { id: string }) => product.id === outsideProductResponse.body.product.id)).toBe(false);
+    expect(suppliersResponse.status).toBe(200);
+    expect(suppliersResponse.body.suppliers.some((supplier: { id: string }) => supplier.id === ikejaSupplierResponse.body.supplier.id)).toBe(true);
+    expect(suppliersResponse.body.suppliers.some((supplier: { id: string }) => supplier.id === outsideSupplierResponse.body.supplier.id)).toBe(false);
+    expect(outsideStockResponse.status).toBe(403);
   });
 
   it("posts branch inventory transfers with paired stock movements", async () => {
@@ -2008,6 +2479,19 @@ describe("api foundation", () => {
         note: "Part payment"
       });
 
+    const invalidCreditPaymentResponse = await request(app)
+      .post(`/api/v1/inventory/supplier-invoices/${invoiceResponse.body.supplierInvoice.id}/payments`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1")
+      .send({
+        amount: 1000,
+        paymentMethod: "customer_credit",
+        reference: "SUP-PAY-BAD",
+        paidAt: new Date().toISOString()
+      });
+
     const finalPaymentResponse = await request(app)
       .post(`/api/v1/inventory/supplier-invoices/${invoiceResponse.body.supplierInvoice.id}/payments`)
       .set("x-tenant-id", "tenant-lagos-foods")
@@ -2025,6 +2509,7 @@ describe("api foundation", () => {
     expect(invoiceResponse.body.supplierInvoice).toMatchObject({ status: "open", amount: 25000, balanceDue: 25000 });
     expect(partialPaymentResponse.status).toBe(201);
     expect(partialPaymentResponse.body.supplierInvoice).toMatchObject({ status: "partially_paid", amountPaid: 10000, balanceDue: 15000 });
+    expect(invalidCreditPaymentResponse.status).toBe(400);
     expect(finalPaymentResponse.status).toBe(201);
     expect(finalPaymentResponse.body.supplierInvoice).toMatchObject({ status: "paid", amountPaid: 25000, balanceDue: 0 });
   });
@@ -2706,6 +3191,109 @@ describe("api foundation", () => {
     expect(floorResponse.body.tables.some((table: { label: string }) => table.label === "P99")).toBe(true);
   });
 
+  it("lets city managers read floor state and staff options across only branches in their city", async () => {
+    if (!branches.some((branch) => branch.id === "branch-lagos-outside-city")) {
+      branches.push({
+        id: "branch-lagos-outside-city",
+        tenantId: "tenant-lagos-foods",
+        name: "Outside City Branch",
+        address: "1 Ring Road",
+        city: "Ibadan",
+        phone: "+2348010000099",
+        status: "active",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    if (!staffMembers.some((staff) => staff.id === "LCF-IKE-FLO")) {
+      staffMembers.push({
+        id: "LCF-IKE-FLO",
+        tenantId: "tenant-lagos-foods",
+        branchId: "branch-lagos-ikeja",
+        name: "Ikeja Floor Staff",
+        email: "ikejafloor@example.com",
+        phone: "+2348077777201",
+        role: "waiter",
+        pinEnabled: false,
+        active: true,
+        salesTotal: 0,
+        inviteStatus: "accepted",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    if (!staffMembers.some((staff) => staff.id === "LCF-IBA-FLO")) {
+      staffMembers.push({
+        id: "LCF-IBA-FLO",
+        tenantId: "tenant-lagos-foods",
+        branchId: "branch-lagos-outside-city",
+        name: "Ibadan Floor Staff",
+        email: "ibadanfloor@example.com",
+        phone: "+2348077777202",
+        role: "waiter",
+        pinEnabled: false,
+        active: true,
+        salesTotal: 0,
+        inviteStatus: "accepted",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const ikejaTableResponse = await request(app)
+      .post("/api/v1/restaurant/tables")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "owner-1")
+      .send({
+        branchId: "branch-lagos-ikeja",
+        area: "Main Dining",
+        label: "CITY-IKEJA-01",
+        seats: 4,
+        x: 20,
+        y: 30
+      });
+    const outsideTableResponse = await request(app)
+      .post("/api/v1/restaurant/tables")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "owner-1")
+      .send({
+        branchId: "branch-lagos-outside-city",
+        area: "Main Dining",
+        label: "CITY-IBADAN-01",
+        seats: 4,
+        x: 20,
+        y: 30
+      });
+
+    const floorResponse = await request(app)
+      .get("/api/v1/restaurant/tables")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+    const blockedFloorResponse = await request(app)
+      .get("/api/v1/restaurant/tables?branchId=branch-lagos-outside-city")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+    const staffResponse = await request(app)
+      .get("/api/v1/restaurant/staff-options")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+
+    expect(ikejaTableResponse.status).toBe(201);
+    expect(outsideTableResponse.status).toBe(201);
+    expect(floorResponse.status).toBe(200);
+    expect(floorResponse.body.tables.some((table: { id: string }) => table.id === ikejaTableResponse.body.table.id)).toBe(true);
+    expect(floorResponse.body.tables.some((table: { id: string }) => table.id === outsideTableResponse.body.table.id)).toBe(false);
+    expect(blockedFloorResponse.status).toBe(403);
+    expect(blockedFloorResponse.body.error).toBe("Branch access denied");
+    expect(staffResponse.status).toBe(200);
+    expect(staffResponse.body.staff.some((staff: { id: string }) => staff.id === "LCF-IKE-FLO")).toBe(true);
+    expect(staffResponse.body.staff.some((staff: { id: string }) => staff.id === "LCF-IBA-FLO")).toBe(false);
+  });
+
   it("blocks cashiers from reading restaurant floor state", async () => {
     const response = await request(app)
       .get("/api/v1/restaurant/tables?branchId=branch-lagos-main")
@@ -2976,6 +3564,102 @@ describe("api foundation", () => {
     expect(response.body).toMatchObject({ error: "Permission denied", permission: "kitchen.manage" });
   });
 
+  it("lets city managers work kitchen tickets only across branches in their city", async () => {
+    if (!branches.some((branch) => branch.id === "branch-lagos-outside-city")) {
+      branches.push({
+        id: "branch-lagos-outside-city",
+        tenantId: "tenant-lagos-foods",
+        name: "Outside City Branch",
+        address: "1 Ring Road",
+        city: "Ibadan",
+        phone: "+2348010000099",
+        status: "active",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    if (!prepTickets.some((ticket) => ticket.id === "KOT-CITY-IKEJA")) {
+      prepTickets.unshift({
+        id: "KOT-CITY-IKEJA",
+        tenantId: "tenant-lagos-foods",
+        branchId: "branch-lagos-ikeja",
+        station: "Kitchen",
+        tableLabel: "IKJ-01",
+        waiterId: "waiter-2",
+        serviceType: "dine_in",
+        priority: "normal",
+        status: "new",
+        items: [
+          {
+            id: "prep-city-ikeja-item",
+            productId: "p1",
+            productName: "City Scope Kitchen Meal",
+            quantity: 1,
+            modifiers: [],
+            status: "new"
+          }
+        ],
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    if (!prepTickets.some((ticket) => ticket.id === "KOT-CITY-OUTSIDE")) {
+      prepTickets.unshift({
+        id: "KOT-CITY-OUTSIDE",
+        tenantId: "tenant-lagos-foods",
+        branchId: "branch-lagos-outside-city",
+        station: "Kitchen",
+        tableLabel: "IBD-01",
+        waiterId: "waiter-2",
+        serviceType: "dine_in",
+        priority: "normal",
+        status: "new",
+        items: [
+          {
+            id: "prep-city-outside-item",
+            productId: "p1",
+            productName: "Outside Scope Kitchen Meal",
+            quantity: 1,
+            modifiers: [],
+            status: "new"
+          }
+        ],
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const listResponse = await request(app)
+      .get("/api/v1/kitchen/tickets?station=Kitchen")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+    const updateResponse = await request(app)
+      .patch("/api/v1/kitchen/tickets/KOT-CITY-IKEJA/status")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN")
+      .send({ status: "accepted", note: "City manager accepted" });
+    const outsideUpdateResponse = await request(app)
+      .patch("/api/v1/kitchen/tickets/KOT-CITY-OUTSIDE/status")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN")
+      .send({ status: "accepted", note: "Outside city attempt" });
+    const outsideBranchResponse = await request(app)
+      .get("/api/v1/kitchen/tickets?branchId=branch-lagos-outside-city")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.body.tickets).toEqual(expect.arrayContaining([expect.objectContaining({ id: "KOT-CITY-IKEJA" })]));
+    expect(listResponse.body.tickets).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "KOT-CITY-OUTSIDE" })]));
+    expect(updateResponse.status).toBe(200);
+    expect(updateResponse.body.ticket).toMatchObject({ id: "KOT-CITY-IKEJA", status: "accepted" });
+    expect(outsideUpdateResponse.status).toBe(404);
+    expect(outsideBranchResponse.status).toBe(403);
+  });
+
   it("allows kitchen staff to mark tickets ready", async () => {
     const response = await request(app)
       .patch("/api/v1/kitchen/tickets/KOT-1088/status")
@@ -3237,6 +3921,64 @@ describe("api foundation", () => {
     expect(ledgerReadResponse.body.error).toBe("Branch access denied");
   });
 
+  it("lets city managers read customer ledger activity only inside their branch city", async () => {
+    if (!branches.some((branch) => branch.id === "branch-lagos-outside-city")) {
+      branches.push({
+        id: "branch-lagos-outside-city",
+        tenantId: "tenant-lagos-foods",
+        name: "Ibadan Road Test Branch",
+        address: "1 Test Road",
+        city: "Ibadan",
+        phone: "+2348099990000",
+        status: "active",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const ikejaLedgerResponse = await request(app)
+      .post("/api/v1/customers/cust-1/ledger")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-ikeja")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        type: "loyalty_adjustment",
+        amount: 0,
+        pointsDelta: 1,
+        note: "Ikeja loyalty correction"
+      });
+    const outsideLedgerResponse = await request(app)
+      .post("/api/v1/customers/cust-1/ledger")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-outside-city")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        type: "loyalty_adjustment",
+        amount: 0,
+        pointsDelta: 1,
+        note: "Outside city loyalty correction"
+      });
+    const ledgerResponse = await request(app)
+      .get("/api/v1/customers/cust-1/ledger")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+    const outsideReadResponse = await request(app)
+      .get("/api/v1/customers/cust-1/ledger?branchId=branch-lagos-outside-city")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+
+    expect(ikejaLedgerResponse.status).toBe(201);
+    expect(outsideLedgerResponse.status).toBe(201);
+    expect(ledgerResponse.status).toBe(200);
+    expect(ledgerResponse.body.entries.some((entry: { id: string }) => entry.id === ikejaLedgerResponse.body.entry.id)).toBe(true);
+    expect(ledgerResponse.body.entries.some((entry: { id: string }) => entry.id === outsideLedgerResponse.body.entry.id)).toBe(false);
+    expect(outsideReadResponse.status).toBe(403);
+    expect(outsideReadResponse.body.error).toBe("Branch access denied");
+  });
+
   it("prevents customer credit limit overrides", async () => {
     const response = await request(app)
       .post("/api/v1/customers/cust-1/ledger")
@@ -3370,6 +4112,84 @@ describe("api foundation", () => {
       active: true
     });
     expect(floorStaffResponse.body.staff[0].permissions).toBeUndefined();
+  });
+
+  it("lets city managers manage staff only across branches in their city", async () => {
+    if (!branches.some((branch) => branch.id === "branch-lagos-outside-city")) {
+      branches.push({
+        id: "branch-lagos-outside-city",
+        tenantId: "tenant-lagos-foods",
+        name: "Outside City Branch",
+        address: "1 Ring Road",
+        city: "Ibadan",
+        phone: "+2348000000200",
+        status: "active",
+        createdAt: "2026-07-30T08:00:00.000Z"
+      });
+    }
+
+    const ikejaStaffResponse = await request(app)
+      .post("/api/v1/staff")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "owner-1")
+      .send({
+        branchId: "branch-lagos-ikeja",
+        name: "Ikeja Staff Scope",
+        email: "ikejastaffscope@example.com",
+        phone: "+2348077777101",
+        role: "cashier",
+        pinEnabled: true,
+        active: true
+      });
+    const outsideStaffResponse = await request(app)
+      .post("/api/v1/staff")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "owner-1")
+      .send({
+        branchId: "branch-lagos-outside-city",
+        name: "Outside Staff Scope",
+        email: "outsidestaffscope@example.com",
+        phone: "+2348077777102",
+        role: "cashier",
+        pinEnabled: true,
+        active: true
+      });
+
+    expect(ikejaStaffResponse.status).toBe(201);
+    expect(outsideStaffResponse.status).toBe(201);
+
+    const listResponse = await request(app)
+      .get("/api/v1/staff")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+    const statusResponse = await request(app)
+      .patch(`/api/v1/staff/${ikejaStaffResponse.body.staff.id}/status`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN")
+      .send({ active: true, reason: "City scope status update" });
+    const outsideStatusResponse = await request(app)
+      .patch(`/api/v1/staff/${outsideStaffResponse.body.staff.id}/status`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN")
+      .send({ active: true, reason: "Outside city status update" });
+    const outsideListResponse = await request(app)
+      .get("/api/v1/staff?branchId=branch-lagos-outside-city")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+
+    const staffIds = listResponse.body.staff.map((member: { id: string }) => member.id);
+    expect(listResponse.status).toBe(200);
+    expect(staffIds).toContain(ikejaStaffResponse.body.staff.id);
+    expect(staffIds).not.toContain(outsideStaffResponse.body.staff.id);
+    expect(statusResponse.status).toBe(200);
+    expect(outsideStatusResponse.status).toBe(404);
+    expect(outsideListResponse.status).toBe(403);
   });
 
   it("lets signed-in staff view and update their own profile without staff management permission", async () => {
@@ -3703,6 +4523,101 @@ describe("api foundation", () => {
     expect(response.body).toMatchObject({ staffId: "LCF-MAI-MUS", role: "cashier" });
   });
 
+  it("lets city managers assign roles only to staff in their city branches", async () => {
+    const rolesResponse = await request(app)
+      .get("/api/v1/roles")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA");
+    const stateManagerRole = rolesResponse.body.roles.find((role: { name: string }) => role.name === "state_manager");
+    expect(stateManagerRole).toBeDefined();
+    const originalPermissions = stateManagerRole.permissions;
+    const grantResponse = await request(app)
+      .patch(`/api/v1/roles/${stateManagerRole.id}/permissions`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({ permissions: [...new Set([...originalPermissions, "roles.manage"])] });
+
+    if (!branches.some((branch) => branch.id === "branch-lagos-outside-city")) {
+      branches.push({
+        id: "branch-lagos-outside-city",
+        tenantId: "tenant-lagos-foods",
+        name: "Outside City Branch",
+        address: "1 Ring Road",
+        city: "Ibadan",
+        phone: "+2348000000200",
+        status: "active",
+        createdAt: "2026-07-30T08:00:00.000Z"
+      });
+    }
+
+    const ikejaStaffResponse = await request(app)
+      .post("/api/v1/staff")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        branchId: "branch-lagos-ikeja",
+        name: "Ikeja Role Scope",
+        email: "ikejarolescope@example.com",
+        phone: "+2348077777201",
+        role: "cashier",
+        pinEnabled: true,
+        active: true
+      });
+    const outsideStaffResponse = await request(app)
+      .post("/api/v1/staff")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        branchId: "branch-lagos-outside-city",
+        name: "Outside Role Scope",
+        email: "outsiderolescope@example.com",
+        phone: "+2348077777202",
+        role: "cashier",
+        pinEnabled: true,
+        active: true
+      });
+
+    expect(ikejaStaffResponse.status).toBe(201);
+    expect(outsideStaffResponse.status).toBe(201);
+    expect(grantResponse.status).toBe(200);
+
+    const assignResponse = await request(app)
+      .post("/api/v1/roles/assign-staff")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN")
+      .send({ staffId: ikejaStaffResponse.body.staff.id, role: "manager" });
+    const outsideAssignResponse = await request(app)
+      .post("/api/v1/roles/assign-staff")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN")
+      .send({ staffId: outsideStaffResponse.body.staff.id, role: "manager" });
+    const explicitOutsideResponse = await request(app)
+      .post("/api/v1/roles/assign-staff")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN")
+      .set("x-branch-id", "branch-lagos-outside-city")
+      .send({ staffId: outsideStaffResponse.body.staff.id, role: "manager" });
+    const restoreResponse = await request(app)
+      .patch(`/api/v1/roles/${stateManagerRole.id}/permissions`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({ permissions: originalPermissions });
+
+    expect(assignResponse.status).toBe(200);
+    expect(assignResponse.body).toMatchObject({ staffId: ikejaStaffResponse.body.staff.id, role: "manager" });
+    expect(outsideAssignResponse.status).toBe(404);
+    expect(explicitOutsideResponse.status).toBe(403);
+    expect(restoreResponse.status).toBe(200);
+  });
+
   it("allows managers to invite staff", async () => {
     const response = await request(app)
       .post("/api/v1/staff")
@@ -4000,6 +4915,70 @@ describe("api foundation", () => {
     expect(invalidResponse.status).toBe(401);
   });
 
+  it("lets city managers review and revoke auth sessions inside their branch city", async () => {
+    authSessions.unshift(
+      {
+        id: "session-city-main",
+        tenantId: "tenant-lagos-foods",
+        staffId: "LCF-MAI-MUS",
+        branchId: "branch-lagos-main",
+        terminalId: "terminal-web-1",
+        role: "cashier",
+        refreshTokenHash: "hidden-main",
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60).toISOString(),
+        createdAt: new Date().toISOString()
+      },
+      {
+        id: "session-city-ikeja",
+        tenantId: "tenant-lagos-foods",
+        staffId: "LCF-MAI-MUS",
+        branchId: "branch-lagos-ikeja",
+        terminalId: "terminal-ikeja-1",
+        role: "cashier",
+        refreshTokenHash: "hidden-ikeja",
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60).toISOString(),
+        createdAt: new Date().toISOString()
+      },
+      {
+        id: "session-city-outside",
+        tenantId: "tenant-lagos-foods",
+        staffId: "LCF-MAI-MUS",
+        branchId: "branch-lagos-outside-city",
+        terminalId: "terminal-web-1",
+        role: "cashier",
+        refreshTokenHash: "hidden-outside",
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60).toISOString(),
+        createdAt: new Date().toISOString()
+      }
+    );
+
+    const sessionsResponse = await request(app)
+      .get("/api/v1/auth/sessions")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+    const revokeResponse = await request(app)
+      .post("/api/v1/auth/sessions/session-city-ikeja/revoke")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+    const outsideRevokeResponse = await request(app)
+      .post("/api/v1/auth/sessions/session-city-outside/revoke")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+
+    expect(sessionsResponse.status).toBe(200);
+    expect(sessionsResponse.body.sessions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "session-city-main" }),
+      expect.objectContaining({ id: "session-city-ikeja" })
+    ]));
+    expect(sessionsResponse.body.sessions.some((session: { id: string }) => session.id === "session-city-outside")).toBe(false);
+    expect(revokeResponse.status).toBe(200);
+    expect(revokeResponse.body.session).toMatchObject({ id: "session-city-ikeja", revokedAt: expect.any(String) });
+    expect(outsideRevokeResponse.status).toBe(404);
+  });
+
   it("resolves bearer access from the current staff role and active session", async () => {
     const staff = staffMembers.find((member) => member.id === "LCF-MAI-MUS");
     expect(staff).toBeDefined();
@@ -4279,6 +5258,76 @@ describe("api foundation", () => {
 
     expect(decisionResponse.status).toBe(200);
     expect(decisionResponse.body.approval).toMatchObject({ status: "approved", decidedBy: "LCF-MAI-CHI" });
+  });
+
+  it("lets city managers review and decide approvals only inside their branch city", async () => {
+    if (!branches.some((branch) => branch.id === "branch-lagos-outside-city")) {
+      branches.push({
+        id: "branch-lagos-outside-city",
+        tenantId: "tenant-lagos-foods",
+        name: "Ibadan Road Test Branch",
+        address: "1 Test Road",
+        city: "Ibadan",
+        phone: "+2348099990000",
+        status: "active",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const ikejaRequest = await request(app)
+      .post("/api/v1/approvals")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-ikeja")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        branchId: "branch-lagos-ikeja",
+        type: "cash_movement",
+        entityType: "registerShift",
+        entityId: "shift-city-manager-ikeja",
+        amount: 5000,
+        reason: "City manager scoped approval"
+      });
+    const outsideCityRequest = await request(app)
+      .post("/api/v1/approvals")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-outside-city")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        branchId: "branch-lagos-outside-city",
+        type: "cash_movement",
+        entityType: "registerShift",
+        entityId: "shift-city-manager-outside",
+        amount: 5000,
+        reason: "Outside city approval"
+      });
+    const queueResponse = await request(app)
+      .get("/api/v1/approvals?status=all&type=all")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+    const decisionResponse = await request(app)
+      .patch(`/api/v1/approvals/${ikejaRequest.body.approval.id}/decision`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN")
+      .send({ decision: "approved", note: "Inside city approval" });
+    const outsideDecisionResponse = await request(app)
+      .patch(`/api/v1/approvals/${outsideCityRequest.body.approval.id}/decision`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN")
+      .send({ decision: "approved", note: "Outside city attempt" });
+
+    expect(ikejaRequest.status).toBe(201);
+    expect(outsideCityRequest.status).toBe(201);
+    expect(queueResponse.status).toBe(200);
+    expect(queueResponse.body.approvals.some((approval: { id: string }) => approval.id === ikejaRequest.body.approval.id)).toBe(true);
+    expect(queueResponse.body.approvals.some((approval: { id: string }) => approval.id === outsideCityRequest.body.approval.id)).toBe(false);
+    expect(decisionResponse.status).toBe(200);
+    expect(decisionResponse.body.approval).toMatchObject({ status: "approved", decidedBy: "LCF-MAI-TUN" });
+    expect(outsideDecisionResponse.status).toBe(404);
   });
 
   it("filters approval queue by date range", async () => {
@@ -4909,6 +5958,115 @@ describe("api foundation", () => {
     expect(response.body.shift).toMatchObject({ id: "shift-1", status: "open" });
   });
 
+  it("lists register shift history and self-scopes cashier users", async () => {
+    const cashierResponse = await request(app)
+      .get("/api/v1/registers/history?branchId=branch-lagos-main&terminalId=terminal-web-1")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "cashier")
+      .set("x-user-id", "LCF-MAI-MUS");
+    const otherCashierResponse = await request(app)
+      .get("/api/v1/registers/history?branchId=branch-lagos-main&terminalId=terminal-web-1")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "cashier")
+      .set("x-user-id", "cashier-other");
+    const managerResponse = await request(app)
+      .get("/api/v1/registers/history?branchId=branch-lagos-main&terminalId=terminal-web-1")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "LCF-MAI-CHI");
+
+    expect(cashierResponse.status).toBe(200);
+    expect(cashierResponse.body.shifts).toEqual(expect.arrayContaining([expect.objectContaining({ id: "shift-1", cashierId: "LCF-MAI-MUS" })]));
+    expect(otherCashierResponse.status).toBe(200);
+    expect(otherCashierResponse.body.shifts).toEqual([]);
+    expect(managerResponse.status).toBe(200);
+    expect(managerResponse.body.shifts).toEqual(expect.arrayContaining([expect.objectContaining({ id: "shift-1" })]));
+  });
+
+  it("lets city managers read register shifts only across branches in their city", async () => {
+    if (!branches.some((branch) => branch.id === "branch-lagos-outside-city")) {
+      branches.push({
+        id: "branch-lagos-outside-city",
+        tenantId: "tenant-lagos-foods",
+        name: "Outside City Branch",
+        address: "1 Ring Road",
+        city: "Ibadan",
+        phone: "+2348010000099",
+        status: "active",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    if (!terminals.some((terminal) => terminal.id === "terminal-outside-city-1")) {
+      terminals.push({
+        id: "terminal-outside-city-1",
+        tenantId: "tenant-lagos-foods",
+        branchId: "branch-lagos-outside-city",
+        name: "Outside City Terminal",
+        deviceCode: "IBD-TEST-01",
+        status: "online",
+        appVersion: "1.0.0",
+        lastSeenAt: new Date().toISOString(),
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    if (!registerShifts.some((shift) => shift.id === "shift-register-city-ikeja")) {
+      registerShifts.unshift({
+        id: "shift-register-city-ikeja",
+        tenantId: "tenant-lagos-foods",
+        branchId: "branch-lagos-ikeja",
+        terminalId: "terminal-ikeja-1",
+        cashierId: "LCF-MAI-MUS",
+        status: "open",
+        openingBalance: 10000,
+        expectedCash: 10000,
+        openedAt: new Date().toISOString()
+      });
+    }
+
+    if (!registerShifts.some((shift) => shift.id === "shift-register-city-outside")) {
+      registerShifts.unshift({
+        id: "shift-register-city-outside",
+        tenantId: "tenant-lagos-foods",
+        branchId: "branch-lagos-outside-city",
+        terminalId: "terminal-outside-city-1",
+        cashierId: "LCF-MAI-MUS",
+        status: "open",
+        openingBalance: 10000,
+        expectedCash: 10000,
+        openedAt: new Date().toISOString()
+      });
+    }
+
+    const historyResponse = await request(app)
+      .get("/api/v1/registers/history")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+    const currentResponse = await request(app)
+      .get("/api/v1/registers/current?terminalId=terminal-ikeja-1")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+    const outsideHistoryResponse = await request(app)
+      .get("/api/v1/registers/history?branchId=branch-lagos-outside-city")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+
+    expect(historyResponse.status).toBe(200);
+    expect(historyResponse.body.shifts).toEqual(expect.arrayContaining([expect.objectContaining({ id: "shift-register-city-ikeja" })]));
+    expect(historyResponse.body.shifts).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "shift-register-city-outside" })]));
+    expect(currentResponse.status).toBe(200);
+    expect(currentResponse.body.shift).toMatchObject({ id: "shift-register-city-ikeja", branchId: "branch-lagos-ikeja" });
+    expect(outsideHistoryResponse.status).toBe(403);
+    expect(outsideHistoryResponse.body.error).toBe("Branch access denied");
+  });
+
   it("blocks non-register staff from reading current register state", async () => {
     const response = await request(app)
       .get("/api/v1/registers/current?branchId=branch-lagos-main&terminalId=terminal-web-1")
@@ -5495,6 +6653,106 @@ describe("api foundation", () => {
     expect(response.body.error).toBe("Expense branch not found for this tenant");
   });
 
+  it("rejects customer credit as an expense payment method", async () => {
+    const response = await request(app)
+      .post("/api/v1/expenses")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "accountant")
+      .set("x-user-id", "accountant-1")
+      .send({
+        branchId: "branch-lagos-main",
+        category: "Supplies",
+        description: "Invalid credit expense",
+        vendor: "Counter Retail Partners",
+        amount: 12000,
+        paymentMethod: "customer_credit",
+        reference: "EXP-BAD-CREDIT",
+        status: "paid",
+        spentAt: new Date().toISOString(),
+        note: "Customer credit cannot settle operating expenses"
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("Invalid expense payload");
+  });
+
+  it("lets city managers review and update expenses only inside their branch city", async () => {
+    if (!branches.some((branch) => branch.id === "branch-lagos-outside-city")) {
+      branches.push({
+        id: "branch-lagos-outside-city",
+        tenantId: "tenant-lagos-foods",
+        name: "Ibadan Road Test Branch",
+        address: "1 Test Road",
+        city: "Ibadan",
+        phone: "+2348099990000",
+        status: "active",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const ikejaExpense = await request(app)
+      .post("/api/v1/expenses")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        branchId: "branch-lagos-ikeja",
+        category: "Repairs",
+        description: "Ikeja POS counter repair",
+        vendor: "Service Desk",
+        amount: 15000,
+        paymentMethod: "bank_transfer",
+        reference: "EXP-CITY-IKEJA",
+        status: "pending_approval",
+        spentAt: new Date().toISOString(),
+        note: "City scope expense"
+      });
+    const outsideCityExpense = await request(app)
+      .post("/api/v1/expenses")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({
+        branchId: "branch-lagos-outside-city",
+        category: "Repairs",
+        description: "Outside city expense",
+        vendor: "Service Desk",
+        amount: 15000,
+        paymentMethod: "bank_transfer",
+        reference: "EXP-CITY-OUTSIDE",
+        status: "pending_approval",
+        spentAt: new Date().toISOString(),
+        note: "Outside city scope"
+      });
+    const listResponse = await request(app)
+      .get("/api/v1/expenses?status=all")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+    const updateResponse = await request(app)
+      .patch(`/api/v1/expenses/${ikejaExpense.body.expense.id}/status`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN")
+      .send({ status: "approved", note: "Approved inside city" });
+    const outsideUpdateResponse = await request(app)
+      .patch(`/api/v1/expenses/${outsideCityExpense.body.expense.id}/status`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN")
+      .send({ status: "approved", note: "Outside city attempt" });
+
+    expect(ikejaExpense.status).toBe(201);
+    expect(outsideCityExpense.status).toBe(201);
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.body.expenses.some((expense: { id: string }) => expense.id === ikejaExpense.body.expense.id)).toBe(true);
+    expect(listResponse.body.expenses.some((expense: { id: string }) => expense.id === outsideCityExpense.body.expense.id)).toBe(false);
+    expect(updateResponse.status).toBe(200);
+    expect(updateResponse.body.expense).toMatchObject({ id: ikejaExpense.body.expense.id, status: "approved", approvedBy: "LCF-MAI-TUN" });
+    expect(outsideUpdateResponse.status).toBe(404);
+  });
+
   it("blocks branch-scoped expense users from writing to another branch", async () => {
     const createResponse = await request(app)
       .post("/api/v1/expenses")
@@ -5774,6 +7032,110 @@ describe("api foundation", () => {
     expect(approvedResponse.body.summary).toMatchObject({ subtotal: 50000, discount: 50000, total: 0, paid: 0 });
   });
 
+  it("lets city managers list sales only across branches in their city", async () => {
+    if (!branches.some((branch) => branch.id === "branch-lagos-outside-city")) {
+      branches.push({
+        id: "branch-lagos-outside-city",
+        tenantId: "tenant-lagos-foods",
+        name: "Ibadan Road Test Branch",
+        address: "1 Test Road",
+        city: "Ibadan",
+        phone: "+2348099990000",
+        status: "active",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    const receipt = {
+      businessName: "NaijaPOS",
+      currency: "NGN" as const,
+      footer: "Thank you",
+      whatsappEnabled: false,
+      printEnabled: true
+    };
+    const summary = {
+      lines: [],
+      subtotal: 1000,
+      discount: 0,
+      serviceCharge: 0,
+      vat: 75,
+      total: 1075,
+      paid: 1075,
+      balance: 0
+    };
+    const ikejaSale = appendCompletedSale({
+      id: "INV-CITY-SALES-IKEJA",
+      tenantId: "tenant-lagos-foods",
+      branchId: "branch-lagos-ikeja",
+      terminalId: "terminal-ikeja-1",
+      shiftId: "shift-city-sales-ikeja",
+      cashierId: "LCF-MAI-MUS",
+      idempotencyKey: "city-sales-ikeja",
+      summary,
+      status: "completed",
+      refundTotal: 0,
+      receipt
+    });
+    const outsideSale = appendCompletedSale({
+      id: "INV-CITY-SALES-OUTSIDE",
+      tenantId: "tenant-lagos-foods",
+      branchId: "branch-lagos-outside-city",
+      terminalId: "terminal-outside-city-1",
+      shiftId: "shift-city-sales-outside",
+      cashierId: "LCF-MAI-MUS",
+      idempotencyKey: "city-sales-outside",
+      summary,
+      status: "completed",
+      refundTotal: 0,
+      receipt
+    });
+
+    const cityManagerResponse = await request(app)
+      .get("/api/v1/sales?status=all")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+    const outsideFilterResponse = await request(app)
+      .get("/api/v1/sales?branchId=branch-lagos-outside-city&status=all")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN");
+    const ownerOutsideResponse = await request(app)
+      .get("/api/v1/sales?branchId=branch-lagos-outside-city&status=all")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA");
+    const ikejaReceiptResponse = await request(app)
+      .post(`/api/v1/sales/${ikejaSale.id}/receipt-actions`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN")
+      .send({ channel: "print" });
+    const outsideReceiptResponse = await request(app)
+      .post(`/api/v1/sales/${outsideSale.id}/receipt-actions`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN")
+      .send({ channel: "print" });
+    const outsideExplicitReceiptResponse = await request(app)
+      .post(`/api/v1/sales/${outsideSale.id}/receipt-actions?branchId=branch-lagos-outside-city`)
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-role", "state_manager")
+      .set("x-user-id", "LCF-MAI-TUN")
+      .send({ channel: "print" });
+
+    expect(cityManagerResponse.status).toBe(200);
+    expect(cityManagerResponse.body.sales.some((sale: { id: string }) => sale.id === ikejaSale.id)).toBe(true);
+    expect(cityManagerResponse.body.sales.some((sale: { id: string }) => sale.id === outsideSale.id)).toBe(false);
+    expect(outsideFilterResponse.status).toBe(403);
+    expect(ownerOutsideResponse.status).toBe(200);
+    expect(ownerOutsideResponse.body.sales.some((sale: { id: string }) => sale.id === outsideSale.id)).toBe(true);
+    expect(ikejaReceiptResponse.status).toBe(200);
+    expect(ikejaReceiptResponse.body.delivery).toMatchObject({ saleId: ikejaSale.id, channel: "print", status: "queued" });
+    expect(outsideReceiptResponse.status).toBe(404);
+    expect(outsideExplicitReceiptResponse.status).toBe(403);
+  });
+
   it("requires branch context for branch-scoped sales workflows", async () => {
     const saleResponse = await request(app)
       .post("/api/v1/sales")
@@ -5997,6 +7359,64 @@ describe("api foundation", () => {
     expect(missingCustomerResponse.status).toBe(409);
     expect(limitResponse.status).toBe(409);
     expect(limitResponse.body.error).toBe("Customer credit limit exceeded");
+  });
+
+  it("does not require external reconciliation for customer credit register payments", async () => {
+    const terminalId = "terminal-credit-close-test";
+    terminals.push({
+      id: terminalId,
+      tenantId: "tenant-lagos-foods",
+      branchId: "branch-lagos-main",
+      name: "Credit Close Test",
+      deviceCode: "LAG-MAIN-CREDIT",
+      status: "online",
+      appVersion: "1.0.0",
+      lastSeenAt: new Date().toISOString(),
+      createdAt: new Date().toISOString()
+    });
+
+    const openResponse = await request(app)
+      .post("/api/v1/registers/open")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "cashier")
+      .set("x-user-id", "cashier-1")
+      .send({ branchId: "branch-lagos-main", terminalId, openingBalance: 0 });
+
+    const saleResponse = await request(app)
+      .post("/api/v1/sales")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "cashier")
+      .set("x-user-id", "cashier-1")
+      .send({
+        branchId: "branch-lagos-main",
+        terminalId,
+        customerId: "cust-2",
+        idempotencyKey: `${terminalId}-customer-credit`,
+        lines: [{ productId: "p3", quantity: 1, discount: 0 }],
+        payments: [{ method: "customer_credit", amount: 4725 }]
+    });
+
+    const creditPayment = paymentRecords.find((payment) => payment.saleId === saleResponse.body.saleId && payment.method === "customer_credit");
+    const approvalId = await applyRegisterCloseApproval({
+      shiftId: openResponse.body.shift.id,
+      amount: openResponse.body.shift.expectedCash,
+      reason: "Customer credit close test"
+    });
+    const closeResponse = await request(app)
+      .post("/api/v1/registers/close")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "manager")
+      .set("x-user-id", "manager-1")
+      .send({ shiftId: openResponse.body.shift.id, countedCash: 0, managerNote: "Customer credit does not need settlement matching", approvalId });
+
+    expect(openResponse.status).toBe(201);
+    expect(saleResponse.status).toBe(201);
+    expect(creditPayment?.reconciliationStatus).toBe("matched");
+    expect(closeResponse.status).toBe(200);
+    expect(closeResponse.body.shift).toMatchObject({ id: openResponse.body.shift.id, status: "closed", expectedCash: 0 });
   });
 
   it("reverses customer balances and loyalty when credit sales are refunded or voided", async () => {

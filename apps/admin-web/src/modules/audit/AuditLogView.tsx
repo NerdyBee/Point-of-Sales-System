@@ -1,8 +1,9 @@
 import { ClipboardList, Download, RefreshCcw, Search, ShieldAlert, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { fetchAuditEvents, readStoredAuth, type AuditEvent } from "../../shared/api/client";
+import { fetchAuditEvents, fetchBranchOptions, readStoredAuth, type AuditEvent, type BranchOption } from "../../shared/api/client";
 import { StatusBadge } from "../../shared/components/StatusBadge";
 import { TablePagination, usePaginatedRows } from "../../shared/components/TablePagination";
+import { dateRangeErrorMessage, hasInvertedDateRange } from "../../shared/utils/dateFilters";
 
 function actionTone(action: string) {
   if (action.includes("void") || action.includes("closed") || action.includes("status_changed") || action.includes("login_failed") || action.includes("security_reset")) return "danger";
@@ -23,8 +24,11 @@ function csvEscape(value: string | number) {
 
 export function AuditLogView() {
   const storedAuth = useMemo(() => readStoredAuth(), []);
-  const activeBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
+  const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
+  const initialBranchId = canUseAllBranches ? "" : storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
   const activeUserId = storedAuth?.staff.id ?? "";
+  const [branchId, setBranchId] = useState(initialBranchId);
+  const [branches, setBranches] = useState<BranchOption[]>([]);
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<AuditEvent | null>(null);
   const [query, setQuery] = useState("");
@@ -58,6 +62,8 @@ export function AuditLogView() {
       });
   }, [actionFilter, actorFilter, entityFilter, events, query]);
   const eventPage = usePaginatedRows(filteredEvents, 10);
+  const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
+  const branchLocked = Boolean(branchId && branches.length === 1);
   const sensitiveEvents = useMemo(
     () => events.filter((event) =>
       event.action.includes("void") ||
@@ -69,20 +75,29 @@ export function AuditLogView() {
     [events]
   );
 
-  async function loadEvents(nextStartDate = startDate, nextEndDate = endDate) {
+  async function loadEvents(nextStartDate = startDate, nextEndDate = endDate, nextBranchId = branchId, nextActorFilter = actorFilter, nextActionFilter = actionFilter) {
+    if (hasInvertedDateRange(nextStartDate, nextEndDate)) {
+      setStatus(dateRangeErrorMessage());
+      return;
+    }
+
     setStatus("Syncing audit trail...");
 
-    if (!activeUserId || !activeBranchId) {
+    if (!activeUserId) {
       setEvents([]);
       setSelectedEvent(null);
-      setStatus("Sign in with a branch to load audit trail");
+      setStatus("Sign in to load audit trail");
       return;
     }
 
     try {
-      const response = await fetchAuditEvents("", activeBranchId, "", nextStartDate, nextEndDate);
-      setEvents(response.events);
-      setSelectedEvent((current) => response.events.find((event) => event.id === current?.id) ?? response.events[0] ?? null);
+      const [branchResponse, auditResponse] = await Promise.all([
+        fetchBranchOptions(),
+        fetchAuditEvents(nextActorFilter, nextBranchId, nextActionFilter, nextStartDate, nextEndDate)
+      ]);
+      setBranches(branchResponse.branches);
+      setEvents(auditResponse.events);
+      setSelectedEvent((current) => auditResponse.events.find((event) => event.id === current?.id) ?? auditResponse.events[0] ?? null);
       setStatus("Audit trail synced");
     } catch (error) {
       setEvents([]);
@@ -93,10 +108,12 @@ export function AuditLogView() {
 
   function changeActionFilter(nextActionFilter: string) {
     setActionFilter(nextActionFilter);
+    void loadEvents(startDate, endDate, branchId, actorFilter, nextActionFilter);
   }
 
   function changeActorFilter(nextActorFilter: string) {
     setActorFilter(nextActorFilter);
+    void loadEvents(startDate, endDate, branchId, nextActorFilter, actionFilter);
   }
 
   function clearEventFilters() {
@@ -106,7 +123,12 @@ export function AuditLogView() {
     setEntityFilter("");
     setStartDate("");
     setEndDate("");
-    void loadEvents("", "");
+    void loadEvents("", "", branchId, "", "");
+  }
+
+  function changeBranch(nextBranchId: string) {
+    setBranchId(nextBranchId);
+    void loadEvents(startDate, endDate, nextBranchId, actorFilter, actionFilter);
   }
 
   function exportCsv() {
@@ -149,6 +171,20 @@ export function AuditLogView() {
           <h1>Audit log</h1>
         </div>
         <div className="button-group">
+          <label className="toolbar-select">
+            Branch
+            {branchLocked ? (
+              <span className="locked-select-value locked-select-value-compact">
+                <strong>{selectedBranch?.name ?? branchId}</strong>
+                <small>{selectedBranch?.city ?? "assigned"}</small>
+              </span>
+            ) : (
+              <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
+                <option value="">{canUseAllBranches ? "All accessible branches" : "Branch"}</option>
+                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>)}
+              </select>
+            )}
+          </label>
           <select className="compact-select" value={actionFilter} onChange={(event) => changeActionFilter(event.target.value)}>
             <option value="">Action</option>
             {actionOptions.map((action) => <option key={action} value={action}>{action.replace("_", " ")}</option>)}
@@ -157,7 +193,7 @@ export function AuditLogView() {
             <option value="">Actor</option>
             {actorOptions.map((actor) => <option key={actor} value={actor}>{actor}</option>)}
           </select>
-          <button className="secondary-button" onClick={() => loadEvents()}><RefreshCcw size={18} /> Sync</button>
+          <button className="secondary-button" onClick={() => loadEvents(startDate, endDate, branchId, actorFilter, actionFilter)}><RefreshCcw size={18} /> Sync</button>
           <button className="primary-button" onClick={exportCsv} disabled={filteredEvents.length === 0}><Download size={18} /> Export CSV</button>
         </div>
       </div>
@@ -212,7 +248,7 @@ export function AuditLogView() {
                 <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
               </label>
             </div>
-            <button className="secondary-button" type="button" onClick={() => loadEvents(startDate, endDate)}>Apply dates</button>
+            <button className="secondary-button" type="button" onClick={() => loadEvents(startDate, endDate, branchId, actorFilter, actionFilter)}>Apply dates</button>
             {(query || actionFilter || actorFilter || entityFilter || startDate || endDate) ? (
               <button className="secondary-button" type="button" onClick={clearEventFilters}>Clear filters</button>
             ) : null}

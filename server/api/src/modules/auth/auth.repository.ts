@@ -529,23 +529,37 @@ export async function refreshAuthSession(refreshToken: string, meta: { userAgent
   return { status: "refreshed" as const, auth: await buildAuthResponse(staff, toApiSession(updatedSession), refreshToken) };
 }
 
-export async function listAuthSessions(tenantId: string, branchId?: string) {
+export async function listAuthSessions(tenantId: string, filters: { branchId?: string; branchIds?: string[] } = {}) {
   if (useDemoStore) {
     return authSessions
       .filter((session) => session.tenantId === tenantId)
-      .filter((session) => !branchId || session.branchId === branchId)
+      .filter((session) => {
+        if (filters.branchId) return session.branchId === filters.branchId;
+        if (filters.branchIds?.length) return Boolean(session.branchId && filters.branchIds.includes(session.branchId));
+        return true;
+      })
       .map((session) => ({ ...session, refreshTokenHash: undefined }));
   }
 
-  const sessions = await prisma.authSession.findMany({ where: { tenantId, branchId: branchId ? branchId : undefined }, orderBy: { createdAt: "desc" } });
+  const sessions = await prisma.authSession.findMany({
+    where: { tenantId, branchId: filters.branchId ? filters.branchId : filters.branchIds?.length ? { in: filters.branchIds } : undefined },
+    orderBy: { createdAt: "desc" }
+  });
   return sessions.map((session) => ({ ...toApiSession(session), refreshTokenHash: undefined }));
 }
 
-export async function revokeAuthSession(tenantId: string, userId: string, sessionId: string, branchId?: string) {
+export async function revokeAuthSession(tenantId: string, userId: string, sessionId: string, filters: { branchId?: string; branchIds?: string[] } = {}) {
   const now = new Date().toISOString();
 
   if (useDemoStore) {
-    const session = authSessions.find((item) => item.tenantId === tenantId && item.id === sessionId && (!branchId || item.branchId === branchId));
+    const session = authSessions.find((item) => {
+      const branchMatch = filters.branchId
+        ? item.branchId === filters.branchId
+        : filters.branchIds?.length
+          ? Boolean(item.branchId && filters.branchIds.includes(item.branchId))
+          : true;
+      return item.tenantId === tenantId && item.id === sessionId && branchMatch;
+    });
     if (!session) return { status: "not_found" as const };
     session.revokedAt = now;
     await appendAuthAudit({
@@ -560,7 +574,9 @@ export async function revokeAuthSession(tenantId: string, userId: string, sessio
     return { status: "revoked" as const, session: { ...session, refreshTokenHash: undefined } };
   }
 
-  const existing = await prisma.authSession.findFirst({ where: { tenantId, id: sessionId, branchId: branchId ? branchId : undefined } });
+  const existing = await prisma.authSession.findFirst({
+    where: { tenantId, id: sessionId, branchId: filters.branchId ? filters.branchId : filters.branchIds?.length ? { in: filters.branchIds } : undefined }
+  });
   if (!existing) return { status: "not_found" as const };
   const session = await prisma.authSession.update({ where: { id: existing.id }, data: { revokedAt: new Date(now) } });
   await appendAuthAudit({

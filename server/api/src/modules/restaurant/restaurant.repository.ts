@@ -24,6 +24,7 @@ import {
 import { prisma } from "../../shared/db/prisma";
 
 const useDemoStore = process.env.NODE_ENV === "test";
+type BranchScopeFilter = { branchId?: string; branchIds?: string[] };
 
 type AuditInput = Parameters<typeof appendAudit>[0];
 
@@ -247,28 +248,40 @@ async function routeDbItemToPrepTicket(tx: Prisma.TransactionClient, order: Tabl
   return toApiTicket(ticket);
 }
 
-export async function getFloorState(tenantId: string, branchId?: string) {
+function matchesBranchScope(scope: BranchScopeFilter, branchId: string) {
+  if (scope.branchId) return branchId === scope.branchId;
+  if (scope.branchIds?.length) return scope.branchIds.includes(branchId);
+  return true;
+}
+
+function branchWhere(scope: BranchScopeFilter) {
+  if (scope.branchId) return scope.branchId;
+  if (scope.branchIds?.length) return { in: scope.branchIds };
+  return undefined;
+}
+
+export async function getFloorState(tenantId: string, scope: BranchScopeFilter = {}) {
   if (useDemoStore) {
     return {
-      tables: restaurantTables.filter((table) => table.tenantId === tenantId && (branchId ? table.branchId === branchId : true)),
+      tables: restaurantTables.filter((table) => table.tenantId === tenantId && matchesBranchScope(scope, table.branchId)),
       openOrders: tableOrders.filter(
-        (order) => order.tenantId === tenantId && (branchId ? order.branchId === branchId : true) && order.status !== "closed" && order.status !== "cancelled"
+        (order) => order.tenantId === tenantId && matchesBranchScope(scope, order.branchId) && order.status !== "closed" && order.status !== "cancelled"
       ),
       reservations: tableReservations.filter(
         (reservation) =>
-          reservation.tenantId === tenantId && (branchId ? reservation.branchId === branchId : true) && reservation.status === "booked"
+          reservation.tenantId === tenantId && matchesBranchScope(scope, reservation.branchId) && reservation.status === "booked"
       )
     };
   }
 
   const [tables, openOrders, reservations] = await Promise.all([
-    prisma.restaurantTable.findMany({ where: { tenantId, branchId: branchId ? branchId : undefined }, orderBy: { label: "asc" } }),
+    prisma.restaurantTable.findMany({ where: { tenantId, branchId: branchWhere(scope) }, orderBy: { label: "asc" } }),
     prisma.tableOrder.findMany({
-      where: { tenantId, branchId: branchId ? branchId : undefined, status: { notIn: ["closed", "cancelled"] } },
+      where: { tenantId, branchId: branchWhere(scope), status: { notIn: ["closed", "cancelled"] } },
       orderBy: { openedAt: "desc" }
     }),
     prisma.tableReservation.findMany({
-      where: { tenantId, branchId: branchId ? branchId : undefined, status: "booked" },
+      where: { tenantId, branchId: branchWhere(scope), status: "booked" },
       orderBy: { reservedAt: "asc" }
     })
   ]);
@@ -783,10 +796,10 @@ export async function updateTableLayout(tenantId: string, branchId: string | und
   });
 }
 
-export async function listPrepTickets(tenantId: string, filters: { branchId?: string; station?: string; status?: string }) {
+export async function listPrepTickets(tenantId: string, filters: BranchScopeFilter & { station?: string; status?: string }) {
   if (useDemoStore) {
     return prepTickets.filter((ticket) => {
-      const branchMatch = filters.branchId ? ticket.branchId === filters.branchId : true;
+      const branchMatch = matchesBranchScope(filters, ticket.branchId);
       const stationMatch = filters.station && filters.station !== "All" ? ticket.station === filters.station : true;
       const statusMatch = filters.status && filters.status !== "all" ? ticket.status === filters.status : true;
       return ticket.tenantId === tenantId && branchMatch && stationMatch && statusMatch;
@@ -796,7 +809,7 @@ export async function listPrepTickets(tenantId: string, filters: { branchId?: st
   const tickets = await prisma.prepTicket.findMany({
     where: {
       tenantId,
-      branchId: filters.branchId ? filters.branchId : undefined,
+      branchId: branchWhere(filters),
       station: filters.station && filters.station !== "All" ? filters.station : undefined,
       status: filters.status && filters.status !== "all" ? filters.status : undefined
     },
@@ -805,9 +818,9 @@ export async function listPrepTickets(tenantId: string, filters: { branchId?: st
   return tickets.map(toApiTicket);
 }
 
-export async function updatePrepTicketStatus(tenantId: string, branchId: string | undefined, userId: string, ticketId: string, input: { status: PrepTicketStatus; note?: string }) {
+export async function updatePrepTicketStatus(tenantId: string, scope: BranchScopeFilter, userId: string, ticketId: string, input: { status: PrepTicketStatus; note?: string }) {
   if (useDemoStore) {
-    const ticket = prepTickets.find((item) => item.tenantId === tenantId && (!branchId || item.branchId === branchId) && item.id === ticketId);
+    const ticket = prepTickets.find((item) => item.tenantId === tenantId && matchesBranchScope(scope, item.branchId) && item.id === ticketId);
     if (!ticket) return { status: "ticket_not_found" as const };
     const previousStatus = ticket.status;
     ticket.status = input.status;
@@ -823,7 +836,7 @@ export async function updatePrepTicketStatus(tenantId: string, branchId: string 
   }
 
   return prisma.$transaction(async (tx) => {
-    const ticketRecord = await tx.prepTicket.findFirst({ where: { tenantId, branchId: branchId ? branchId : undefined, id: ticketId } });
+    const ticketRecord = await tx.prepTicket.findFirst({ where: { tenantId, branchId: branchWhere(scope), id: ticketId } });
     if (!ticketRecord) return { status: "ticket_not_found" as const };
     const previousStatus = ticketRecord.status;
     const items = (ticketRecord.items as unknown as PrepTicketItem[]).map((item) => ({ ...item, status: input.status }));
@@ -845,9 +858,9 @@ export async function updatePrepTicketStatus(tenantId: string, branchId: string 
   });
 }
 
-export async function updatePrepTicketPriority(tenantId: string, branchId: string | undefined, userId: string, ticketId: string, input: { priority: PrepTicket["priority"]; note?: string }) {
+export async function updatePrepTicketPriority(tenantId: string, scope: BranchScopeFilter, userId: string, ticketId: string, input: { priority: PrepTicket["priority"]; note?: string }) {
   if (useDemoStore) {
-    const ticket = prepTickets.find((item) => item.tenantId === tenantId && (!branchId || item.branchId === branchId) && item.id === ticketId);
+    const ticket = prepTickets.find((item) => item.tenantId === tenantId && matchesBranchScope(scope, item.branchId) && item.id === ticketId);
     if (!ticket) return { status: "ticket_not_found" as const };
     const previousPriority = ticket.priority;
     ticket.priority = input.priority;
@@ -856,7 +869,7 @@ export async function updatePrepTicketPriority(tenantId: string, branchId: strin
   }
 
   return prisma.$transaction(async (tx) => {
-    const ticketRecord = await tx.prepTicket.findFirst({ where: { tenantId, branchId: branchId ? branchId : undefined, id: ticketId } });
+    const ticketRecord = await tx.prepTicket.findFirst({ where: { tenantId, branchId: branchWhere(scope), id: ticketId } });
     if (!ticketRecord) return { status: "ticket_not_found" as const };
     const ticket = await tx.prepTicket.update({ where: { id: ticketRecord.id }, data: { priority: input.priority } });
     await createAudit(tx, { tenantId, branchId: ticket.branchId, userId, action: "prep_ticket.priority_changed", entityType: "prepTicket", entityId: ticket.id, metadata: { previousPriority: ticketRecord.priority, priority: ticket.priority, station: ticket.station, note: input.note } });
@@ -864,9 +877,9 @@ export async function updatePrepTicketPriority(tenantId: string, branchId: strin
   });
 }
 
-export async function updatePrepTicketItemStatus(tenantId: string, branchId: string | undefined, userId: string, ticketId: string, itemId: string, input: { status: Exclude<PrepTicketStatus, "served" | "cancelled">; note?: string }) {
+export async function updatePrepTicketItemStatus(tenantId: string, scope: BranchScopeFilter, userId: string, ticketId: string, itemId: string, input: { status: Exclude<PrepTicketStatus, "served" | "cancelled">; note?: string }) {
   if (useDemoStore) {
-    const ticket = prepTickets.find((item) => item.tenantId === tenantId && (!branchId || item.branchId === branchId) && item.id === ticketId);
+    const ticket = prepTickets.find((item) => item.tenantId === tenantId && matchesBranchScope(scope, item.branchId) && item.id === ticketId);
     if (!ticket) return { status: "ticket_not_found" as const };
     const item = ticket.items.find((ticketItem) => ticketItem.id === itemId);
     if (!item) return { status: "item_not_found" as const };
@@ -880,7 +893,7 @@ export async function updatePrepTicketItemStatus(tenantId: string, branchId: str
   }
 
   return prisma.$transaction(async (tx) => {
-    const ticketRecord = await tx.prepTicket.findFirst({ where: { tenantId, branchId: branchId ? branchId : undefined, id: ticketId } });
+    const ticketRecord = await tx.prepTicket.findFirst({ where: { tenantId, branchId: branchWhere(scope), id: ticketId } });
     if (!ticketRecord) return { status: "ticket_not_found" as const };
     const items = ticketRecord.items as unknown as PrepTicketItem[];
     const item = items.find((ticketItem) => ticketItem.id === itemId);

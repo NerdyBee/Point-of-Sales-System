@@ -86,7 +86,8 @@ interface FloorPlanViewProps {
 
 export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSeen }: FloorPlanViewProps) {
   const storedAuth = useMemo(() => readStoredAuth(), []);
-  const initialBranchId = storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? defaultBranchId;
+  const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
+  const initialBranchId = canUseAllBranches ? "" : storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? defaultBranchId;
   const activeUserId = storedAuth?.staff.id ?? "";
   const [tables, setTables] = useState<RestaurantTable[]>([]);
   const [orders, setOrders] = useState<TableOrder[]>([]);
@@ -136,26 +137,33 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
     () => orders.find((order) => order.tableId === selectedTable?.id && order.status !== "closed" && order.status !== "cancelled") ?? null,
     [orders, selectedTable]
   );
+  const selectedTableBranchId = selectedTable?.branchId ?? selectedOrder?.branchId ?? branchId;
   const selectedProduct = useMemo(
     () => products.find((product) => product.id === itemForm.productId) ?? null,
     [itemForm.productId, products]
   );
   const branchProducts = useMemo(
-    () => products.filter((product) => product.branchId === branchId),
-    [branchId, products]
+    () => products.filter((product) => !selectedTableBranchId || product.branchId === selectedTableBranchId),
+    [products, selectedTableBranchId]
   );
   const selectedBranch = useMemo(() => branches.find((branch) => branch.id === branchId) ?? null, [branchId, branches]);
+  const branchNameById = useMemo(() => new Map(branches.map((branch) => [branch.id, `${branch.name} - ${branch.city}`])), [branches]);
   const branchLocked = Boolean(branchId && branches.length === 1);
   const selectedOrderTotal = useMemo(
     () => selectedOrder?.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0) ?? 0,
     [selectedOrder]
   );
-  const waiterOptions = useMemo(() => staff.filter((member) => member.active), [staff]);
+  const waiterOptions = useMemo(() => staff.filter((member) => member.active && (!selectedTableBranchId || member.branchId === selectedTableBranchId)), [selectedTableBranchId, staff]);
   const areaOptions = useMemo(() => Array.from(new Set(tables.map((table) => table.area).filter(Boolean))).sort(), [tables]);
   const actingWaiterId = selectedOrder?.waiterId ?? form.waiterId ?? storedAuth?.staff.id ?? "";
   const transferTableOptions = useMemo(
-    () => tables.filter((table) => table.id !== selectedTable?.id && !table.orderId && (table.state === "available" || table.state === "reserved")),
-    [selectedTable?.id, tables]
+    () => tables.filter((table) =>
+      table.id !== selectedTable?.id &&
+      table.branchId === selectedTableBranchId &&
+      !table.orderId &&
+      (table.state === "available" || table.state === "reserved")
+    ),
+    [selectedTable?.id, selectedTableBranchId, tables]
   );
   const filteredTables = useMemo(() => {
     const normalizedQuery = tableQuery.trim().toLowerCase();
@@ -194,7 +202,10 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
 
   async function loadTables(nextBranchId = branchId) {
     try {
-      if (!nextBranchId) {
+      const branchResponse = await fetchBranchOptions();
+      const effectiveBranchId = nextBranchId || (canUseAllBranches ? "" : branchResponse.branches[0]?.id || "");
+
+      if (!effectiveBranchId && !canUseAllBranches) {
         setTables([]);
         setOrders([]);
         setStaff([]);
@@ -204,10 +215,20 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
         return;
       }
 
-      const [branchResponse, response, staffResponse] = await Promise.all([fetchBranchOptions(), fetchRestaurantTables(nextBranchId, activeUserId), fetchRestaurantStaffOptions(nextBranchId)]);
+      if (effectiveBranchId !== branchId) {
+        setBranchId(effectiveBranchId);
+        setReservationForm(defaultReservation("", effectiveBranchId));
+      }
+
+      const [response, staffResponse, catalogResponse] = await Promise.all([
+        fetchRestaurantTables(effectiveBranchId, activeUserId),
+        fetchRestaurantStaffOptions(effectiveBranchId),
+        fetchCatalogProducts(effectiveBranchId)
+      ]);
       setBranches(branchResponse.branches.length ? branchResponse.branches : fallbackBranches);
       setTables(response.tables);
       setOrders(response.openOrders);
+      setProducts(catalogResponse.products);
       setStaff(staffResponse.staff);
       setReservations(response.reservations);
       const nextSelectedTableId = response.tables.some((table) => table.id === selectedTableId) ? selectedTableId : response.tables[0]?.id ?? "";
@@ -217,7 +238,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
         tableId: response.tables.some((table) => table.id === current.tableId) ? current.tableId : nextSelectedTableId,
         waiterId: staffResponse.staff.some((member) => member.id === current.waiterId) ? current.waiterId : staffResponse.staff.find((member) => member.active)?.id ?? ""
       }));
-      setStatus("Floor synced");
+      setStatus(effectiveBranchId ? "Floor synced" : "Floor synced across accessible branches");
     } catch (error) {
       setTables([]);
       setOrders([]);
@@ -231,7 +252,6 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
 
   useEffect(() => {
     void loadTables();
-    void loadCatalog(branchId);
   }, []);
 
   useEffect(() => {
@@ -245,7 +265,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
 
   async function loadCatalog(nextBranchId = branchId) {
     try {
-      if (!nextBranchId) {
+      if (!nextBranchId && !canUseAllBranches) {
         setProducts([]);
         return;
       }
@@ -261,16 +281,16 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
     setSelectedTableId(table.id);
     setTransferTargetTableId("");
     setForm((current) => ({ ...current, tableId: table.id, guests: Math.max(1, table.guests || Math.min(table.seats, 2)) }));
-    setReservationForm((current) => ({ ...current, branchId, tableId: table.id, guests: Math.max(1, Math.min(table.seats, current.guests)) }));
+    setReservationForm((current) => ({ ...current, branchId: table.branchId, tableId: table.id, guests: Math.max(1, Math.min(table.seats, current.guests)) }));
   }
 
   function openReservationModal() {
-    setReservationForm(defaultReservation(selectedTable?.id ?? "", branchId));
+    setReservationForm(defaultReservation(selectedTable?.id ?? "", selectedTable?.branchId ?? branchId));
     setReservationModalOpen(true);
   }
 
   function changeBranch(nextBranchId: string) {
-    if (!nextBranchId) return;
+    if (!nextBranchId && !canUseAllBranches) return;
 
     setBranchId(nextBranchId);
     setSelectedTableId("");
@@ -338,7 +358,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
     setStatus("Opening table order...");
 
     try {
-      const response = await openTableOrder(form, branchId);
+      const response = await openTableOrder(form, selectedTableBranchId);
       setTables((current) => current.map((table) => (table.id === response.table.id ? response.table : table)));
       setOrders((current) => [response.order, ...current]);
       onSendToPos?.({
@@ -364,7 +384,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
     setStatus("Updating table state...");
 
     try {
-      const response = await updateTableState(selectedTable.id, state, reason, branchId, activeUserId);
+      const response = await updateTableState(selectedTable.id, state, reason, selectedTable.branchId, activeUserId);
       setTables((current) => current.map((table) => (table.id === response.table.id ? response.table : table)));
       setStatus(`${response.table.label} is ${stateLabels[response.table.state]}`);
     } catch (error) {
@@ -401,7 +421,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
     setStatus(statusCopy);
 
     try {
-      const response = await updateTableReservationStatus(reservation.id, { status, note: status === "seated" ? "Guest arrived" : "Floor action" }, branchId, activeUserId);
+      const response = await updateTableReservationStatus(reservation.id, { status, note: status === "seated" ? "Guest arrived" : "Floor action" }, reservation.branchId, activeUserId);
       setReservations((current) => current.filter((item) => item.id !== response.reservation.id));
       if (response.table) {
         setTables((current) => current.map((table) => (table.id === response.table?.id ? response.table : table)));
@@ -449,7 +469,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
         return;
       }
 
-      const response = await updateTableLayout(selectedTable.id, layoutForm, branchId, activeUserId);
+      const response = await updateTableLayout(selectedTable.id, layoutForm, selectedTable.branchId, activeUserId);
       setTables((current) => current.map((table) => (table.id === response.table.id ? response.table : table)));
       setLayoutModalOpen(false);
       setStatus(`Updated ${response.table.label}`);
@@ -474,7 +494,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
     setStatus("Adding table order item...");
 
     try {
-      const response = await addTableOrderItem(selectedOrder.id, itemForm, branchId, actingWaiterId);
+      const response = await addTableOrderItem(selectedOrder.id, itemForm, selectedOrder.branchId, actingWaiterId);
       setOrders((current) => current.map((order) => (order.id === response.order.id ? response.order : order)));
       setItemForm((current) => ({ ...current, quantity: 1, modifiers: [], note: "" }));
       setStatus(`${response.item.productName} routed to ${response.prepTicket.id}`);
@@ -489,7 +509,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
     setStatus("Removing table order item...");
 
     try {
-      const response = await removeTableOrderItem(selectedOrder.id, itemId, branchId, actingWaiterId);
+      const response = await removeTableOrderItem(selectedOrder.id, itemId, selectedOrder.branchId, actingWaiterId);
       setOrders((current) => current.map((order) => (order.id === response.order.id ? response.order : order)));
       setStatus("Table order item removed");
     } catch (error) {
@@ -508,7 +528,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
     setStatus("Requesting table bill...");
 
     try {
-      const response = await requestTableBill(selectedOrder.id, "Waiter requested bill", branchId, actingWaiterId);
+      const response = await requestTableBill(selectedOrder.id, "Waiter requested bill", selectedOrder.branchId, actingWaiterId);
       setTables((current) => current.map((table) => (table.id === response.table.id ? response.table : table)));
       setOrders((current) => current.map((order) => (order.id === response.order.id ? response.order : order)));
       onSendToPos?.({
@@ -540,7 +560,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
     setStatus("Transferring table order...");
 
     try {
-      const response = await transferTableOrder(selectedOrder.id, { targetTableId: transferTargetTableId, reason: "Guest moved table" }, branchId, actingWaiterId);
+      const response = await transferTableOrder(selectedOrder.id, { targetTableId: transferTargetTableId, reason: "Guest moved table" }, selectedOrder.branchId, actingWaiterId);
       setTables((current) =>
         current.map((table) => {
           if (response.sourceTable && table.id === response.sourceTable.id) return response.sourceTable;
@@ -601,7 +621,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
               </span>
             ) : (
               <select value={branchId} onChange={(event) => changeBranch(event.target.value)}>
-                <option value="">Branch</option>
+                <option value="">{canUseAllBranches ? "All accessible branches" : "Branch"}</option>
                 {branches.map((branch) => (
                   <option key={branch.id} value={branch.id}>{branch.name} - {branch.city}</option>
                 ))}
@@ -709,6 +729,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
             <div className="table-pos-context">
               <span>{selectedOrder?.id ?? selectedTable.orderId ?? "No active order"}</span>
               <strong>{selectedTable.customerName || "Walk-in guest"}</strong>
+              <small>{branchNameById.get(selectedTable.branchId) ?? selectedTable.branchId}</small>
               {selectedOrder?.prepStatus ? <StatusBadge label={`Prep ${selectedOrder.prepStatus}`} tone={prepTone[selectedOrder.prepStatus]} /> : null}
               {selectedOrder?.status === "bill_requested" ? <StatusBadge label="Bill requested" tone="warning" /> : null}
               <button className="secondary-button" onClick={sendSelectedTableToPos} disabled={!selectedOrder && !selectedTable.orderId}>
@@ -854,7 +875,7 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
                 <div className="list-row" key={table.id}>
                   <div>
                     <strong><span className="number-cell">{tableSummaryPage.startIndex + index + 1}</span>{table.label}</strong>
-                    <span>{table.area} - {table.guests}/{table.seats} guests</span>
+                    <span>{table.area} - {table.guests}/{table.seats} guests - {branchNameById.get(table.branchId) ?? table.branchId}</span>
                   </div>
                   {tableOrder?.prepStatus ? (
                     <StatusBadge
@@ -895,9 +916,17 @@ export function FloorPlanView({ onSendToPos, settledReceipt, onSettledReceiptSee
             <form className="reservation-form" onSubmit={submitReservation}>
               <label>
                 Table
-                <select value={reservationForm.tableId} onChange={(event) => setReservationForm((current) => ({ ...current, tableId: event.target.value }))}>
+                <select value={reservationForm.tableId} onChange={(event) => {
+                  const table = tables.find((item) => item.id === event.target.value);
+                  setReservationForm((current) => ({
+                    ...current,
+                    branchId: table?.branchId ?? current.branchId,
+                    tableId: event.target.value,
+                    guests: table ? Math.max(1, Math.min(table.seats, current.guests)) : current.guests
+                  }));
+                }}>
                   <option value="">Table</option>
-                  {tables.map((table) => <option key={table.id} value={table.id}>{table.label} - {table.seats} seats</option>)}
+                  {tables.map((table) => <option key={table.id} value={table.id}>{table.label} - {table.seats} seats - {branchNameById.get(table.branchId) ?? table.branchId}</option>)}
                 </select>
               </label>
               <label>

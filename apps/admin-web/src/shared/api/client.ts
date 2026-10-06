@@ -41,6 +41,8 @@ export interface CreateSaleResponse {
 }
 
 export type PaymentMethodCode = "cash" | "card" | "bank_transfer" | "mobile_money" | "customer_credit" | "voucher";
+export type ExpensePaymentMethodCode = Exclude<PaymentMethodCode, "customer_credit">;
+export type SupplierPaymentMethodCode = Exclude<PaymentMethodCode, "customer_credit" | "voucher">;
 
 export type SaleStatus = "completed" | "voided" | "refunded" | "partially_refunded";
 
@@ -143,7 +145,7 @@ export interface Expense {
   description: string;
   vendor?: string;
   amount: number;
-  paymentMethod: PaymentMethodCode;
+  paymentMethod: ExpensePaymentMethodCode;
   reference?: string;
   status: ExpenseStatus;
   spentAt: string;
@@ -162,7 +164,7 @@ export interface ExpensePayload {
   description: string;
   vendor?: string;
   amount: number;
-  paymentMethod: PaymentMethodCode;
+  paymentMethod: ExpensePaymentMethodCode;
   reference?: string;
   status: ExpenseStatus;
   spentAt: string;
@@ -263,7 +265,7 @@ export type SupplierInvoiceStatus = "open" | "partially_paid" | "paid" | "voided
 export interface SupplierInvoicePayment {
   id: string;
   amount: number;
-  paymentMethod: PaymentMethodCode;
+  paymentMethod: SupplierPaymentMethodCode;
   reference: string;
   paidAt: string;
   note?: string;
@@ -315,7 +317,7 @@ export interface SupplierInvoicePayload {
 
 export interface SupplierInvoicePaymentPayload {
   amount: number;
-  paymentMethod: PaymentMethodCode;
+  paymentMethod: SupplierPaymentMethodCode;
   reference: string;
   paidAt: string;
   note?: string;
@@ -783,22 +785,36 @@ function authHeaders() {
   const auth = readStoredAuth();
   if (!auth) return {};
 
+  const role = auth.staff.role ?? auth.session.role ?? "";
+  const isTenantWideRole = role === "owner" || role === "state_manager";
+
   return {
     authorization: `Bearer ${auth.accessToken}`,
     "x-tenant-id": auth.staff.tenantId,
-    "x-branch-id": auth.session.branchId ?? auth.staff.branchId
+    ...(isTenantWideRole ? {} : { "x-branch-id": auth.session.branchId ?? auth.staff.branchId })
   };
 }
 
 function composeHeaders(headers?: HeadersInit) {
   const composed = new Headers(baseHeaders);
   const auth = authHeaders();
+  const providedHeaders = new Headers(headers);
+  const explicitBranchHeader = providedHeaders.get("x-branch-id");
+  const hasExplicitBranchHeader = providedHeaders.has("x-branch-id");
 
-  Object.entries(auth).forEach(([key, value]) => composed.set(key, value));
+  Object.entries(auth).forEach(([key, value]) => {
+    if (key === "x-branch-id" && hasExplicitBranchHeader) return;
+    composed.set(key, String(value));
+  });
 
   if (headers) {
-    new Headers(headers).forEach((value, key) => {
-      if (!value.trim()) return;
+    providedHeaders.forEach((value, key) => {
+      if (!value.trim()) {
+        if (key.toLowerCase() === "x-branch-id") {
+          composed.delete("x-branch-id");
+        }
+        return;
+      }
       const lowerKey = key.toLowerCase();
       const isAuthIdentityHeader = ["authorization", "x-tenant-id", "x-role", "x-user-id"].includes(lowerKey);
       if (Object.keys(auth).length > 0 && isAuthIdentityHeader) return;
@@ -806,11 +822,15 @@ function composeHeaders(headers?: HeadersInit) {
     });
   }
 
+  if (hasExplicitBranchHeader && explicitBranchHeader?.trim()) {
+    composed.set("x-branch-id", explicitBranchHeader);
+  }
+
   return composed;
 }
 
 function branchHeaders(branchId?: string) {
-  return branchId ? { "x-branch-id": branchId } : undefined;
+  return branchId === undefined ? undefined : { "x-branch-id": branchId };
 }
 
 function queryString(params: Record<string, string | number | undefined | null>) {
@@ -968,6 +988,12 @@ export interface TenantSubscription {
   updatedAt: string;
 }
 
+export interface SubscriptionUsage {
+  branches: number;
+  users: number;
+  terminals: number;
+}
+
 export interface SubscriptionInvoice {
   id: string;
   tenantId: string;
@@ -998,6 +1024,7 @@ export interface SubscriptionInvoiceCreatePayload {
   status: SubscriptionInvoiceStatus;
   issuedAt: string;
   dueAt: string;
+  paymentReference?: string;
 }
 
 export type BranchStatus = "active" | "paused";
@@ -1040,6 +1067,7 @@ export type TerminalOption = Omit<TerminalDevice, "createdAt">;
 
 export type SyncRecordStatus = "queued" | "processing" | "synced" | "failed" | "conflict";
 export type SyncRecordType = "sale" | "table_order" | "payment" | "cash_movement" | "stock_adjustment" | "receipt_action";
+
 
 export interface SyncQueueRecord {
   id: string;
@@ -1237,7 +1265,7 @@ export async function renameProductCategory(from: string, to: string, userId = "
 }
 
 export async function fetchSubscriptionOverview(branchId = "") {
-  return requestJson<{ subscription: TenantSubscription | null; invoices: SubscriptionInvoice[]; plans: SubscriptionPlanOption[] }>("/api/v1/subscriptions/current", {
+  return requestJson<{ subscription: TenantSubscription | null; invoices: SubscriptionInvoice[]; plans: SubscriptionPlanOption[]; usage: SubscriptionUsage }>("/api/v1/subscriptions/current", {
     headers: branchHeaders(branchId)
   });
 }
@@ -1405,6 +1433,13 @@ export async function queueReceiptDelivery(saleId: string, channel: "print" | "w
 export async function fetchCurrentRegister(branchId = "", terminalId = "") {
   return requestJson<{ shift: RegisterShift | null; payments: PaymentRecord[]; movements: CashMovement[] }>(
     `/api/v1/registers/current${queryString({ branchId, terminalId })}`,
+    { headers: branchHeaders(branchId) }
+  );
+}
+
+export async function fetchRegisterShiftHistory(branchId = "", terminalId = "") {
+  return requestJson<{ shifts: RegisterShift[] }>(
+    `/api/v1/registers/history${queryString({ branchId, terminalId })}`,
     { headers: branchHeaders(branchId) }
   );
 }
@@ -1718,9 +1753,10 @@ export async function updatePrepTicketItemStatus(ticketId: string, itemId: strin
   });
 }
 
-export async function fetchCustomers(query = "") {
-  const params = query ? `?q=${encodeURIComponent(query)}` : "";
-  return requestJson<{ customers: Customer[] }>(`/api/v1/customers${params}`);
+export async function fetchCustomers(query = "", branchId = "") {
+  return requestJson<{ customers: Customer[] }>(`/api/v1/customers${queryString({ q: query, branchId })}`, {
+    headers: branchHeaders(branchId)
+  });
 }
 
 export async function createCustomer(payload: CustomerPayload, branchId = "", userId = "") {
@@ -1748,8 +1784,8 @@ export async function postCustomerLedger(customerId: string, payload: CustomerLe
 }
 
 export async function fetchCustomerLedger(customerId: string, branchId = "", userId = "", startDate = "", endDate = "") {
-  return requestJson<{ entries: CustomerLedgerEntry[] }>(`/api/v1/customers/${customerId}/ledger${queryString({ startDate, endDate })}`, {
-    headers: { "x-branch-id": branchId }
+  return requestJson<{ entries: CustomerLedgerEntry[] }>(`/api/v1/customers/${customerId}/ledger${queryString({ branchId, startDate, endDate })}`, {
+    headers: branchHeaders(branchId)
   });
 }
 

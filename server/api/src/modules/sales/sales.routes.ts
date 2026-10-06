@@ -1,31 +1,55 @@
 import { saleActionSchema, saleReceiptActionSchema, saleRefundSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
-import { canAccessAllBranches, resolveBranchScope, requirePermission, requireTenant, selfScopedUserId } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, canAccessScopedBranches, resolveBranchScope, requirePermission, requireTenant, selfScopedUserId } from "../../shared/http/tenantContext";
 import { createSale, listSales, queueReceiptAction, refundSale, voidSale } from "./sales.repository";
 import { createSaleSchema } from "./sales.service";
 
 export const salesRouter = Router();
 
-function requireBranchContext(req: Request, res: Response) {
-  const requestedBranchId = req.query.branchId?.toString() ?? req.header("x-branch-id") ?? (
-    canAccessAllBranches(req.tenantContext!) ? undefined : req.tenantContext!.branchId
+function requestedBranch(req: Request) {
+  return req.query.branchId?.toString() ?? req.header("x-branch-id") ?? undefined;
+}
+
+function resolveSalesListScope(req: Request, res: Response) {
+  const requestedBranchId = requestedBranch(req);
+  const branchId = requestedBranchId ?? (
+    canAccessAllBranches(req.tenantContext!) || canAccessScopedBranches(req.tenantContext!)
+      ? undefined
+      : req.tenantContext!.branchId
   );
-  const scope = resolveBranchScope(req.tenantContext!, requestedBranchId);
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
+  const scope = resolveBranchScope(req.tenantContext!, branchId);
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return null;
   }
 
-  return scope;
+  return !requestedBranchId && scope.branchScopeIds?.length ? { ...scope, branchId: undefined, branchIds: scope.branchScopeIds } : { ...scope, branchIds: undefined };
+}
+
+function requireBranchContext(req: Request, res: Response) {
+  const requestedBranchId = requestedBranch(req);
+  const branchId = requestedBranchId ?? (
+    canAccessAllBranches(req.tenantContext!) || canAccessScopedBranches(req.tenantContext!)
+      ? undefined
+      : req.tenantContext!.branchId
+  );
+  const scope = resolveBranchScope(req.tenantContext!, branchId);
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
+    res.status(403).json({ error: "Branch access denied" });
+    return null;
+  }
+
+  return !requestedBranchId && scope.branchScopeIds?.length ? { ...scope, branchId: undefined, branchIds: scope.branchScopeIds } : { ...scope, branchIds: undefined };
 }
 
 salesRouter.get("/", requireTenant, requirePermission("sale.create"), async (req, res) => {
-  const scope = requireBranchContext(req, res);
+  const scope = resolveSalesListScope(req, res);
   if (!scope) return;
 
   const status = req.query.status?.toString();
   const sales = await listSales(req.tenantContext!.tenantId, {
     branchId: scope.branchId,
+    branchIds: scope.branchIds,
     status,
     cashierId: selfScopedUserId(req.tenantContext!)
   });
@@ -42,7 +66,7 @@ salesRouter.post("/", requireTenant, requirePermission("sale.create"), async (re
   }
 
   const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
@@ -162,7 +186,7 @@ salesRouter.post("/:saleId/receipt-actions", requireTenant, requirePermission("s
 
   const result = await queueReceiptAction(
     req.tenantContext!.tenantId,
-    scope.branchId,
+    { branchId: scope.branchId, branchIds: scope.branchIds },
     req.tenantContext!.userId,
     req.params.saleId.toString(),
     parsed.data.channel
@@ -199,7 +223,7 @@ salesRouter.post("/:saleId/void", requireTenant, requirePermission("sale.void"),
 
   const result = await voidSale(
     req.tenantContext!.tenantId,
-    scope.branchId,
+    { branchId: scope.branchId, branchIds: scope.branchIds },
     req.tenantContext!.userId,
     req.params.saleId.toString(),
     parsed.data.reason,
@@ -252,7 +276,7 @@ salesRouter.post("/:saleId/refund", requireTenant, requirePermission("sale.refun
 
   const result = await refundSale(
     req.tenantContext!.tenantId,
-    scope.branchId,
+    { branchId: scope.branchId, branchIds: scope.branchIds },
     req.tenantContext!.userId,
     req.params.saleId.toString(),
     parsed.data.amount,

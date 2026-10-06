@@ -2,7 +2,7 @@ import { Router, raw, type Request } from "express";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { productInputSchema } from "@pos/validation";
-import { canAccessAllBranches, resolveBranchScope, requireAnyPermission, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, canAccessScopedBranches, resolveBranchScope, requireAnyPermission, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import {
   appendCatalogAudit,
   catalogBranchExists,
@@ -30,7 +30,14 @@ function safeUploadName(value: string) {
 }
 
 function requestedBranch(req: Request) {
-  return req.query.branchId?.toString() ?? req.header("x-branch-id") ?? (canAccessAllBranches(req.tenantContext!) ? undefined : req.tenantContext!.branchId);
+  const requested = req.query.branchId?.toString() ?? req.header("x-branch-id");
+  if (requested) return requested;
+  if (canAccessAllBranches(req.tenantContext!) || canAccessScopedBranches(req.tenantContext!)) return undefined;
+  return req.tenantContext!.branchId;
+}
+
+function effectiveBranchScope(scope: ReturnType<typeof resolveBranchScope>, requestedBranchId?: string) {
+  return !requestedBranchId && scope.branchScopeIds?.length ? { ...scope, branchId: undefined } : scope;
 }
 
 async function categoryAllowed(tenantId: string, category: string) {
@@ -39,23 +46,27 @@ async function categoryAllowed(tenantId: string, category: string) {
 }
 
 catalogRouter.get("/products", requireTenant, requireAnyPermission(["sale.create", "catalog.manage", "inventory.adjust", "restaurant.manage"]), async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
+  const requestedBranchId = requestedBranch(req);
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranchId);
   if (scope.forbidden) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
 
-  const branchId = scope.branchId;
-  const tenantProducts = await listCatalogProducts(req.tenantContext!.tenantId, branchId);
+  const effectiveScope = effectiveBranchScope(scope, requestedBranchId);
+  const tenantProducts = await listCatalogProducts(req.tenantContext!.tenantId, {
+    branchId: effectiveScope.branchId,
+    branchIds: !effectiveScope.branchId ? effectiveScope.branchScopeIds : undefined
+  });
 
   await appendCatalogAudit({
     tenantId: req.tenantContext!.tenantId,
-    branchId,
+    branchId: effectiveScope.branchId,
     userId: req.tenantContext!.userId,
     action: "catalog.view",
     entityType: "product",
     entityId: "collection",
-    metadata: { count: tenantProducts.length, branchId }
+    metadata: { count: tenantProducts.length, branchId: effectiveScope.branchId, branchIds: !effectiveScope.branchId ? effectiveScope.branchScopeIds : undefined }
   });
 
   res.json({ products: tenantProducts });
@@ -67,6 +78,19 @@ catalogRouter.post(
   requirePermission("catalog.manage"),
   raw({ limit: "5mb", type: uploadContentTypes }),
   async (req, res) => {
+    const branchId = req.header("x-branch-id")?.trim();
+    const scope = resolveBranchScope(req.tenantContext!, branchId);
+
+    if (!branchId || scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
+      res.status(403).json({ error: "Branch access denied" });
+      return;
+    }
+
+    if (!(await catalogBranchExists(req.tenantContext!.tenantId, scope.branchId ?? branchId))) {
+      res.status(404).json({ error: "Product branch not found for this tenant" });
+      return;
+    }
+
     const contentType = req.header("content-type")?.split(";")[0].toLowerCase() ?? "";
 
     if (!uploadContentTypes.includes(contentType)) {

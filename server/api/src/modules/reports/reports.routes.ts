@@ -14,7 +14,7 @@ import {
   staffMembers
 } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
-import { canAccessAllBranches, resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, canAccessScopedBranches, resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 
 export const reportsRouter = Router();
 const useDemoStore = process.env.NODE_ENV === "test";
@@ -34,7 +34,12 @@ function getReportPeriod(value: unknown): ReportPeriod {
 }
 
 function requestedBranch(req: Request) {
-  return req.query.branchId?.toString() ?? req.header("x-branch-id") ?? (canAccessAllBranches(req.tenantContext!) ? undefined : req.tenantContext!.branchId);
+  const queryBranchId = req.query.branchId?.toString();
+  if (queryBranchId) return queryBranchId;
+  const headerBranchId = req.header("x-branch-id");
+  if (headerBranchId) return headerBranchId;
+  if (canAccessAllBranches(req.tenantContext!) || canAccessScopedBranches(req.tenantContext!)) return undefined;
+  return req.tenantContext!.branchId;
 }
 
 function isServiceCategory(category: string) {
@@ -101,6 +106,10 @@ function reportWindow(req: Request, period: ReportPeriod) {
 function isWithinReportWindow(createdAt: string, window: { start?: Date | null; end?: Date | null }) {
   const date = new Date(createdAt);
   return (!window.start || date >= window.start) && (!window.end || date <= window.end);
+}
+
+function findReportProduct(products: ReportProduct[], tenantId: string, branchId: string, productId: string) {
+  return products.find((item) => item.tenantId === tenantId && item.branchId === branchId && item.id === productId);
 }
 
 async function branchBelongsToTenant(tenantId: string, branchId: string) {
@@ -318,9 +327,12 @@ async function loadReportSources(tenantId: string) {
       id: entry.id,
       tenantId: entry.tenantId,
       branchId: entry.branchId,
+      customerId: entry.customerId,
       type: entry.type,
       amount: entry.amount,
       pointsDelta: entry.pointsDelta,
+      balanceAfter: entry.balanceAfter,
+      pointsAfter: entry.pointsAfter,
       createdAt: entry.createdAt.toISOString()
     })),
     staff: staff.map((member) => ({ id: member.id, tenantId: member.tenantId, branchId: member.branchId, name: member.name, role: member.role, active: member.active })),
@@ -344,13 +356,15 @@ async function loadReportSources(tenantId: string) {
 }
 
 reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit.view"), async (req, res) => {
-  const scope = resolveBranchScope(req.tenantContext!, requestedBranch(req));
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
+  const requestedBranchId = requestedBranch(req);
+  const scope = resolveBranchScope(req.tenantContext!, requestedBranchId);
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !scope.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return;
   }
 
-  const branchId = scope.branchId;
+  const effectiveScope = !requestedBranchId && scope.branchScopeIds?.length ? { ...scope, branchId: undefined } : scope;
+  const branchId = effectiveScope.branchId;
   const period = getReportPeriod(req.query.period);
   const window = reportWindow(req, period);
   if ("error" in window) {
@@ -368,10 +382,15 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
   }
 
   const sources = await loadReportSources(tenantId);
+  const branchScopeIds = !branchId ? effectiveScope.branchScopeIds : undefined;
+  const branchMatches = (recordBranchId?: string) => {
+    if (branchId) return recordBranchId === branchId;
+    if (branchScopeIds?.length) return Boolean(recordBranchId && branchScopeIds.includes(recordBranchId));
+    return true;
+  };
   const branchSales = sources.sales.filter((sale) => {
     const tenantMatch = sale.tenantId === tenantId;
-    const branchMatch = branchId ? sale.branchId === branchId : true;
-    return tenantMatch && branchMatch;
+    return tenantMatch && branchMatches(sale.branchId);
   });
   const periodSales = branchSales.filter((sale) => isWithinReportWindow(sale.createdAt, window));
   const activeSales = periodSales.filter((sale) => sale.status !== "voided");
@@ -388,7 +407,7 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
   const averageTransaction = orderCount ? Math.round(totalSales / orderCount) : 0;
   const grossProfit = activeSales.reduce((sum, sale) => {
     const saleProfit = sale.summary.lines.reduce((lineSum, line) => {
-      const product = sources.products.find((item) => item.tenantId === tenantId && item.id === line.productId);
+      const product = findReportProduct(sources.products, tenantId, sale.branchId, line.productId);
       const cost = product ? product.cost * line.quantity : 0;
       return lineSum + line.total - cost;
     }, 0);
@@ -396,13 +415,13 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
   }, 0);
   const periodExpenses = sources.expenses
     .filter((expense) => expense.tenantId === tenantId)
-    .filter((expense) => !branchId || expense.branchId === branchId)
+    .filter((expense) => branchMatches(expense.branchId))
     .filter((expense) => expense.status === "paid")
     .filter((expense) => isWithinReportWindow(expense.spentAt, window));
   const expenseTotal = periodExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const lowStock = sources.products
     .filter((product) => product.tenantId === tenantId)
-    .filter((product) => !branchId || product.branchId === branchId)
+    .filter((product) => branchMatches(product.branchId))
     .filter((product) => !isServiceCategory(product.category))
     .filter((product) => product.stock <= product.reorderPoint)
     .map((product) => ({
@@ -414,11 +433,11 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
     }));
   const openRegisterCash = sources.shifts
     .filter((shift) => shift.tenantId === tenantId && shift.status === "open")
-    .filter((shift) => !branchId || shift.branchId === branchId)
+    .filter((shift) => branchMatches(shift.branchId))
     .reduce((sum, shift) => sum + shift.expectedCash, 0);
   const periodCashMovements = sources.cashMovements
     .filter((movement) => movement.tenantId === tenantId)
-    .filter((movement) => !branchId || movement.branchId === branchId)
+    .filter((movement) => branchMatches(movement.branchId))
     .filter((movement) => isWithinReportWindow(movement.createdAt, window));
   const cashMovementIn = periodCashMovements
     .filter((movement) => movement.type === "cash_in" || movement.type === "paid_in")
@@ -427,13 +446,31 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
     .filter((movement) => movement.type === "cash_out" || movement.type === "paid_out")
     .reduce((sum, movement) => sum + movement.amount, 0);
   const cashMovementNet = cashMovementIn - cashMovementOut;
-  const tenantCustomers = sources.customers.filter((customer) => customer.tenantId === tenantId);
-  const customerOutstandingBalance = tenantCustomers.reduce((sum, customer) => sum + customer.outstandingBalance, 0);
+  const scopedCustomerLedger = sources.customerLedger
+    .filter((entry) => entry.tenantId === tenantId)
+    .filter((entry) => branchMatches(entry.branchId));
+  const scopedCustomerIds = new Set(scopedCustomerLedger.map((entry) => entry.customerId));
+  const hasCustomerBranchScope = Boolean(branchId || branchScopeIds?.length);
+  const tenantCustomers = sources.customers
+    .filter((customer) => customer.tenantId === tenantId)
+    .filter((customer) => !hasCustomerBranchScope || scopedCustomerIds.has(customer.id));
+  const latestScopedCustomerLedger = scopedCustomerLedger.reduce<Map<string, (typeof scopedCustomerLedger)[number]>>((latest, entry) => {
+    const current = latest.get(entry.customerId);
+    if (!current || new Date(entry.createdAt).getTime() >= new Date(current.createdAt).getTime()) {
+      latest.set(entry.customerId, entry);
+    }
+    return latest;
+  }, new Map());
+  const customerOutstandingBalance = hasCustomerBranchScope
+    ? Array.from(latestScopedCustomerLedger.values()).reduce((sum, entry) => sum + entry.balanceAfter, 0)
+    : tenantCustomers.reduce((sum, customer) => sum + customer.outstandingBalance, 0);
   const customerCreditLimit = tenantCustomers.reduce((sum, customer) => sum + customer.creditLimit, 0);
-  const customerLoyaltyPoints = tenantCustomers.reduce((sum, customer) => sum + customer.loyaltyPoints, 0);
+  const customerLoyaltyPoints = hasCustomerBranchScope
+    ? Array.from(latestScopedCustomerLedger.values()).reduce((sum, entry) => sum + entry.pointsAfter, 0)
+    : tenantCustomers.reduce((sum, customer) => sum + customer.loyaltyPoints, 0);
   const periodCustomerLedger = sources.customerLedger
     .filter((entry) => entry.tenantId === tenantId)
-    .filter((entry) => !branchId || entry.branchId === branchId)
+    .filter((entry) => branchMatches(entry.branchId))
     .filter((entry) => isWithinReportWindow(entry.createdAt, window));
   const customerAccountPayments = periodCustomerLedger
     .filter((entry) => entry.type === "payment" || entry.type === "voucher")
@@ -444,7 +481,7 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
   const hourlySales = buildSalesTrend(activeSales, period);
   const staffPerformance = sources.staff
     .filter((member) => member.tenantId === tenantId)
-    .filter((member) => !branchId || member.branchId === branchId)
+    .filter((member) => branchMatches(member.branchId))
     .map((member) => ({
       id: member.id,
       name: member.name,
@@ -454,16 +491,16 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
     }));
   const paymentMix = sources.payments
     .filter((payment) => payment.tenantId === tenantId)
-    .filter((payment) => !branchId || payment.branchId === branchId)
+    .filter((payment) => branchMatches(payment.branchId))
     .filter((payment) => isWithinReportWindow(payment.createdAt, window))
     .reduce<Record<string, number>>((summary, payment) => {
       summary[payment.method] = (summary[payment.method] ?? 0) + payment.amount;
       return summary;
     }, {});
   const categoryPerformance = activeSales
-    .flatMap((sale) => sale.summary.lines)
+    .flatMap((sale) => sale.summary.lines.map((line) => ({ ...line, branchId: sale.branchId })))
     .reduce<Record<string, { category: string; quantity: number; sales: number; cost: number; profit: number }>>((summary, line) => {
-      const product = sources.products.find((item) => item.tenantId === tenantId && item.id === line.productId);
+      const product = findReportProduct(sources.products, tenantId, line.branchId, line.productId);
       const category = product?.category ?? "Uncategorized";
       const cost = product ? product.cost * line.quantity : 0;
       const current = summary[category] ?? { category, quantity: 0, sales: 0, cost: 0, profit: 0 };
@@ -477,20 +514,21 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
   const categorySales = Object.values(categoryPerformance).sort((left, right) => right.sales - left.sales);
   const topProducts = Object.values(
     activeSales
-      .flatMap((sale) => sale.summary.lines)
+      .flatMap((sale) => sale.summary.lines.map((line) => ({ ...line, branchId: sale.branchId })))
       .reduce<Record<string, { id: string; name: string; quantity: number; sales: number; profit: number }>>((summary, line) => {
-        const product = sources.products.find((item) => item.tenantId === tenantId && item.id === line.productId);
-        const current = summary[line.productId] ?? { id: line.productId, name: line.name, quantity: 0, sales: 0, profit: 0 };
+        const product = findReportProduct(sources.products, tenantId, line.branchId, line.productId);
+        const key = `${line.branchId}:${line.productId}`;
+        const current = summary[key] ?? { id: line.productId, name: line.name, quantity: 0, sales: 0, profit: 0 };
         current.quantity += line.quantity;
         current.sales += line.total;
         current.profit += line.total - (product ? product.cost * line.quantity : 0);
-        summary[line.productId] = current;
+        summary[key] = current;
         return summary;
       }, {})
   ).sort((left, right) => right.sales - left.sales);
   const pendingApprovals = sources.approvals
     .filter((approval) => approval.tenantId === tenantId)
-    .filter((approval) => !branchId || approval.branchId === branchId)
+    .filter((approval) => branchMatches(approval.branchId))
     .filter((approval) => approval.status === "pending");
 
   res.json({
@@ -520,7 +558,7 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
       customerAccountCreditIssued,
       auditEventCount: sources.audits
         .filter((event) => event.tenantId === tenantId)
-        .filter((event) => !branchId || event.branchId === branchId)
+        .filter((event) => branchMatches(event.branchId))
         .filter((event) => isWithinReportWindow(event.createdAt, window)).length,
       pendingApprovalCount: pendingApprovals.length,
       pendingApprovalValue: pendingApprovals.reduce((sum, approval) => sum + approval.amount, 0),

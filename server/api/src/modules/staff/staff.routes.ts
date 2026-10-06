@@ -1,21 +1,26 @@
 import { profileSecurityUpdateSchema, profileUpdateSchema, staffInputSchema, staffSecurityUpdateSchema, staffStatusSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
-import { canAccessAllBranches, resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { canAccessAllBranches, canAccessScopedBranches, resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import { createStaff, getStaffProfile, listStaff, resendStaffInvite, revokeStaffInvite, setStaffStatus, updateOwnProfile, updateOwnSecurity, updateStaff, updateStaffSecurity } from "./staff.repository";
 
 export const staffRouter = Router();
 
 function requestedBranch(req: Request, bodyBranchId?: string) {
-  if (!canAccessAllBranches(req.tenantContext!) && req.tenantContext!.branchId) {
-    return req.tenantContext!.branchId;
-  }
-
-  return bodyBranchId ?? req.query.branchId?.toString() ?? req.header("x-branch-id") ?? req.tenantContext!.branchId;
+  const requested = bodyBranchId ?? req.query.branchId?.toString() ?? req.header("x-branch-id");
+  if (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!)) return req.tenantContext!.branchId;
+  if (requested) return requested;
+  if (canAccessAllBranches(req.tenantContext!) || canAccessScopedBranches(req.tenantContext!)) return undefined;
+  return req.tenantContext!.branchId;
 }
 
 function resolveStaffBranch(req: Request, res: Response, requestedBranchId?: string) {
+  if (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !req.tenantContext!.branchId) {
+    res.status(403).json({ error: "Branch access denied" });
+    return null;
+  }
+
   const scope = resolveBranchScope(req.tenantContext!, requestedBranchId ?? requestedBranch(req));
-  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !req.tenantContext!.branchId)) {
+  if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !canAccessScopedBranches(req.tenantContext!) && !scope.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return null;
   }
@@ -23,11 +28,17 @@ function resolveStaffBranch(req: Request, res: Response, requestedBranchId?: str
   return scope;
 }
 
-staffRouter.get("/", requireTenant, requirePermission("staff.manage"), async (req, res) => {
-  const scope = resolveStaffBranch(req, res, req.query.branchId?.toString());
-  if (!scope) return;
+function effectiveStaffScope(scope: ReturnType<typeof resolveBranchScope>, requestedBranchId?: string) {
+  return !requestedBranchId && scope.branchScopeIds?.length ? { ...scope, branchId: undefined, branchIds: scope.branchScopeIds } : { ...scope, branchIds: undefined };
+}
 
-  const staff = await listStaff(req.tenantContext!.tenantId, scope.branchId);
+staffRouter.get("/", requireTenant, requirePermission("staff.manage"), async (req, res) => {
+  const requestedBranchId = req.query.branchId?.toString();
+  const scope = resolveStaffBranch(req, res, requestedBranchId);
+  if (!scope) return;
+  const effectiveScope = effectiveStaffScope(scope, requestedBranchId);
+
+  const staff = await listStaff(req.tenantContext!.tenantId, { branchId: effectiveScope.branchId, branchIds: effectiveScope.branchIds });
 
   res.json({ staff });
 });
@@ -120,6 +131,11 @@ staffRouter.post("/", requireTenant, requirePermission("staff.manage"), async (r
     return;
   }
 
+  if (result.status === "user_limit_reached") {
+    res.status(409).json({ error: "User limit reached for this tenant plan" });
+    return;
+  }
+
   res.status(201).json({ staff: result.staff });
 });
 
@@ -131,12 +147,21 @@ staffRouter.patch("/:staffId", requireTenant, requirePermission("staff.manage"),
     return;
   }
 
-  const scope = resolveStaffBranch(req, res, parsed.data.branchId);
+  const currentBranchId = req.header("x-branch-id") ?? req.query.branchId?.toString();
+  const scope = resolveStaffBranch(req, res, currentBranchId);
   if (!scope) return;
-  const scopedPayload = parsed.data.branchId ? { ...parsed.data, branchId: scope.branchId ?? parsed.data.branchId } : parsed.data;
+
+  let scopedPayload = parsed.data;
+  if (parsed.data.branchId) {
+    const targetScope = resolveStaffBranch(req, res, parsed.data.branchId);
+    if (!targetScope) return;
+    scopedPayload = { ...parsed.data, branchId: targetScope.branchId ?? parsed.data.branchId };
+  }
+
+  const effectiveScope = effectiveStaffScope(scope, currentBranchId);
   const result = await updateStaff(
     req.tenantContext!.tenantId,
-    scope.branchId,
+    { branchId: effectiveScope.branchId, branchIds: effectiveScope.branchIds },
     req.tenantContext!.userId,
     req.params.staffId.toString(),
     scopedPayload
@@ -170,10 +195,11 @@ staffRouter.patch("/:staffId/status", requireTenant, requirePermission("staff.ma
 
   const scope = resolveStaffBranch(req, res);
   if (!scope) return;
+  const effectiveScope = effectiveStaffScope(scope);
 
   const result = await setStaffStatus(
     req.tenantContext!.tenantId,
-    scope.branchId,
+    { branchId: effectiveScope.branchId, branchIds: effectiveScope.branchIds },
     req.tenantContext!.userId,
     req.params.staffId.toString(),
     parsed.data
@@ -202,10 +228,11 @@ staffRouter.patch("/:staffId/security", requireTenant, requirePermission("staff.
 
   const scope = resolveStaffBranch(req, res);
   if (!scope) return;
+  const effectiveScope = effectiveStaffScope(scope);
 
   const result = await updateStaffSecurity(
     req.tenantContext!.tenantId,
-    scope.branchId,
+    { branchId: effectiveScope.branchId, branchIds: effectiveScope.branchIds },
     req.tenantContext!.userId,
     req.params.staffId.toString(),
     parsed.data
@@ -232,10 +259,11 @@ staffRouter.patch("/:staffId/security", requireTenant, requirePermission("staff.
 staffRouter.post("/:staffId/invite/resend", requireTenant, requirePermission("staff.manage"), async (req, res) => {
   const scope = resolveStaffBranch(req, res);
   if (!scope) return;
+  const effectiveScope = effectiveStaffScope(scope);
 
   const result = await resendStaffInvite(
     req.tenantContext!.tenantId,
-    scope.branchId,
+    { branchId: effectiveScope.branchId, branchIds: effectiveScope.branchIds },
     req.tenantContext!.userId,
     req.params.staffId.toString()
   );
@@ -251,10 +279,11 @@ staffRouter.post("/:staffId/invite/resend", requireTenant, requirePermission("st
 staffRouter.post("/:staffId/invite/revoke", requireTenant, requirePermission("staff.manage"), async (req, res) => {
   const scope = resolveStaffBranch(req, res);
   if (!scope) return;
+  const effectiveScope = effectiveStaffScope(scope);
 
   const result = await revokeStaffInvite(
     req.tenantContext!.tenantId,
-    scope.branchId,
+    { branchId: effectiveScope.branchId, branchIds: effectiveScope.branchIds },
     req.tenantContext!.userId,
     req.params.staffId.toString()
   );

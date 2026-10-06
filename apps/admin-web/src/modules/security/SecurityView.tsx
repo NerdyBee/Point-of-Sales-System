@@ -57,10 +57,11 @@ function normalizeLoginText(value: string) {
 
 export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
   const activeUserId = auth?.staff.id ?? "";
+  const canUseAllBranches = auth?.staff.role === "owner" || auth?.staff.role === "state_manager";
   const [tenantId, setTenantId] = useState(auth?.staff.tenantId ?? "tenant-lagos-foods");
   const [sessions, setSessions] = useState<AuthSession[]>([]);
   const [staff, setStaff] = useState<PinStaffOption[]>([]);
-  const [branchId, setBranchId] = useState(auth?.session.branchId ?? auth?.staff.branchId ?? "");
+  const [branchId, setBranchId] = useState(canUseAllBranches ? "" : auth?.session.branchId ?? auth?.staff.branchId ?? "");
   const [branches, setBranches] = useState<BranchOption[]>(fallbackBranches);
   const [terminals, setTerminals] = useState<TerminalOption[]>([]);
   const [allLoginTerminals, setAllLoginTerminals] = useState<TerminalOption[]>([]);
@@ -195,7 +196,7 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
       setAllLoginTerminals(branchResponse.terminals);
       setTerminals(branchTerminals);
 
-      if (!nextBranchId) {
+      if (!nextBranchId && !canUseAllBranches) {
         setSessions([]);
         setStaff([]);
         setStatus("Select a branch to load security sessions");
@@ -217,7 +218,7 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
         staffId: staffResponse.staff.some((member) => member.id === current.staffId && member.pinEnabled) ? current.staffId : "",
         terminalId: branchTerminals.some((terminal) => terminal.id === current.terminalId) ? current.terminalId : ""
       }));
-      setStatus("Security synced");
+      setStatus(nextBranchId ? "Security synced" : "Security synced across accessible branches");
     } catch (error) {
       setBranches((current) => (current.length > 0 ? current : fallbackBranches));
       setStaff([]);
@@ -576,8 +577,8 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
                   <small>{selectedBranch?.city ?? "assigned"}</small>
                 </span>
               ) : (
-                <select value={branchId} onChange={(event) => changeBranch(event.target.value)} required>
-                  <option value="">Branch</option>
+                <select value={branchId} onChange={(event) => changeBranch(event.target.value)} required={!canUseAllBranches}>
+                  <option value="">{canUseAllBranches ? "All accessible branches" : "Branch"}</option>
                   {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                 </select>
               )}

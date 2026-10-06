@@ -25,6 +25,7 @@ type LedgerInput = {
   paymentReference?: string;
   terminalId?: string;
 };
+type CustomerScopeFilter = { branchId?: string; branchIds?: string[] };
 
 function nextCustomerId() {
   return `cust-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -96,7 +97,31 @@ async function appendCustomerAudit(event: Parameters<typeof appendAudit>[0]) {
   });
 }
 
-export async function listCustomers(tenantId: string, query = "") {
+function customerMatchesBranchScope(customer: Customer, scope: CustomerScopeFilter) {
+  if (!scope.branchId && !scope.branchIds?.length) return true;
+
+  const customerLedgerBranches = customerLedger
+    .filter((entry) => entry.tenantId === customer.tenantId && entry.customerId === customer.id)
+    .map((entry) => entry.branchId);
+
+  if (customerLedgerBranches.length === 0) return true;
+  if (scope.branchId) return customerLedgerBranches.includes(scope.branchId);
+  return scope.branchIds?.some((branchId) => customerLedgerBranches.includes(branchId)) ?? true;
+}
+
+function customerBranchWhere(scope: CustomerScopeFilter): Prisma.CustomerWhereInput | undefined {
+  if (!scope.branchId && !scope.branchIds?.length) return undefined;
+
+  const branchFilter = scope.branchId ? scope.branchId : { in: scope.branchIds };
+  return {
+    OR: [
+      { ledger: { some: { branchId: branchFilter } } },
+      { ledger: { none: {} } }
+    ]
+  };
+}
+
+export async function listCustomers(tenantId: string, query = "", scope: CustomerScopeFilter = {}) {
   const normalizedQuery = query.toLowerCase();
 
   if (useDemoStore) {
@@ -104,23 +129,26 @@ export async function listCustomers(tenantId: string, query = "") {
       const queryMatch = normalizedQuery
         ? `${customer.name} ${customer.phone} ${customer.group}`.toLowerCase().includes(normalizedQuery)
         : true;
-      return customer.tenantId === tenantId && queryMatch;
+      return customer.tenantId === tenantId && queryMatch && customerMatchesBranchScope(customer, scope);
     });
   }
 
-  const where = normalizedQuery
+  const queryWhere: Prisma.CustomerWhereInput | undefined = normalizedQuery
     ? {
-        tenantId,
         OR: [
           { name: { contains: normalizedQuery } },
           { phone: { contains: normalizedQuery } },
           { group: { contains: normalizedQuery } }
         ]
       }
-    : { tenantId };
+    : undefined;
+  const branchWhere = customerBranchWhere(scope);
 
   const customerRecords = await prisma.customer.findMany({
-    where,
+    where: {
+      tenantId,
+      ...(queryWhere ? { AND: [queryWhere, ...(branchWhere ? [branchWhere] : [])] } : branchWhere ?? {})
+    },
     orderBy: { name: "asc" }
   });
 
@@ -272,7 +300,7 @@ export async function updateCustomer(
 export async function listCustomerLedger(
   tenantId: string,
   customerId: string,
-  branchId?: string,
+  scope: { branchId?: string; branchIds?: string[] } = {},
   filters: { startDate?: Date; endDate?: Date } = {}
 ) {
   if (useDemoStore) {
@@ -283,7 +311,14 @@ export async function listCustomerLedger(
     return {
       status: "found" as const,
       entries: customerLedger
-        .filter((entry) => entry.tenantId === tenantId && entry.customerId === customerId && (!branchId || entry.branchId === branchId))
+        .filter((entry) => {
+          const branchMatch = scope.branchId
+            ? entry.branchId === scope.branchId
+            : scope.branchIds?.length
+              ? scope.branchIds.includes(entry.branchId)
+              : true;
+          return entry.tenantId === tenantId && entry.customerId === customerId && branchMatch;
+        })
         .filter((entry) => (filters.startDate ? new Date(entry.createdAt).getTime() >= filters.startDate.getTime() : true))
         .filter((entry) => (filters.endDate ? new Date(entry.createdAt).getTime() <= filters.endDate.getTime() : true))
     };
@@ -301,7 +336,7 @@ export async function listCustomerLedger(
     : undefined;
 
   const entries = await prisma.customerLedgerEntry.findMany({
-    where: { tenantId, customerId, branchId: branchId ? branchId : undefined, createdAt },
+    where: { tenantId, customerId, branchId: scope.branchId ? scope.branchId : scope.branchIds?.length ? { in: scope.branchIds } : undefined, createdAt },
     orderBy: { createdAt: "desc" }
   });
 
