@@ -152,6 +152,10 @@ export interface StockReportRow {
   inflow: number;
   sold: number;
   adjusted: number;
+  /** Everything that added stock: inflows, opening stock, upward recounts. */
+  stockIn: number;
+  /** Everything that removed stock: sales (net of voids), damage, missing, cancelled inflows. */
+  stockOut: number;
   closing: number;
   /** Quantity right now (equals closing when the period ends now). */
   current: number;
@@ -164,7 +168,7 @@ export interface StockReport {
   from: string;
   to: string;
   rows: StockReportRow[];
-  totals: { inflow: number; sold: number; adjusted: number; inflowCost: number; salesValue: number; stockValue: number };
+  totals: { opening: number; stockIn: number; stockOut: number; closing: number; inflow: number; sold: number; adjusted: number; inflowCost: number; salesValue: number; stockValue: number };
   /** Products whose movement history does not add up to their stock (should be empty). */
   mismatched: string[];
 }
@@ -176,6 +180,23 @@ interface MovementRow {
   reason: string;
   unitCost?: number;
   createdAt: string;
+}
+
+function isSaleReturn(movement: MovementRow) {
+  return movement.type === "return" || (movement.type === "adjustment" && movement.reason.startsWith("Void "));
+}
+
+/** Splits a period's movements into stock in and stock out so that closing = opening + in - out. */
+export function inAndOut(movements: { type: string; quantityDelta: number; reason: string }[]) {
+  let stockIn = 0;
+  let stockOut = 0;
+  for (const movement of movements) {
+    const delta = Number(movement.quantityDelta);
+    if (isSaleReturn(movement as MovementRow)) stockOut -= delta;
+    else if (delta > 0) stockIn += delta;
+    else stockOut -= delta;
+  }
+  return { stockIn, stockOut: stockOut || 0 };
 }
 
 function classify(movement: MovementRow): "inflow" | "sold" | "adjusted" {
@@ -230,6 +251,8 @@ export async function stockReport(platform: Platform, range: { from: Date; to: D
     const salesLine = salesByProduct.get(product.id);
     const sold = tracked ? soldMovements : salesLine?.quantity ?? 0;
 
+    const { stockIn, stockOut } = inAndOut(inRange);
+
     const active = inflow || sold || adjusted || closing || opening || salesLine;
     if (!active && product.archived) continue;
     if (tracked && opening + inflow - soldMovements + adjusted !== closing) mismatched.push(product.name);
@@ -244,6 +267,8 @@ export async function stockReport(platform: Platform, range: { from: Date; to: D
       inflow,
       sold,
       adjusted,
+      stockIn: tracked ? stockIn : 0,
+      stockOut: tracked ? stockOut : sold,
       closing: tracked ? closing : 0,
       current: tracked ? current : 0,
       inflowCost,
@@ -259,6 +284,10 @@ export async function stockReport(platform: Platform, range: { from: Date; to: D
     rows,
     mismatched,
     totals: {
+      opening: rows.reduce((sum, row) => sum + row.opening, 0),
+      stockIn: rows.reduce((sum, row) => sum + row.stockIn, 0),
+      stockOut: rows.reduce((sum, row) => sum + (row.tracked ? row.stockOut : 0), 0),
+      closing: rows.reduce((sum, row) => sum + row.closing, 0),
       inflow: rows.reduce((sum, row) => sum + row.inflow, 0),
       sold: rows.reduce((sum, row) => sum + row.sold, 0),
       adjusted: rows.reduce((sum, row) => sum + row.adjusted, 0),
@@ -271,7 +300,7 @@ export async function stockReport(platform: Platform, range: { from: Date; to: D
 
 /** CSV for sharing/opening in a spreadsheet. */
 export function stockReportCsv(report: StockReport, options: { includeCosts: boolean }) {
-  const header = ["Product", "Category", "Opening", "Inflow", "Sold", "Adjusted", "Closing", ...(options.includeCosts ? ["Inflow cost", "Sales value"] : [])];
+  const header = ["Product", "Category", "Opening", "Out", "In", "Closing", "Sold", "Adjusted", ...(options.includeCosts ? ["Inflow cost", "Sales value"] : [])];
   const escape = (value: string | number) => {
     const text = String(value);
     return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
@@ -279,12 +308,16 @@ export function stockReportCsv(report: StockReport, options: { includeCosts: boo
   const lines = [header.join(",")];
   for (const row of report.rows) {
     lines.push(
-      [row.name, row.category, row.tracked ? row.opening : "", row.inflow, row.sold, row.adjusted, row.tracked ? row.closing : "", ...(options.includeCosts ? [row.inflowCost, row.salesValue] : [])]
+      [row.name, row.category, row.tracked ? row.opening : "", row.stockOut, row.tracked ? row.stockIn : "", row.tracked ? row.closing : "", row.sold, row.tracked ? row.adjusted : "", ...(options.includeCosts ? [row.inflowCost, row.salesValue] : [])]
         .map(escape)
         .join(",")
     );
   }
-  lines.push(["TOTAL", "", "", report.totals.inflow, report.totals.sold, report.totals.adjusted, "", ...(options.includeCosts ? [report.totals.inflowCost, report.totals.salesValue] : [])].map(escape).join(","));
+  lines.push(
+    ["TOTAL", "", report.totals.opening, report.totals.stockOut, report.totals.stockIn, report.totals.closing, report.totals.sold, report.totals.adjusted, ...(options.includeCosts ? [report.totals.inflowCost, report.totals.salesValue] : [])]
+      .map(escape)
+      .join(",")
+  );
   return lines.join("\n");
 }
 
@@ -311,4 +344,32 @@ export function periodRange(period: ReportPeriod, now = new Date()) {
     default:
       return { from: new Date(2000, 0, 1), to: end };
   }
+}
+
+/** Whole days, inclusive: from the start of `fromDay` to the end of `toDay` (device time). */
+export function dayRange(fromDay: Date, toDay: Date) {
+  const start = new Date(fromDay.getFullYear(), fromDay.getMonth(), fromDay.getDate());
+  const endDay = new Date(toDay.getFullYear(), toDay.getMonth(), toDay.getDate());
+  const [from, last] = start <= endDay ? [start, endDay] : [endDay, start];
+  return { from, to: new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1) };
+}
+
+export interface ProductMovement {
+  id: string;
+  type: string;
+  quantityDelta: number;
+  balanceAfter: number;
+  reason: string;
+  createdAt: string;
+}
+
+/** A product's stock movements inside a period, oldest first (report drill-down). */
+export async function productMovements(platform: Platform, productId: string, range: { from: Date; to: Date }) {
+  const rows = await platform.db.all<{ data: string }>(
+    `SELECT data FROM rows WHERE tbl = 'stock_movements' AND json_extract(data, '$.productId') = ?
+     AND json_extract(data, '$.createdAt') >= ? AND json_extract(data, '$.createdAt') < ?
+     ORDER BY json_extract(data, '$.createdAt'), rowid`,
+    [productId, range.from.toISOString(), range.to.toISOString()]
+  );
+  return rows.map((row) => JSON.parse(row.data) as ProductMovement);
 }

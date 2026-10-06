@@ -4,6 +4,7 @@
   "main": "index.ts",
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
+    "@react-native-community/datetimepicker": "9.1.0",
     "expo": "~57.0.27",
     "expo-build-properties": "~57.0.22",
     "expo-crypto": "~57.0.3",
@@ -28,9 +29,12 @@
     "vitest": "^4.1.11"
   },
   "scripts": {
-    "start": "expo start",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
+    "start": "expo start --go",
+    "start:dev": "expo start --dev-client",
+    "android": "expo start --go --android",
+    "ios": "expo start --go --ios",
+    "run:android": "expo run:android",
+    "run:ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

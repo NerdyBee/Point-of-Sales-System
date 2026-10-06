@@ -4,6 +4,7 @@ import { BackupScreen, backupAgeDays, backupReminderDays } from "../screens/Back
 import { LockScreen } from "../screens/LockScreen";
 import { ManageScreen } from "../screens/ManageScreen";
 import { RegisterScreen } from "../screens/RegisterScreen";
+import { ReportsScreen } from "../screens/ReportsScreen";
 import { SalesScreen } from "../screens/SalesScreen";
 import { SellScreen } from "../screens/SellScreen";
 import { SetupScreen } from "../screens/SetupScreen";
@@ -16,13 +17,14 @@ import { useLayout } from "../ui/layout";
 import { colors, font, radius, spacing } from "../ui/theme";
 import { useApp } from "./AppContext";
 
-type Tab = "sell" | "sales" | "register" | "manage" | "sync" | "backup";
+type Tab = "sell" | "sales" | "register" | "reports" | "manage" | "sync" | "backup";
 const managePermissions = ["catalog.manage", "staff.manage", "settings.manage"];
 
 const tabIcons: Record<Tab, [IconName, IconName]> = {
   sell: ["cart-outline", "cart"],
   sales: ["receipt-outline", "receipt"],
   register: ["cash-outline", "cash"],
+  reports: ["bar-chart-outline", "bar-chart"],
   manage: ["grid-outline", "grid"],
   sync: ["sync-outline", "sync"],
   backup: ["cloud-upload-outline", "cloud-upload"]
@@ -63,10 +65,12 @@ export function Shell() {
   }
 
   const canManage = standalone && managePermissions.some((permission) => permissions.has(permission));
+  const canReport = standalone && (permissions.has("inventory.adjust") || permissions.has("reports.profit.view"));
   const tabs: { key: Tab; label: string; badge?: number }[] = [
     { key: "sell", label: "Sell" },
     { key: "sales", label: "Sales" },
     { key: "register", label: "Register" },
+    ...(canReport ? [{ key: "reports" as const, label: "Reports" }] : []),
     ...(canManage ? [{ key: "manage" as const, label: "Manage" }] : []),
     standalone ? { key: "backup" as const, label: "Backup" } : { key: "sync" as const, label: "Sync", badge: syncStatus.pending + syncStatus.conflicts }
   ];
@@ -104,6 +108,7 @@ export function Shell() {
       {tab === "sell" ? <SellScreen onOpenRegister={() => setTab("register")} onOpenManage={canManage ? () => setTab("manage") : undefined} /> : null}
       {tab === "sales" ? <SalesScreen /> : null}
       {tab === "register" ? <RegisterScreen onOpened={() => setTab("sell")} /> : null}
+      {tab === "reports" ? <ReportsScreen /> : null}
       {tab === "manage" ? <ManageScreen /> : null}
       {tab === "sync" ? <SyncScreen onRepair={() => setRepairing(true)} /> : null}
       {tab === "backup" ? <BackupScreen /> : null}

@@ -44,6 +44,9 @@ describe("standalone tablet (no server)", () => {
 
     const ownerPermissions = await readModel.permissionsForRole(platform.db, "owner");
     expect(ownerPermissions.has("settings.manage")).toBe(true);
+    // The Reports tab is shown to roles with either of these.
+    expect(ownerPermissions.has("inventory.adjust") && ownerPermissions.has("reports.profit.view")).toBe(true);
+    expect((await readModel.permissionsForRole(platform.db, "manager")).has("inventory.adjust")).toBe(true);
     const cashierPermissions = await readModel.permissionsForRole(platform.db, "cashier");
     expect([...cashierPermissions].sort()).toEqual(["customer.manage", "register.manage", "sale.create"]);
 

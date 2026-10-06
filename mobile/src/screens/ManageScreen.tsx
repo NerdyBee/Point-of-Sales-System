@@ -24,11 +24,11 @@ import {
 } from "../standalone/business";
 import { EmptyState, Fab, Icon, ListItem, Sheet } from "../ui/appKit";
 import { recordInflow } from "../standalone/inventory";
-import { InflowSection, StockReportSection } from "./InventoryScreens";
+import { InflowSection } from "./InventoryScreens";
 import { Badge, Banner, Button, Card, Field, Muted } from "../ui/components";
 import { colors, font, radius, spacing } from "../ui/theme";
 
-type Section = "products" | "inflow" | "reports" | "customers" | "staff" | "business";
+type Section = "products" | "inflow" | "customers" | "staff" | "business";
 
 /** Back office for a standalone device: products & stock, customers, staff, settings. */
 export function ManageScreen() {
@@ -36,7 +36,6 @@ export function ManageScreen() {
   const sections = ([
     ["products", "Products", "catalog.manage"],
     ["inflow", "Inflow", "inventory.adjust"],
-    ["reports", "Stock report", "inventory.adjust"],
     ["customers", "Customers", "customer.manage"],
     ["staff", "Staff", "staff.manage"],
     ["business", "Business", "settings.manage"]
@@ -58,7 +57,6 @@ export function ManageScreen() {
       </ScrollView>
       {section === "products" ? <ProductsSection /> : null}
       {section === "inflow" ? <InflowSection /> : null}
-      {section === "reports" ? <StockReportSection /> : null}
       {section === "customers" ? <CustomersSection /> : null}
       {section === "staff" ? <StaffSection /> : null}
       {section === "business" ? <BusinessSection /> : null}

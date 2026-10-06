@@ -4,7 +4,7 @@ import { openShift, recordSale } from "../src/pos/actions";
 import { calculateSale } from "../src/pos/pricing";
 import { loadSettings } from "../src/sync/settings";
 import { adjustStock, createStandaloneBusiness, saveProduct, voidSale } from "../src/standalone/business";
-import { cancelInflow, listInflows, periodRange, recordInflow, stockReport, stockReportCsv } from "../src/standalone/inventory";
+import { cancelInflow, dayRange, listInflows, periodRange, productMovements, recordInflow, stockReport, stockReportCsv } from "../src/standalone/inventory";
 import { nodePlatform } from "./nodePlatform";
 
 async function shop() {
@@ -102,7 +102,14 @@ describe("inflow vs sales vs stock report", () => {
     const report = await stockReport(platform, today());
     const row = report.rows.find((item) => item.productId === bread.id)!;
     expect(row).toMatchObject({ opening: 0, inflow: 15, sold: 3, adjusted: -1, closing: 11, current: 11, inflowCost: 5 * 650, salesValue: 3000 });
-    expect(report.rows.find((item) => item.productId === delivery.id)).toMatchObject({ tracked: false, sold: 2, salesValue: 1000 });
+    // Opening + In - Out = Closing: in = 10 opening + 5 inflow; out = 3 sold + 1 damaged (the voided sale nets to zero).
+    expect(row).toMatchObject({ stockIn: 15, stockOut: 4 });
+    expect(row.opening + row.stockIn - row.stockOut).toBe(row.closing);
+    expect(report.rows.find((item) => item.productId === delivery.id)).toMatchObject({ tracked: false, sold: 2, stockOut: 2, salesValue: 1000 });
+    expect(report.totals).toMatchObject({ opening: 0, stockIn: 15, stockOut: 4, closing: 11 });
+
+    const moves = await productMovements(platform, bread.id, today());
+    expect(moves.map((move) => [move.type, move.quantityDelta])).toEqual([["count", 10], ["receipt", 5], ["issue", -3], ["issue", -1], ["return", 1], ["adjustment", -1]]);
     expect(report.mismatched).toEqual([]);
     expect(report.totals).toMatchObject({ inflow: 15, sold: 5, adjusted: -1, inflowCost: 3250, salesValue: 4000, stockValue: 11 * 650 });
 
@@ -126,7 +133,7 @@ describe("inflow vs sales vs stock report", () => {
       [settings.branchId, JSON.stringify({ id: "legacy-void", productId: tea.id, type: "adjustment", quantityDelta: 2, balanceAfter: 10, reason: "Void X-00001", createdAt: new Date().toISOString() }), new Date().toISOString()]
     );
     const row = (await stockReport(platform, today())).rows.find((item) => item.productId === tea.id)!;
-    expect(row).toMatchObject({ inflow: 10, sold: 0, adjusted: 0, closing: 10 });
+    expect(row).toMatchObject({ inflow: 10, sold: 0, adjusted: 0, closing: 10, stockIn: 10, stockOut: 0 });
   });
 
   it("exports CSV with optional cost columns and safe quoting", async () => {
@@ -135,9 +142,17 @@ describe("inflow vs sales vs stock report", () => {
     await recordInflow(platform, { staffId: owner.id, lines: [{ productId: odd.id, quantity: 2, unitCost: 500 }] });
     const report = await stockReport(platform, today());
     const withCosts = stockReportCsv(report, { includeCosts: true }).split("\n");
-    expect(withCosts[0]).toBe("Product,Category,Opening,Inflow,Sold,Adjusted,Closing,Inflow cost,Sales value");
-    expect(withCosts[1]).toBe('"Milk ""Peak"", tin",Dairy,0,3,0,0,3,1000,0');
+    expect(withCosts[0]).toBe("Product,Category,Opening,Out,In,Closing,Sold,Adjusted,Inflow cost,Sales value");
+    expect(withCosts[1]).toBe('"Milk ""Peak"", tin",Dairy,0,0,3,3,0,0,1000,0');
+    expect(withCosts[2]).toBe("TOTAL,,0,0,3,3,0,0,1000,0");
     expect(stockReportCsv(report, { includeCosts: false }).split("\n")[0]).not.toContain("cost");
+  });
+
+  it("builds inclusive whole-day ranges in either order", () => {
+    const range = dayRange(new Date(2026, 9, 1, 18, 0), new Date(2026, 9, 3, 9, 30));
+    expect(range).toEqual({ from: new Date(2026, 9, 1), to: new Date(2026, 9, 4) });
+    expect(dayRange(new Date(2026, 9, 3), new Date(2026, 9, 1))).toEqual(range);
+    expect(dayRange(new Date(2026, 11, 31), new Date(2026, 11, 31))).toEqual({ from: new Date(2026, 11, 31), to: new Date(2027, 0, 1) });
   });
 
   it("builds period ranges", () => {

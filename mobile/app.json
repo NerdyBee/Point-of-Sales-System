@@ -51,7 +51,8 @@
           "bluetoothAlwaysPermission": "NaijaPOS uses Bluetooth to print receipts on your receipt printer."
         }
       ],
-      "expo-font"
+      "expo-font",
+      "@react-native-community/datetimepicker"
     ]
   }
 }

@@ -22,10 +22,13 @@ On first launch, choose **This device only (no server)**, then enter the busines
 - **Manage** tab (owner/manager), with a list, search and a floating *+* button in each section. Tap an item to edit it:
   - **Products:** name, category, price, cost, opening stock, low-stock warning, barcode. *Delete* removes a product that was never sold; a sold product is **archived** instead (hidden from Sell, restorable) so old receipts stay intact. The **Stock** tab records stock received or removed with a reason, and shows the product's stock history.
   - **Inflow:** record goods received (deliveries, purchases): several products at once, with quantity and optional cost per unit, supplier and invoice/waybill number. Stock goes up immediately and can update the products' cost price. Each inflow gets a number (`INF-00001`). A mistaken inflow can be cancelled, unless its stock has already been sold. *Received (+)* on a product is also recorded as an inflow.
-  - **Stock report:** for today, yesterday, this week, this month, the last 30 days or all time. Per product: opening, inflow, sold (net of voids), adjustments and closing quantity (opening + inflow - sold +/- adjustments). Owners and managers also see inflow cost, sales value and stock value at cost. A warning flags any product whose history does not add up. *Share* exports the report as CSV.
   - **Customers:** add, edit (name, phone, email, group, notes), see purchases, amount spent and loyalty points, and delete customers who have no sales.
   - **Staff:** roles (owner, manager, cashier) and personal PINs; disable or re-enable. The last owner cannot be disabled.
   - **Business:** receipt name and footer, VAT, service charge, payment methods.
+- **Reports** tab (owner/manager): a stock table for any dates. Pick *From* and *To*, or tap Today, Yesterday, This week, This month or Last 30 days. Each product shows **Opening | Out | In | Closing** (Closing = Opening + In - Out), with a header that stays in view and a totals row.
+  - **In:** inflows, opening stock of new products, upward recounts.
+  - **Out:** units sold (voided sales put back), damaged/missing, cancelled inflows.
+  - Tap a product to see each movement behind its numbers. Filter by name, show only products that moved, and *Share* the report as CSV. Owners and managers also see the cost of stock received, sales value and stock value. A warning flags any product whose history does not add up.
 - **Sell** works as usual. Sales are saved immediately, stock is deducted, and customers earn loyalty points (1 per 100 spent, as on the server). An empty catalogue offers *Add products*.
 - **Sales** shows today's total, number of sales, items sold and the split by payment method, with filters (all, today, voided). Tap a sale to see its receipt. Owners and managers can **void** it with a reason, which puts the stock, loyalty points and drawer cash back.
 - **Register** opens and closes on the device, showing over/short against expected cash. *Past shifts* lists earlier shifts with their result. Cashiers can open; owners and managers close.
@@ -51,9 +54,11 @@ Code: `src/print/escpos.ts` (ESC/POS commands, ASCII clean-up, column layout), `
 npm install -g eas-cli        # once
 eas login                     # free Expo account
 eas build -p android --profile preview      # APK to install on the phone/tablet
-eas build -p android --profile development  # dev build: like Expo Go, with Bluetooth; then `npx expo start`
+eas build -p android --profile development  # dev build: like Expo Go, with Bluetooth; then `npm run start:dev`
 ```
-Building locally instead needs Android Studio (SDK + JDK): `npx expo run:android` with the device connected by USB.
+Because `expo-dev-client` is installed, a plain `npx expo start` targets the development build; use `npm start` (or press `s` in the Expo terminal) to switch to Expo Go.
+
+Building locally instead needs Android Studio (SDK + JDK): `npm run run:android` with the device connected by USB.
 
 Note: `react-native-bluetooth-classic` is not yet marked as tested on React Native's New Architecture. If paired (Classic) printing misbehaves on a device, use *Bluetooth LE (scan)*, which uses the actively maintained `react-native-ble-plx`.
 
@@ -61,7 +66,8 @@ Note: `react-native-bluetooth-classic` is not yet marked as tested on React Nati
 ```bash
 cd mobile
 npm install
-npx expo start            # scan with Expo Go, or press a / i
+npm start                 # Expo Go: scan the QR code with the Expo Go app
+npm run start:dev         # development build (has Bluetooth printing), once installed
 ```
 Everything except Bluetooth printing runs in Expo Go (see [Receipt printing](#receipt-printing-bluetooth)). For a standalone APK:
 ```bash
@@ -97,6 +103,6 @@ src/standalone/         no-server mode: business setup, products/stock, staff, s
 src/print/              ESC/POS receipt builder, Bluetooth Classic/BLE printer transports, printer settings
 src/auth/pin.ts         offline PIN check with lockout
 src/shell/              app context (session, background sync, auto-lock) and tab shell
-src/screens/            Setup, Lock, Sell, Register, Sales, Sync, Manage, Backup
+src/screens/            Setup, Lock, Sell, Register, Sales, Reports, Sync, Manage, Backup
 src/ui/                 theme, form components, app kit (icons, list rows, bottom sheets, FAB), responsive layout
 ```
