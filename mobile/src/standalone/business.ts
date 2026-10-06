@@ -27,7 +27,7 @@ export const roleLabels: Record<StandaloneRole, string> = { owner: "Owner", mana
 
 const now = () => new Date().toISOString();
 
-async function putRow(db: Db, table: string, id: string, data: Record<string, unknown>, branchId: string | null = null) {
+export async function putRow(db: Db, table: string, id: string, data: Record<string, unknown>, branchId: string | null = null) {
   await db.run(
     `INSERT INTO rows (tbl, id, branchId, data, updatedAt) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(tbl, id) DO UPDATE SET branchId = excluded.branchId, data = excluded.data, updatedAt = excluded.updatedAt`,
@@ -35,7 +35,7 @@ async function putRow(db: Db, table: string, id: string, data: Record<string, un
   );
 }
 
-async function getRow<T>(db: Db, table: string, id: string) {
+export async function getRow<T>(db: Db, table: string, id: string) {
   const row = await db.first<{ data: string }>("SELECT data FROM rows WHERE tbl = ? AND id = ?", [table, id]);
   return row ? (JSON.parse(row.data) as T) : null;
 }
@@ -138,7 +138,7 @@ export async function createStandaloneBusiness(platform: Platform, input: Standa
   return { tenantId, owner };
 }
 
-async function context(platform: Platform) {
+export async function context(platform: Platform) {
   const settings = await loadSettings(platform);
   if (!settings || settings.mode !== "standalone") throw new Error("Only available when the tablet runs on its own");
   return settings;
@@ -207,7 +207,20 @@ async function addCategory(platform: Platform, settings: DeviceSettings, categor
   await putRow(platform.db, "tenants", settings.tenantId, { ...tenant, settings: { ...tenant.settings, productCategories: [...categories, category] } });
 }
 
-async function recordMovement(platform: Platform, settings: DeviceSettings, product: { id: string; name: string }, delta: number, reason: string, type: string, balanceAfter?: number) {
+/**
+ * Movement types: count (opening stock), receipt (inflow), issue (sale), return (voided
+ * sale back into stock), adjustment (damaged, missing, recount, cancelled inflow).
+ */
+export async function recordMovement(
+  platform: Platform,
+  settings: DeviceSettings,
+  product: { id: string; name: string },
+  delta: number,
+  reason: string,
+  type: string,
+  balanceAfter?: number,
+  extra: { reference?: string; unitCost?: number } = {}
+) {
   const id = `move-${platform.uuid()}`;
   await putRow(platform.db, "stock_movements", id, {
     id,
@@ -219,6 +232,8 @@ async function recordMovement(platform: Platform, settings: DeviceSettings, prod
     quantityDelta: delta,
     balanceAfter: balanceAfter ?? delta,
     reason,
+    ...(extra.reference ? { reference: extra.reference } : {}),
+    ...(extra.unitCost !== undefined ? { unitCost: extra.unitCost } : {}),
     createdAt: now()
   }, settings.branchId);
 }
@@ -245,7 +260,7 @@ export async function deductStockForSale(platform: Platform, settings: DeviceSet
     if (!product || product.category.trim().toLowerCase() === "services") continue;
     const stock = Number(product.stock) - line.quantity;
     await putRow(platform.db, "products", product.id, { ...product, stock, updatedAt: now() }, settings.branchId);
-    await recordMovement(platform, settings, product, -line.quantity, `Sale ${reference}`, "issue", stock);
+    await recordMovement(platform, settings, product, -line.quantity, `Sale ${reference}`, "issue", stock, { reference });
   }
 }
 
@@ -548,7 +563,7 @@ export async function voidSale(platform: Platform, saleId: string, staffId: stri
       if (!product || product.category.trim().toLowerCase() === "services") continue;
       const stock = Number(product.stock) + line.quantity;
       await putRow(platform.db, "products", product.id, { ...product, stock, updatedAt: now() }, settings.branchId);
-      await recordMovement(platform, settings, product, line.quantity, `Void ${sale.number}`, "adjustment", stock);
+      await recordMovement(platform, settings, product, line.quantity, `Void ${sale.number}`, "return", stock, { reference: sale.number });
     }
     if (sale.customerId) {
       await platform.db.run(

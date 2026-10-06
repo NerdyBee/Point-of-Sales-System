@@ -23,16 +23,20 @@ import {
   type StockMovementRow
 } from "../standalone/business";
 import { EmptyState, Fab, Icon, ListItem, Sheet } from "../ui/appKit";
+import { recordInflow } from "../standalone/inventory";
+import { InflowSection, StockReportSection } from "./InventoryScreens";
 import { Badge, Banner, Button, Card, Field, Muted } from "../ui/components";
 import { colors, font, radius, spacing } from "../ui/theme";
 
-type Section = "products" | "customers" | "staff" | "business";
+type Section = "products" | "inflow" | "reports" | "customers" | "staff" | "business";
 
 /** Back office for a standalone device: products & stock, customers, staff, settings. */
 export function ManageScreen() {
   const { permissions } = useApp();
   const sections = ([
     ["products", "Products", "catalog.manage"],
+    ["inflow", "Inflow", "inventory.adjust"],
+    ["reports", "Stock report", "inventory.adjust"],
     ["customers", "Customers", "customer.manage"],
     ["staff", "Staff", "staff.manage"],
     ["business", "Business", "settings.manage"]
@@ -53,6 +57,8 @@ export function ManageScreen() {
         ))}
       </ScrollView>
       {section === "products" ? <ProductsSection /> : null}
+      {section === "inflow" ? <InflowSection /> : null}
+      {section === "reports" ? <StockReportSection /> : null}
       {section === "customers" ? <CustomersSection /> : null}
       {section === "staff" ? <StaffSection /> : null}
       {section === "business" ? <BusinessSection /> : null}
@@ -260,7 +266,8 @@ function ProductSheet(props: { product: Product | null; categories: string[]; on
 }
 
 function StockPanel(props: { product: Product; onDone(): void }) {
-  const { platform, dataVersion } = useApp();
+  const { platform, dataVersion, staff } = useApp();
+  const [unitCost, setUnitCost] = useState(props.product.cost ? String(props.product.cost) : "");
   const { error, busy, run } = useRunner();
   const [direction, setDirection] = useState<"in" | "out">("in");
   const [quantity, setQuantity] = useState("");
@@ -280,11 +287,25 @@ function StockPanel(props: { product: Product; onDone(): void }) {
       </View>
       <View style={styles.twoColumns}>
         <View style={styles.column}><Field label="Quantity" value={quantity} onChangeText={setQuantity} keyboardType="number-pad" /></View>
-        <View style={[styles.column, { flex: 2 }]}><Field label="Reason" value={reason} onChangeText={setReason} placeholder={direction === "in" ? "Supplier delivery" : "Damaged / expired / recount"} /></View>
+        {direction === "in" ? <View style={styles.column}><Field label="Cost per unit" value={unitCost} onChangeText={setUnitCost} keyboardType="number-pad" placeholder="Optional" /></View> : null}
+        <View style={[styles.column, { flex: 2 }]}><Field label={direction === "in" ? "Supplier / note" : "Reason"} value={reason} onChangeText={setReason} placeholder={direction === "in" ? "Optional" : "Damaged / expired / recount"} /></View>
       </View>
       {amount ? <Muted>New quantity: {props.product.stock + (direction === "in" ? amount : -amount)}</Muted> : null}
       {error ? <Banner tone="danger" message={error} /> : null}
-      <Button label="Save stock change" busy={busy} onPress={() => void run(() => adjustStock(platform, props.product.id, direction === "in" ? amount : -amount, reason), props.onDone)} />
+      <Button
+        label="Save stock change"
+        busy={busy}
+        onPress={() =>
+          void run(
+            () =>
+              direction === "in"
+                ? recordInflow(platform, { staffId: staff!.id, supplier: reason, lines: [{ productId: props.product.id, quantity: amount, unitCost: unitCost.trim() ? digitsOnly(unitCost) : undefined }] })
+                : adjustStock(platform, props.product.id, -amount, reason),
+            props.onDone
+          )
+        }
+      />
+      {direction === "in" ? <Muted>Recorded as an inflow, so it appears in Manage → Inflow and the stock report.</Muted> : null}
 
       <Text style={styles.subheading}>History</Text>
       {history.length === 0 ? <Muted>No stock changes yet.</Muted> : null}

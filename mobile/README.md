@@ -21,6 +21,8 @@ On first launch, choose **This device only (no server)**, then enter the busines
 
 - **Manage** tab (owner/manager), with a list, search and a floating *+* button in each section. Tap an item to edit it:
   - **Products:** name, category, price, cost, opening stock, low-stock warning, barcode. *Delete* removes a product that was never sold; a sold product is **archived** instead (hidden from Sell, restorable) so old receipts stay intact. The **Stock** tab records stock received or removed with a reason, and shows the product's stock history.
+  - **Inflow:** record goods received (deliveries, purchases): several products at once, with quantity and optional cost per unit, supplier and invoice/waybill number. Stock goes up immediately and can update the products' cost price. Each inflow gets a number (`INF-00001`). A mistaken inflow can be cancelled, unless its stock has already been sold. *Received (+)* on a product is also recorded as an inflow.
+  - **Stock report:** for today, yesterday, this week, this month, the last 30 days or all time. Per product: opening, inflow, sold (net of voids), adjustments and closing quantity (opening + inflow - sold +/- adjustments). Owners and managers also see inflow cost, sales value and stock value at cost. A warning flags any product whose history does not add up. *Share* exports the report as CSV.
   - **Customers:** add, edit (name, phone, email, group, notes), see purchases, amount spent and loyalty points, and delete customers who have no sales.
   - **Staff:** roles (owner, manager, cashier) and personal PINs; disable or re-enable. The last owner cannot be disabled.
   - **Business:** receipt name and footer, VAT, service charge, payment methods.
@@ -91,7 +93,7 @@ App.tsx                 opens SQLite, runs migrations, renders the shell
 src/data/               Db interface, expo adapter, schema, read-model queries
 src/sync/               engine (pull read model, push command outbox), settings, wire types
 src/pos/                pricing (mirrors server), register/sale/customer actions, day summary
-src/standalone/         no-server mode: business setup, products/stock, staff, settings, backup
+src/standalone/         no-server mode: business setup, products/stock, staff, settings, backup; inventory.ts = inflow + stock report
 src/print/              ESC/POS receipt builder, Bluetooth Classic/BLE printer transports, printer settings
 src/auth/pin.ts         offline PIN check with lockout
 src/shell/              app context (session, background sync, auto-lock) and tab shell
