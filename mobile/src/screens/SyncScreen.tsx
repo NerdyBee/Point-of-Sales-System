@@ -5,6 +5,7 @@ import { resetLocalData } from "../data/schema";
 import { setServerToken } from "../sync/settings";
 import type { ServerKey } from "../sync/types";
 import { Badge, Banner, Button, Card, Muted, Title } from "../ui/components";
+import { PrinterCard } from "./PrinterSheet";
 import { colors, font, spacing } from "../ui/theme";
 
 type CommandRow = Awaited<ReturnType<ReturnType<typeof useApp>["engine"]["recentCommands"]>>[number];
@@ -56,6 +57,8 @@ export function SyncScreen(props: { onRepair: () => void }) {
         <Title>Sync</Title>
         {syncStatus.revoked ? <Banner tone="danger" message="This tablet was removed on the server. Pair it again." /> : null}
         {syncStatus.lastError && !syncStatus.revoked ? <Banner tone="warning" message={syncStatus.lastError} /> : null}
+
+        <PrinterCard />
 
         <Card>
           <Text style={styles.heading}>{settings?.tenantName} · {settings?.terminalName}</Text>

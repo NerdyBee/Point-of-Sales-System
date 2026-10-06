@@ -31,13 +31,37 @@ On first launch, choose **This device only (no server)**, then enter the busines
 
 Nothing is queued or sent anywhere in this mode. Data is stored in the same shape and with the same ids a server uses (`rows` tables, roles and permissions, stock movements). That way a shop can be moved onto an office or cloud server later. That migration is not built yet. A standalone tablet cannot be switched to a server mode from the app.
 
+## Receipt printing (Bluetooth)
+Prints to ESC/POS thermal receipt printers, 58 mm or 80 mm (Xprinter, GOOJPRT, MTP-II, Rongta, Epson TM and compatible models).
+
+- **Set up:** *Backup* tab (standalone) or *Sync* tab → **Receipt printer**, or the printer icon on the receipt screen.
+  - **Bluetooth (paired), Android:** most cheap printers. Pair the printer once in Android's Bluetooth settings (PIN is often `0000` or `1234`), then pick it from *Show paired printers*.
+  - **Bluetooth LE (scan), Android and iPhone/iPad:** for printers that advertise Bluetooth LE. iOS only supports this kind.
+  - Choose the paper width. Optionally turn on **print automatically after each sale** and **open cash drawer on cash sales** (a drawer plugged into the printer's RJ11 port). *Print test page* checks everything.
+- **Printing:** the receipt screen after each sale has **Print**. In *Sales*, open a sale and tap **Print receipt**; reprints are marked `*** REPRINT ***` and voided sales `*** VOIDED ***`.
+- **Share:** sends the receipt as text through WhatsApp, SMS and so on. It works without a printer, and also in Expo Go.
+- Receipts are printed in plain ASCII so every printer's code page renders them. The naira sign prints as `N` (e.g. `N12,500`).
+
+Code: `src/print/escpos.ts` (ESC/POS commands, ASCII clean-up, column layout), `src/print/receipt.ts` (receipt layout, text version), `src/print/bluetooth.ts` (Bluetooth Classic and BLE transports, permissions), `src/print/printer.ts` (settings, print, share).
+
+**Bluetooth needs an installed build of the app.** Expo Go cannot load the Bluetooth modules. In Expo Go the app keeps working, the Print button is hidden and Share is available. Build an installable APK:
+```bash
+npm install -g eas-cli        # once
+eas login                     # free Expo account
+eas build -p android --profile preview      # APK to install on the phone/tablet
+eas build -p android --profile development  # dev build: like Expo Go, with Bluetooth; then `npx expo start`
+```
+Building locally instead needs Android Studio (SDK + JDK): `npx expo run:android` with the device connected by USB.
+
+Note: `react-native-bluetooth-classic` is not yet marked as tested on React Native's New Architecture. If paired (Classic) printing misbehaves on a device, use *Bluetooth LE (scan)*, which uses the actively maintained `react-native-ble-plx`.
+
 ## Run it
 ```bash
 cd mobile
 npm install
 npx expo start            # scan with Expo Go, or press a / i
 ```
-expo-sqlite, expo-crypto and expo-secure-store ship in Expo Go, so no custom build is needed for development. For a standalone APK:
+Everything except Bluetooth printing runs in Expo Go (see [Receipt printing](#receipt-printing-bluetooth)). For a standalone APK:
 ```bash
 npx eas-cli@latest build --platform android --profile preview
 ```
@@ -68,6 +92,7 @@ src/data/               Db interface, expo adapter, schema, read-model queries
 src/sync/               engine (pull read model, push command outbox), settings, wire types
 src/pos/                pricing (mirrors server), register/sale/customer actions, day summary
 src/standalone/         no-server mode: business setup, products/stock, staff, settings, backup
+src/print/              ESC/POS receipt builder, Bluetooth Classic/BLE printer transports, printer settings
 src/auth/pin.ts         offline PIN check with lockout
 src/shell/              app context (session, background sync, auto-lock) and tab shell
 src/screens/            Setup, Lock, Sell, Register, Sales, Sync, Manage, Backup

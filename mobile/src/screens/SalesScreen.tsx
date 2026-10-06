@@ -6,6 +6,7 @@ import { useApp } from "../shell/AppContext";
 import { voidSale } from "../standalone/business";
 import { isStandalone } from "../sync/settings";
 import { EmptyState, Sheet } from "../ui/appKit";
+import { printReceipt, printingAvailable, receiptFromSale, shareReceipt } from "../print/printer";
 import { Badge, Banner, Button, Field, Muted } from "../ui/components";
 import { colors, font, radius, spacing } from "../ui/theme";
 
@@ -107,6 +108,23 @@ function SaleSheet(props: { sale: SaleWithRecord; currency: string; onClose(): v
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const canVoid = isStandalone(settings) && sale.status === "saved" && permissions.has("sale.void");
+  const [printStatus, setPrintStatus] = useState<{ tone: "info" | "danger"; text: string } | null>(null);
+  const [printing, setPrinting] = useState(false);
+  const receiptData = tenant ? receiptFromSale(sale, sale.record, tenant.settings, { reprint: true }) : null;
+
+  const print = async () => {
+    if (!receiptData) return;
+    setPrinting(true);
+    setPrintStatus(null);
+    try {
+      await printReceipt(platform, receiptData);
+      setPrintStatus({ tone: "info", text: "Receipt sent to the printer." });
+    } catch (cause) {
+      setPrintStatus({ tone: "danger", text: cause instanceof Error ? cause.message : String(cause) });
+    } finally {
+      setPrinting(false);
+    }
+  };
 
   const doVoid = () =>
     Alert.alert("Void this sale?", "Stock is put back and the sale no longer counts in totals. This cannot be undone.", [
@@ -168,6 +186,13 @@ function SaleSheet(props: { sale: SaleWithRecord; currency: string; onClose(): v
           <Row key={index} label={`${methodNames[payment.method] ?? payment.method}${payment.reference ? ` (${payment.reference})` : ""}`} value={formatMoney(payment.amount, currency)} />
         ))}
       </View>
+      {receiptData ? (
+        <View style={styles.printRow}>
+          {printingAvailable() ? <Button label="Print receipt" variant="secondary" busy={printing} onPress={() => void print()} style={{ flex: 1 }} /> : null}
+          <Button label="Share" variant="secondary" onPress={() => void shareReceipt(receiptData)} style={{ flex: 1 }} />
+        </View>
+      ) : null}
+      {printStatus ? <Banner tone={printStatus.tone} message={printStatus.text} /> : null}
       <View style={styles.statusRow}>
         <Muted>Status</Muted>
         {statusBadge(sale.status)}
@@ -220,5 +245,6 @@ const styles = StyleSheet.create({
   lineRow: { flexDirection: "row", justifyContent: "space-between", gap: spacing.md },
   lineText: { fontSize: font.md, color: colors.text, flexShrink: 1 },
   strong: { fontWeight: "700", fontSize: font.lg },
-  statusRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }
+  statusRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  printRow: { flexDirection: "row", gap: spacing.sm }
 });

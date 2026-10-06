@@ -5,6 +5,7 @@ import { useApp } from "../shell/AppContext";
 import { exportBackup, lastBackupAt, restoreBackup } from "../standalone/business";
 import { pickBackupFile, shareBackupFile } from "../standalone/files";
 import { Banner, Button, Card, Muted, Title } from "../ui/components";
+import { PrinterCard } from "./PrinterSheet";
 import { colors, font, spacing } from "../ui/theme";
 
 export const backupReminderDays = 7;
@@ -90,6 +91,8 @@ export function BackupScreen() {
           <Banner tone="warning" message={age === null ? "No backup has been made yet." : `Last backup was ${age} days ago.`} />
         ) : null}
         {message ? <Banner tone={message.tone} message={message.text} /> : null}
+
+        <PrinterCard />
 
         <Card>
           <Text style={styles.heading}>Make a backup</Text>

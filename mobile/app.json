@@ -14,7 +14,8 @@
           "NSAllowsLocalNetworking": true,
           "NSAllowsArbitraryLoads": true
         },
-        "NSLocalNetworkUsageDescription": "NaijaPOS connects to the POS server on your shop network."
+        "NSLocalNetworkUsageDescription": "NaijaPOS connects to the POS server on your shop network.",
+        "NSBluetoothAlwaysUsageDescription": "NaijaPOS uses Bluetooth to print receipts on your receipt printer."
       }
     },
     "android": {
@@ -41,7 +42,16 @@
           }
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "neverForLocation": true,
+          "bluetoothAlwaysPermission": "NaijaPOS uses Bluetooth to print receipts on your receipt printer."
+        }
+      ],
+      "expo-font"
     ]
   }
 }

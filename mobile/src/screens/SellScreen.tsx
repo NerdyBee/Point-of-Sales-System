@@ -15,7 +15,10 @@ import {
 import { calculateSale, formatMoney, type CartLine, type SaleSummary } from "../pos/pricing";
 import { Badge, Banner, Button, Field, Muted, Title } from "../ui/components";
 import { useLayout } from "../ui/layout";
-import { EmptyState } from "../ui/appKit";
+import { EmptyState, Icon } from "../ui/appKit";
+import { loadPrinterSettings, printReceipt, printingAvailable, receiptFromSale, shareReceipt } from "../print/printer";
+import type { ReceiptData } from "../print/receipt";
+import { PrinterSheet } from "./PrinterSheet";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { isStandalone } from "../sync/settings";
 import { colors, font, radius, spacing } from "../ui/theme";
@@ -35,6 +38,7 @@ interface Receipt {
   tendered: number;
   createdAt: string;
   customer?: string;
+  data: ReceiptData;
 }
 
 export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: () => void }) {
@@ -252,7 +256,15 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
               customer,
               payments: [{ method, amount: summary.total, reference }]
             });
-            setReceipt({ number: sale.number, summary: sale.summary, method, tendered, createdAt: sale.createdAt, customer: customer?.name });
+            setReceipt({
+              number: sale.number,
+              summary: sale.summary,
+              method,
+              tendered,
+              createdAt: sale.createdAt,
+              customer: customer?.name,
+              data: receiptFromSale({ number: sale.number, createdAt: sale.createdAt }, sale.record, tenant.settings, { tendered: method === "cash" ? tendered : undefined })
+            });
             setCart([]);
             setCustomer(null);
             setCheckoutOpen(false);
@@ -404,7 +416,37 @@ function CustomerModal(props: { canCreate: boolean; onClose(): void; onPick(cust
 }
 
 function ReceiptModal(props: { receipt: Receipt; businessName: string; footer?: string; currency: string; onClose(): void }) {
+  const { platform } = useApp();
   const { receipt } = props;
+  const [printing, setPrinting] = useState(false);
+  const [printStatus, setPrintStatus] = useState<{ tone: "info" | "danger"; text: string } | null>(null);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const canPrint = printingAvailable();
+
+  const print = async () => {
+    setPrinting(true);
+    setPrintStatus(null);
+    try {
+      await printReceipt(platform, receipt.data);
+      setPrintStatus({ tone: "info", text: "Receipt sent to the printer." });
+    } catch (error) {
+      setPrintStatus({ tone: "danger", text: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  // Auto-print once when the receipt first appears, if the shop turned it on.
+  useEffect(() => {
+    if (!canPrint) return;
+    void loadPrinterSettings(platform).then((settings) => {
+      if (settings.autoPrint && settings.device) void print();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (setupOpen) return <PrinterSheet onClose={() => setSetupOpen(false)} />;
+
   return (
     <Modal transparent animationType="fade" onRequestClose={props.onClose}>
       <View style={styles.backdrop}>
@@ -424,6 +466,14 @@ function ReceiptModal(props: { receipt: Receipt; businessName: string; footer?: 
           <TotalRow label={methodLabels[receipt.method]} value={formatMoney(receipt.tendered, props.currency)} />
           {receipt.method === "cash" ? <TotalRow label="Change" value={formatMoney(receipt.tendered - receipt.summary.total, props.currency)} /> : null}
           {props.footer ? <Text style={[styles.lineMeta, { textAlign: "center" }]}>{props.footer}</Text> : null}
+          {printStatus ? <Banner tone={printStatus.tone} message={printStatus.text} /> : null}
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            {canPrint ? <Button label="Print" variant="secondary" busy={printing} onPress={() => void print()} style={{ flex: 1 }} /> : null}
+            <Button label="Share" variant="secondary" onPress={() => void shareReceipt(receipt.data)} style={{ flex: 1 }} />
+            <Pressable accessibilityRole="button" accessibilityLabel="Printer settings" onPress={() => setSetupOpen(true)} style={styles.iconSquare}>
+              <Icon name="print-outline" size={22} />
+            </Pressable>
+          </View>
           <Button label="New sale" onPress={props.onClose} large />
         </View>
       </View>
@@ -433,6 +483,7 @@ function ReceiptModal(props: { receipt: Receipt; businessName: string; footer?: 
 
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: "row", backgroundColor: colors.background },
+  iconSquare: { width: 48, height: 48, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, alignItems: "center", justifyContent: "center" },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md, padding: spacing.xl },
   catalog: { flex: 3, padding: spacing.lg, gap: spacing.md },
   catalogCompact: { flex: 1, padding: spacing.md, gap: spacing.sm },
