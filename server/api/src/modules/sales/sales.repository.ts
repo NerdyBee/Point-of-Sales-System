@@ -24,6 +24,7 @@ import {
 } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
 import { validateAppliedApproval } from "../approvals/approvals.repository";
+import { documentNumberPrefix } from "../sync/sync.identity";
 import { createSaleSchema, previewSaleTotal } from "./sales.service";
 import type { z } from "zod";
 
@@ -82,6 +83,24 @@ function nextSaleIdFromCount(count: number) {
   return `INV-${String(count + 1).padStart(5, "0")}`;
 }
 
+/**
+ * Options used when a sale captured offline (tablet / disconnected terminal) is
+ * replayed by the sync engine. The sale already happened at the counter, so the
+ * server records it rather than rejecting it.
+ */
+export type SaleReplayOptions = {
+  replay?: boolean;
+  /** Unit prices the device actually charged, keyed by product id. */
+  unitPriceOverrides?: Record<string, number>;
+};
+
+async function nextSaleId(tx: Prisma.TransactionClient) {
+  const prefix = await documentNumberPrefix();
+  if (!prefix) return nextSaleIdFromCount(await tx.completedSale.count());
+
+  const ownSales = await tx.completedSale.count({ where: { id: { startsWith: `INV-${prefix}-` } } });
+  return `INV-${prefix}-${String(ownSales + 1).padStart(5, "0")}`;
+}
 
 function nextPaymentId() {
   return `payment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -138,7 +157,7 @@ function toApiPayment(payment: DbPaymentRecord): PaymentRecord {
   };
 }
 
-async function validateSaleTerminal(tenantId: string, branchId: string, terminalId: string) {
+async function validateSaleTerminal(tenantId: string, branchId: string, terminalId: string, requireOnline = true) {
   if (useDemoStore) {
     const branch = branches.find((item) => item.tenantId === tenantId && item.id === branchId);
     if (!branch) return { status: "branch_not_found" as const };
@@ -147,7 +166,7 @@ async function validateSaleTerminal(tenantId: string, branchId: string, terminal
     const terminal = terminals.find((item) => item.tenantId === tenantId && item.id === terminalId);
     if (!terminal) return { status: "terminal_not_found" as const };
     if (terminal.branchId !== branchId) return { status: "terminal_branch_mismatch" as const };
-    if (terminal.status !== "online") return { status: "terminal_not_online" as const };
+    if (requireOnline && terminal.status !== "online") return { status: "terminal_not_online" as const };
 
     return { status: "valid" as const };
   }
@@ -161,7 +180,7 @@ async function validateSaleTerminal(tenantId: string, branchId: string, terminal
   if (branch.status !== "active") return { status: "branch_not_active" as const };
   if (!terminal) return { status: "terminal_not_found" as const };
   if (terminal.branchId !== branchId) return { status: "terminal_branch_mismatch" as const };
-  if (terminal.status !== "online") return { status: "terminal_not_online" as const };
+  if (requireOnline && terminal.status !== "online") return { status: "terminal_not_online" as const };
 
   return { status: "valid" as const };
 }
@@ -518,8 +537,13 @@ export async function listSales(tenantId: string, filters: BranchScopeFilter & {
   return Promise.all(sales.map((sale) => serializeDbSale(sale)));
 }
 
-export async function createSale(tenantId: string, userId: string, input: SaleInput) {
-  const terminalValidation = await validateSaleTerminal(tenantId, input.branchId, input.terminalId);
+function withPriceOverrides<T extends { id: string; price: number }>(products: T[], overrides?: Record<string, number>) {
+  if (!overrides) return products;
+  return products.map((product) => (overrides[product.id] === undefined ? product : { ...product, price: overrides[product.id] }));
+}
+
+export async function createSale(tenantId: string, userId: string, input: SaleInput, options: SaleReplayOptions = {}) {
+  const terminalValidation = await validateSaleTerminal(tenantId, input.branchId, input.terminalId, !options.replay);
   if (terminalValidation.status !== "valid") return terminalValidation;
 
   if (useDemoStore) {
@@ -536,7 +560,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
       vatRate: tenant.settings.defaultTaxRate,
       serviceChargeEnabled: tenant.settings.serviceChargeEnabled,
       serviceChargeRate: tenant.settings.serviceChargeRate
-    }, demoProducts);
+    }, withPriceOverrides(demoProducts, options.unitPriceOverrides));
 
     const disabledPayment = input.payments.find((payment) => {
       const key = paymentSettingKey[payment.method as keyof typeof paymentSettingKey];
@@ -578,7 +602,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
     const missingStockProduct = stockIssues.find((issue) => !issue.product);
     if (missingStockProduct) return { status: "stock_not_found" as const, productId: missingStockProduct.productId };
     const stockTrackedIssues = stockIssues.filter((issue) => !isServiceProduct(issue.product!));
-    const insufficientStock = stockTrackedIssues.find((issue) => issue.product!.stock < issue.quantity);
+    const insufficientStock = options.replay ? undefined : stockTrackedIssues.find((issue) => issue.product!.stock < issue.quantity);
     if (insufficientStock) return { status: "insufficient_stock" as const, productName: insufficientStock.product!.name };
 
     const saleId = nextSaleIdFromCount(saleLedger.length);
@@ -732,7 +756,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
   }
 
   const products = await prisma.product.findMany({ where: { tenantId, branchId: input.branchId, id: { in: input.lines.map((line) => line.productId) } } });
-  const productCatalog = products.map(toApiProduct);
+  const productCatalog = withPriceOverrides(products.map(toApiProduct), options.unitPriceOverrides);
   const idempotentSale = await prisma.completedSale.findUnique({
     where: { tenantId_idempotencyKey: { tenantId, idempotencyKey: input.idempotencyKey } }
   });
@@ -788,15 +812,14 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
 
     if (!shift) return { status: "no_open_shift" as const };
 
-    const saleCount = await tx.completedSale.count();
-    const saleId = nextSaleIdFromCount(saleCount);
+    const saleId = await nextSaleId(tx);
     const stockIssues = [];
 
     for (const [productId, quantity] of Object.entries(aggregateSaleQuantities(input.lines))) {
       const product = await tx.product.findFirst({ where: { tenantId, branchId: input.branchId, id: productId } });
       if (!product) return { status: "stock_not_found" as const, productId };
       if (isServiceProduct(product)) continue;
-      if (product.stock < quantity) return { status: "insufficient_stock" as const, productName: product.name };
+      if (!options.replay && product.stock < quantity) return { status: "insufficient_stock" as const, productName: product.name };
       stockIssues.push({ product, quantity });
     }
 

@@ -111,3 +111,18 @@ npm test
 - Settings controls business defaults such as VAT, service charge, receipt footer, printer name, payment methods, and categories.
 - POS Terminal uses the admin-configured VAT and service charge settings.
 - If the web app cannot load data, confirm MySQL and the API server are both running.
+
+## 7. Offline office server, cloud sync and tablets
+
+After pulling these changes, update the database once, then restart the API:
+
+```powershell
+npm run db:push
+npm run dev:api
+```
+
+On startup the API installs the sync triggers and logs `sync: node ... (cloud|office)`.
+
+- **Office install (works offline):** set `NODE_ROLE=office` in `.env`. To also sync online later, open Admin → Sync monitor → *Cloud connection*, or run `npm run sync -- connect --url https://your-cloud --code ABCD-EFGH`.
+- **Tablets:** see `mobile/README.md`. Create pairing codes in Admin → Sync monitor → *Pair a tablet*.
+- How it works and its limits: `SYNC_ARCHITECTURE.md`.

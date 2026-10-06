@@ -96,7 +96,7 @@ function branchWhere(scope: BranchScopeFilter) {
   return undefined;
 }
 
-async function validateOpenRegisterTerminal(tenantId: string, branchId: string, terminalId: string) {
+async function validateOpenRegisterTerminal(tenantId: string, branchId: string, terminalId: string, requireOnline = true) {
   if (useDemoStore) {
     const branch = branches.find((item) => item.tenantId === tenantId && item.id === branchId);
     if (!branch) return { status: "branch_not_found" as const };
@@ -105,7 +105,7 @@ async function validateOpenRegisterTerminal(tenantId: string, branchId: string, 
     const terminal = terminals.find((item) => item.tenantId === tenantId && item.id === terminalId);
     if (!terminal) return { status: "terminal_not_found" as const };
     if (terminal.branchId !== branchId) return { status: "terminal_branch_mismatch" as const };
-    if (terminal.status !== "online") return { status: "terminal_not_online" as const };
+    if (requireOnline && terminal.status !== "online") return { status: "terminal_not_online" as const };
 
     return { status: "valid" as const };
   }
@@ -119,7 +119,7 @@ async function validateOpenRegisterTerminal(tenantId: string, branchId: string, 
   if (branch.status !== "active") return { status: "branch_not_active" as const };
   if (!terminal) return { status: "terminal_not_found" as const };
   if (terminal.branchId !== branchId) return { status: "terminal_branch_mismatch" as const };
-  if (terminal.status !== "online") return { status: "terminal_not_online" as const };
+  if (requireOnline && terminal.status !== "online") return { status: "terminal_not_online" as const };
 
   return { status: "valid" as const };
 }
@@ -214,9 +214,10 @@ export async function listRegisterShiftHistory(tenantId: string, scope: BranchSc
 export async function openRegisterShift(
   tenantId: string,
   userId: string,
-  input: { branchId: string; terminalId: string; openingBalance: number }
+  input: { branchId: string; terminalId: string; openingBalance: number },
+  options: { replay?: boolean; openedAt?: Date } = {}
 ) {
-  const terminalValidation = await validateOpenRegisterTerminal(tenantId, input.branchId, input.terminalId);
+  const terminalValidation = await validateOpenRegisterTerminal(tenantId, input.branchId, input.terminalId, !options.replay);
   if (terminalValidation.status !== "valid") return terminalValidation;
 
   if (useDemoStore) {
@@ -239,7 +240,7 @@ export async function openRegisterShift(
       status: "open" as const,
       openingBalance: input.openingBalance,
       expectedCash: input.openingBalance,
-      openedAt: new Date().toISOString()
+      openedAt: (options.openedAt ?? new Date()).toISOString()
     };
 
     registerShifts.unshift(shift);
@@ -273,7 +274,7 @@ export async function openRegisterShift(
         status: "open",
         openingBalance: input.openingBalance,
         expectedCash: input.openingBalance,
-        openedAt: new Date()
+        openedAt: options.openedAt ?? new Date()
       }
     });
 

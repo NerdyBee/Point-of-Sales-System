@@ -1066,8 +1066,58 @@ export type BranchOption = Pick<BranchProfile, "id" | "tenantId" | "name" | "cit
 export type TerminalOption = Omit<TerminalDevice, "createdAt">;
 
 export type SyncRecordStatus = "queued" | "processing" | "synced" | "failed" | "conflict";
-export type SyncRecordType = "sale" | "table_order" | "payment" | "cash_movement" | "stock_adjustment" | "receipt_action";
+export type SyncRecordType = "sale" | "table_order" | "payment" | "cash_movement" | "stock_adjustment" | "receipt_action" | "register_shift" | "customer";
 
+export interface SyncNodeInfo {
+  id: string;
+  tenantId: string;
+  kind: "office" | "device";
+  name: string;
+  nodeCode: string;
+  branchIds: string[];
+  terminalId?: string;
+  status: "pending" | "active" | "revoked";
+  pairingExpiresAt?: string;
+  appVersion?: string;
+  lastSeenAt?: string;
+  lastPullSeq?: number;
+  lastPushAt?: string;
+  createdAt: string;
+}
+
+export interface SyncUpstreamInfo {
+  url: string;
+  tenantId: string;
+  nodeId: string;
+  enabled: boolean;
+  pullCursor: number;
+  pushCursor: number;
+  lastPullAt?: string;
+  lastPushAt?: string;
+  lastError?: string;
+  lastErrorAt?: string;
+}
+
+export interface ReplicationStatus {
+  identity: { nodeId: string; nodeCode: string; role: "cloud" | "office" };
+  upstream: SyncUpstreamInfo | null;
+  changeLogHead: number;
+  nodes: SyncNodeInfo[];
+  openConflicts: number;
+  pendingCommands: number;
+}
+
+export interface ReplicationConflict {
+  id: string;
+  source: string;
+  tableName: string;
+  rowId: string;
+  error: string;
+  attempts: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface SyncQueueRecord {
   id: string;
@@ -1372,6 +1422,51 @@ export async function updateSyncRecordStatus(recordId: string, status: Exclude<S
     headers: { "x-branch-id": branchId },
     body: JSON.stringify({ status, serverEntityId, error })
   });
+}
+
+export async function fetchReplicationStatus() {
+  return requestJson<ReplicationStatus>("/api/v1/sync/status");
+}
+
+export async function createSyncPairing(payload: { kind: "office" | "device"; name: string; terminalId?: string; branchIds?: string[] }) {
+  return requestJson<{ node: SyncNodeInfo; pairingCode: string }>("/api/v1/sync/nodes", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function revokeSyncNode(nodeId: string) {
+  return requestJson<{ node: SyncNodeInfo }>(`/api/v1/sync/nodes/${encodeURIComponent(nodeId)}/revoke`, { method: "POST" });
+}
+
+export async function connectCloudUpstream(url: string, pairingCode: string) {
+  return requestJson<{ upstream: SyncUpstreamInfo }>("/api/v1/sync/upstream/connect", {
+    method: "POST",
+    body: JSON.stringify({ url, pairingCode })
+  });
+}
+
+export async function setCloudUpstreamEnabled(enabled: boolean) {
+  return requestJson<{ upstream: SyncUpstreamInfo }>("/api/v1/sync/upstream", {
+    method: "PATCH",
+    body: JSON.stringify({ enabled })
+  });
+}
+
+export async function runCloudUpstreamSync() {
+  return requestJson<{ result: { pushed: number; pulled: { applied: number; skipped: number; conflicts: number }; error?: string } }>("/api/v1/sync/upstream/run", { method: "POST" });
+}
+
+export async function disconnectCloudUpstream() {
+  return requestJson<{ status: string }>("/api/v1/sync/upstream", { method: "DELETE" });
+}
+
+export async function fetchReplicationConflicts() {
+  return requestJson<{ conflicts: ReplicationConflict[] }>("/api/v1/sync/conflicts");
+}
+
+export async function dismissReplicationConflict(conflictId: string) {
+  return requestJson<{ status: string }>(`/api/v1/sync/conflicts/${encodeURIComponent(conflictId)}/dismiss`, { method: "POST" });
 }
 
 export async function createCatalogProduct(payload: ProductPayload, userId = "") {

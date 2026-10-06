@@ -44,6 +44,7 @@ model Tenant {
   prepTickets           PrepTicket[]
   terminals             Terminal[]
   customerLedgerEntries CustomerLedgerEntry[]
+  syncNodes             SyncNode[]
 
   @@map("tenants")
 }
@@ -138,6 +139,134 @@ model SyncQueueRecord {
   @@index([tenantId, branchId, status, createdAt])
   @@index([tenantId, terminalId, status])
   @@map("sync_queue_records")
+}
+
+// ---------------------------------------------------------------------------
+// Replication (see SYNC_ARCHITECTURE.md)
+// ---------------------------------------------------------------------------
+
+// Identity of *this* server installation. One row ("self").
+model SyncIdentity {
+  id        String   @id @db.VarChar(20)
+  nodeId    String   @db.VarChar(80)
+  nodeCode  String   @db.VarChar(12)
+  role        String   @db.VarChar(20)
+  triggerHash String?  @db.VarChar(64)
+  createdAt   DateTime @default(now())
+
+  @@map("sync_identity")
+}
+
+// Change log written by database triggers (installed by `npm run sync:setup`).
+// Every insert/update/delete on a replicated table appends one row here.
+model SyncChange {
+  seq       BigInt   @id @default(autoincrement())
+  tableName String   @db.VarChar(64)
+  rowId     String   @db.VarChar(200)
+  tenantId  String   @db.VarChar(64)
+  branchId  String?  @db.VarChar(64)
+  branchId2 String?  @db.VarChar(64)
+  op        String   @db.VarChar(1)
+  fields    String?  @db.Text
+  deltas    Json?
+  origin    String   @db.VarChar(80)
+  changedAt DateTime @db.DateTime(3)
+  loggedAt  DateTime @default(now()) @db.DateTime(3)
+
+  @@index([tenantId, seq])
+  @@index([tableName, rowId, changedAt])
+  @@map("sync_changes")
+}
+
+// Offices and devices (tablets) that are allowed to sync with THIS server.
+model SyncNode {
+  id               String    @id @db.VarChar(80)
+  tenantId         String    @db.VarChar(64)
+  kind             String    @db.VarChar(20)
+  name             String    @db.VarChar(120)
+  nodeCode         String    @db.VarChar(12)
+  branchIds        Json
+  terminalId       String?   @db.VarChar(80)
+  status           String    @db.VarChar(20)
+  tokenHash        String?   @unique @db.VarChar(100)
+  pairingCodeHash  String?   @unique @db.VarChar(100)
+  pairingExpiresAt DateTime?
+  appVersion       String?   @db.VarChar(40)
+  lastSeenAt       DateTime?
+  lastPullSeq      BigInt?
+  lastPushAt       DateTime?
+  createdBy        String    @db.VarChar(80)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, kind, status])
+  @@map("sync_nodes")
+}
+
+// Upstream connection of an office server to the cloud. One row ("upstream").
+model SyncPeer {
+  id          String    @id @db.VarChar(20)
+  url         String    @db.VarChar(300)
+  tenantId    String    @db.VarChar(64)
+  nodeId      String    @db.VarChar(80)
+  token       String    @db.VarChar(200)
+  enabled     Boolean   @default(true)
+  pullCursor  BigInt    @default(0)
+  pushCursor  BigInt    @default(0)
+  lastPullAt  DateTime?
+  lastPushAt  DateTime?
+  lastError   String?   @db.VarChar(500)
+  lastErrorAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("sync_peers")
+}
+
+// Highest source sequence already applied per (source, row). Makes applying a
+// pulled/pushed batch idempotent, which matters because counter deltas are additive.
+model SyncRowState {
+  source    String @db.VarChar(80)
+  tableName String @db.VarChar(64)
+  rowId     String @db.VarChar(200)
+  lastSeq   BigInt
+
+  @@id([source, tableName, rowId])
+  @@map("sync_row_state")
+}
+
+// Device-local ids (e.g. a shift opened offline) mapped to the server ids they became.
+model SyncIdMap {
+  nodeId     String   @db.VarChar(80)
+  localId    String   @db.VarChar(120)
+  entityType String   @db.VarChar(60)
+  serverId   String   @db.VarChar(120)
+  createdAt  DateTime @default(now())
+
+  @@id([nodeId, localId])
+  @@map("sync_id_map")
+}
+
+// Incoming rows that could not be applied (missing parent, unique clash, other tenant).
+model SyncConflict {
+  id         String    @id @db.VarChar(80)
+  tenantId   String    @db.VarChar(64)
+  source     String    @db.VarChar(80)
+  tableName  String    @db.VarChar(64)
+  rowId      String    @db.VarChar(200)
+  change     Json
+  error      String    @db.VarChar(500)
+  attempts   Int       @default(1)
+  status     String    @db.VarChar(20)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  resolvedAt DateTime?
+
+  @@unique([source, tableName, rowId])
+  @@index([tenantId, status])
+  @@map("sync_conflicts")
 }
 
 model Product {

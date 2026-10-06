@@ -551,7 +551,7 @@ export const subscriptionInvoiceCreateSchema = z.object({
 });
 
 export const syncRecordStatusSchema = z.enum(["queued", "processing", "synced", "failed", "conflict"]);
-export const syncRecordTypeSchema = z.enum(["sale", "table_order", "payment", "cash_movement", "stock_adjustment", "receipt_action"]);
+export const syncRecordTypeSchema = z.enum(["sale", "table_order", "payment", "cash_movement", "stock_adjustment", "receipt_action", "register_shift", "customer"]);
 
 export const syncQueueInputSchema = z.object({
   branchId: z.string().min(1),

@@ -29,6 +29,8 @@ export function createApp() {
 
   app.use(helmet());
   app.use(cors());
+  // Replication batches (office <-> cloud) can be large; everything else keeps 1mb.
+  app.use("/api/v1/sync", express.json({ limit: "25mb" }));
   app.use(express.json({ limit: "1mb" }));
   app.use(morgan("dev"));
   app.use(attachTenantContext);

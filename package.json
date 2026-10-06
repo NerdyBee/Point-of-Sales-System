@@ -11,7 +11,8 @@
     "db:generate": "prisma generate --schema database/prisma/schema.prisma",
     "db:push": "prisma db push --schema database/prisma/schema.prisma",
     "db:seed": "tsx database/seed.ts",
-    "db:reset": "prisma db push --force-reset --schema database/prisma/schema.prisma && tsx database/seed.ts"
+    "db:reset": "prisma db push --force-reset --schema database/prisma/schema.prisma && tsx database/seed.ts",
+    "sync": "tsx server/api/src/sync-cli.ts"
   },
   "workspaces": [
     "apps/*",

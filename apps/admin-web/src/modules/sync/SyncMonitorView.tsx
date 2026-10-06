@@ -14,6 +14,7 @@ import {
   type TerminalOption
 } from "../../shared/api/client";
 import { StatusBadge } from "../../shared/components/StatusBadge";
+import { ReplicationPanel } from "./ReplicationPanel";
 import { StatCard } from "../../shared/components/StatCard";
 import { TablePagination, usePaginatedRows } from "../../shared/components/TablePagination";
 import { dateRangeErrorMessage, hasInvertedDateRange } from "../../shared/utils/dateFilters";
@@ -365,6 +366,8 @@ export function SyncMonitorView() {
         </div>
       </div>
 
+      <ReplicationPanel terminals={terminals} />
+
       <section className="stats-grid">
         <StatCard label="Queued records" value={String(queuedCount)} detail={status} icon={Cloud} tone="dark" />
         <StatCard label="Needs review" value={String(issueCount)} detail="Failed or conflict" icon={ShieldAlert} />
@@ -465,6 +468,8 @@ export function SyncMonitorView() {
             <option value="cash_movement">Cash movement</option>
             <option value="stock_adjustment">Stock adjustment</option>
             <option value="receipt_action">Receipt action</option>
+            <option value="register_shift">Register shift (tablet)</option>
+            <option value="customer">Customer (tablet)</option>
           </select>
           <div className="date-range-filter sync-date-range-filter">
             <label>

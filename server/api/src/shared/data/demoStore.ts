@@ -77,7 +77,7 @@ export interface TerminalDevice {
 }
 
 export type SyncRecordStatus = "queued" | "processing" | "synced" | "failed" | "conflict";
-export type SyncRecordType = "sale" | "table_order" | "payment" | "cash_movement" | "stock_adjustment" | "receipt_action";
+export type SyncRecordType = "sale" | "table_order" | "payment" | "cash_movement" | "stock_adjustment" | "receipt_action" | "register_shift" | "customer";
 
 export interface SyncQueueRecord {
   id: string;
