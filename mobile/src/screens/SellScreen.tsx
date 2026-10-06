@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useApp } from "../shell/AppContext";
 import { readModel, type Customer, type Product } from "../data/readModel";
 import {
@@ -17,7 +17,9 @@ import { calculateSale, formatMoney, type CartLine, type SaleSummary } from "../
 import { Badge, Banner, Button, Field, Muted, Title } from "../ui/components";
 import { useLayout } from "../ui/layout";
 import { EmptyState, Icon } from "../ui/appKit";
-import { loadPrinterSettings, printReceipt, printingAvailable, receiptFromSale, shareReceipt } from "../print/printer";
+import { loadPrinterSettings, printReceipt, printingAvailable, receiptFromSale } from "../print/printer";
+import { ReceiptShareSheet } from "../print/ReceiptShareSheet";
+import { loadReceiptBranding } from "../print/branding";
 import type { ReceiptData } from "../print/receipt";
 import { PrinterSheet } from "./PrinterSheet";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -260,13 +262,14 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
           onCancel={() => setCheckoutOpen(false)}
           onConfirm={async ({ payments, tendered }) => {
             const sale = await recordSale(platform, { settings, tenantSettings: tenant.settings, staff, cart, customer, payments });
+            const branding = await loadReceiptBranding(platform, settings);
             setReceipt({
               number: sale.number,
               summary: sale.summary,
               tendered,
               createdAt: sale.createdAt,
               customer: customer?.name,
-              data: receiptFromSale({ number: sale.number, createdAt: sale.createdAt }, sale.record, tenant.settings, { tendered })
+              data: receiptFromSale({ number: sale.number, createdAt: sale.createdAt }, sale.record, tenant.settings, { tendered, branding })
             });
             setCart([]);
             setCustomer(null);
@@ -517,6 +520,7 @@ function ReceiptModal(props: { receipt: Receipt; businessName: string; footer?: 
   const [printing, setPrinting] = useState(false);
   const [printStatus, setPrintStatus] = useState<{ tone: "info" | "danger"; text: string } | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const canPrint = printingAvailable();
 
   const print = async () => {
@@ -542,12 +546,16 @@ function ReceiptModal(props: { receipt: Receipt; businessName: string; footer?: 
   }, []);
 
   if (setupOpen) return <PrinterSheet onClose={() => setSetupOpen(false)} />;
+  if (shareOpen) return <ReceiptShareSheet receipt={receipt.data} onClose={() => setShareOpen(false)} />;
 
   return (
     <Modal transparent animationType="fade" onRequestClose={props.onClose}>
       <View style={styles.backdrop}>
         <View style={[styles.modal, { maxWidth: 420 }]}>
+          {receipt.data.logoPng ? <Image source={{ uri: `data:image/png;base64,${receipt.data.logoPng}` }} style={styles.receiptLogo} resizeMode="contain" /> : null}
           <Text style={[styles.cartTitle, { textAlign: "center" }]}>{props.businessName}</Text>
+          {receipt.data.address ? <Text style={[styles.lineMeta, { textAlign: "center" }]}>{receipt.data.address}</Text> : null}
+          {receipt.data.phone ? <Text style={[styles.lineMeta, { textAlign: "center" }]}>Tel: {receipt.data.phone}</Text> : null}
           <Text style={[styles.lineMeta, { textAlign: "center" }]}>Receipt {receipt.number} · {new Date(receipt.createdAt).toLocaleString()}</Text>
           {receipt.customer ? <Text style={styles.lineMeta}>Customer: {receipt.customer}</Text> : null}
           {receipt.summary.lines.map((line) => (
@@ -568,7 +576,7 @@ function ReceiptModal(props: { receipt: Receipt; businessName: string; footer?: 
           {printStatus ? <Banner tone={printStatus.tone} message={printStatus.text} /> : null}
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             {canPrint ? <Button label="Print" variant="secondary" busy={printing} onPress={() => void print()} style={{ flex: 1 }} /> : null}
-            <Button label="Share" variant="secondary" onPress={() => void shareReceipt(receipt.data)} style={{ flex: 1 }} />
+            <Button label="Send (WhatsApp)" variant="secondary" onPress={() => setShareOpen(true)} style={{ flex: 1 }} />
             <Pressable accessibilityRole="button" accessibilityLabel="Printer settings" onPress={() => setSetupOpen(true)} style={styles.iconSquare}>
               <Icon name="print-outline" size={22} />
             </Pressable>
@@ -582,6 +590,7 @@ function ReceiptModal(props: { receipt: Receipt; businessName: string; footer?: 
 
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: "row", backgroundColor: colors.background },
+  receiptLogo: { width: 140, height: 72, alignSelf: "center" },
   creditBox: { backgroundColor: colors.surfaceMuted, borderRadius: radius.md, padding: spacing.md, gap: 2 },
   creditName: { fontSize: font.md, fontWeight: "700", color: colors.text },
   iconSquare: { width: 48, height: 48, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, alignItems: "center", justifyContent: "center" },

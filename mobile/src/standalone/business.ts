@@ -348,6 +348,9 @@ export async function listStaff(platform: Platform) {
 
 export interface BusinessSettingsInput {
   businessName: string;
+  phone?: string;
+  address?: string;
+  printLogo?: boolean;
   vatPercent: number;
   serviceChargePercent: number;
   receiptFooter: string;
@@ -358,6 +361,8 @@ export async function updateBusinessSettings(platform: Platform, input: Business
   const settings = await context(platform);
   if (input.businessName.trim().length < 2) throw new Error("Enter the business name");
   if (!Object.values(input.paymentMethods).some(Boolean)) throw new Error("Enable at least one payment method");
+  if ((input.phone ?? "").trim().length > 40) throw new Error("Phone number is too long");
+  if ((input.address ?? "").trim().length > 200) throw new Error("Address is too long (200 characters max)");
   if (!(input.vatPercent >= 0 && input.vatPercent <= 100) || !(input.serviceChargePercent >= 0 && input.serviceChargePercent <= 100)) {
     throw new Error("Percentages must be between 0 and 100");
   }
@@ -374,7 +379,10 @@ export async function updateBusinessSettings(platform: Platform, input: Business
         serviceChargeEnabled: input.serviceChargePercent > 0,
         serviceChargeRate: input.serviceChargePercent / 100,
         receiptFooter: input.receiptFooter.trim(),
-        paymentMethods: input.paymentMethods
+        paymentMethods: input.paymentMethods,
+        phone: input.phone?.trim() ?? tenant.settings.phone ?? "",
+        address: input.address?.trim() ?? tenant.settings.address ?? "",
+        printLogo: input.printLogo ?? tenant.settings.printLogo ?? true
       }
     });
     await saveSettings(platform, { ...settings, tenantName: input.businessName.trim() });

@@ -29,7 +29,7 @@ On first launch, choose **This device only (no server)**, then enter the busines
   - **Customers:** add, edit (name, phone, email, group, notes), see purchases, amount spent and loyalty points, and delete customers who have no sales. The list shows the total owed to the shop and has *All / Owing / Credit accounts* filters.
   - **Credit accounts:** an owner or manager gives a customer a **credit limit** (0 = cash only). The customer's *Account* tab shows what they owe, the limit, available credit and a dated **statement** (credit sales, payments, voided sales, each with the balance after). **Receive payment** takes cash, transfer, card or mobile money (reference required except for cash); cash payments count in the open register's expected cash. **Share statement** sends it by WhatsApp/SMS.
   - **Staff:** roles (owner, manager, cashier) and personal PINs; disable or re-enable. The last owner cannot be disabled.
-  - **Business:** receipt name and footer, VAT, service charge, payment methods.
+  - **Business:** a receipt header with **company logo** (picked from the gallery; *Print logo on receipts* can be switched off), **phone number** and **address**, with a live preview; plus receipt footer, VAT, service charge and payment methods.
 - **Reports** tab (owner/manager): a stock table for any dates. Pick *From* and *To*, or tap Today, Yesterday, This week, This month or Last 30 days. Each product shows **Opening | Out | In | Closing** (Closing = Opening + In - Out), with a header that stays in view and a totals row.
   - **In:** inflows, opening stock of new products, upward recounts.
   - **Out:** units sold (voided sales put back), damaged/missing, cancelled inflows.
@@ -50,7 +50,8 @@ Prints to ESC/POS thermal receipt printers, 58 mm or 80 mm (Xprinter, GOOJPRT, M
   - **Bluetooth LE (scan), Android and iPhone/iPad:** for printers that advertise Bluetooth LE. iOS only supports this kind.
   - Choose the paper width. Optionally turn on **print automatically after each sale** and **open cash drawer on cash sales** (a drawer plugged into the printer's RJ11 port). *Print test page* checks everything.
 - **Printing:** the receipt screen after each sale has **Print**. In *Sales*, open a sale and tap **Print receipt**; reprints are marked `*** REPRINT ***` and voided sales `*** VOIDED ***`.
-- **Share:** sends the receipt as text through WhatsApp, SMS and so on. It works without a printer, and also in Expo Go.
+- **Send (WhatsApp):** shares the receipt as a **PNG image** (logo, business details, items, totals with ₦, payments, account balance), then you pick WhatsApp and the chat in the share menu. The image preview stays open with *Share again*, and *Send as text* is a fallback. It works without a printer and in Expo Go (`src/print/ReceiptCard.tsx`, `ReceiptShareSheet.tsx`).
+- **Receipt header:** the business logo (if set) is printed above the name as a black-and-white image. It is scaled to about 2/3 of the paper width, dithered, and sent with the standard `GS v 0` raster command in small bands. Address and *Tel:* follow under the name, on printed, on-screen and shared receipts. On server-connected devices the branch's phone and address are used. Use a high-contrast logo for the best print. See `src/print/logo.ts`.
 - Receipts are printed in plain ASCII so every printer's code page renders them. The naira sign prints as `N` (e.g. `N12,500`).
 
 Code: `src/print/escpos.ts` (ESC/POS commands, ASCII clean-up, column layout), `src/print/receipt.ts` (receipt layout, text version), `src/print/bluetooth.ts` (Bluetooth Classic and BLE transports, permissions), `src/print/printer.ts` (settings, print, share).

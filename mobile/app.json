@@ -66,6 +66,14 @@
           "resizeMode": "contain",
           "backgroundColor": "#060C18"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Ajoke POS uses your photos only when you choose a business logo for your receipts.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
       ]
     ],
     "backgroundColor": "#060C18",

@@ -3,6 +3,7 @@ import { ActivityIndicator, Platform as RNPlatform, Pressable, StyleSheet, Switc
 import { bluetoothSupport, listPrinters, type PrinterDevice, type PrinterTransport } from "../print/bluetooth";
 import { defaultPrinterSettings, loadPrinterSettings, printTestPage, savePrinterSettings, type PrinterSettings } from "../print/printer";
 import { BRAND } from "../brand";
+import { getBusinessLogo } from "../print/branding";
 import { useApp } from "../shell/AppContext";
 import { Icon, Sheet } from "../ui/appKit";
 import { Banner, Button, Muted } from "../ui/components";
@@ -61,7 +62,7 @@ export function PrinterSheet(props: { onClose(): void }) {
     setBusy(true);
     setMessage(null);
     try {
-      await printTestPage(settings.device, settings.paperWidth, tenant?.settings.businessName ?? BRAND.appName);
+      await printTestPage(settings.device, settings.paperWidth, tenant?.settings.businessName ?? BRAND.appName, await getBusinessLogo(platform));
       setMessage({ tone: "info", text: "Test page sent." });
     } catch (error) {
       setMessage({ tone: "danger", text: error instanceof Error ? error.message : String(error) });

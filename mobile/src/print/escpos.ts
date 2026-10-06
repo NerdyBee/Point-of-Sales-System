@@ -62,6 +62,12 @@ export class EscPosBuilder {
     return this;
   }
 
+  /** Appends a prepared block of bytes (e.g. a raster image). */
+  append(bytes: Uint8Array) {
+    for (const value of bytes) this.bytes.push(value);
+    return this;
+  }
+
   align(value: Align) {
     return this.raw(ESC, 0x61, value === "left" ? 0 : value === "center" ? 1 : 2);
   }

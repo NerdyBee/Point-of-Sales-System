@@ -1,5 +1,7 @@
 import { registerRootComponent } from 'expo';
 
+// Must load after 'expo' (which installs TextDecoder) and before the app's modules.
+import './src/polyfills';
 import App from './App';
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);

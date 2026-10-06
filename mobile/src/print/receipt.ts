@@ -3,12 +3,17 @@ import type { TenantSettings } from "../data/readModel";
 import type { SaleRecord } from "../pos/actions";
 import type { SaleSummary } from "../pos/pricing";
 import { EscPosBuilder, type PaperWidth } from "./escpos";
+import { logoForPrinter } from "./logo";
 
 /** Everything printed on a sales receipt. Shared by the printer and the "share as text" fallback. */
 export interface ReceiptData {
   businessName: string;
   branchName?: string;
   taxId?: string;
+  phone?: string;
+  address?: string;
+  /** Shop logo as base64 PNG; printed above the name when present. */
+  logoPng?: string;
   footer?: string;
   currency: string;
   number: string;
@@ -52,10 +57,15 @@ export function buildReceiptBytes(receipt: ReceiptData, options: { width: PaperW
 
   if (options.openDrawer) p.openDrawer();
 
-  p.align("center").bold(true).large(true);
+  p.align("center");
+  const logo = receipt.logoPng ? logoForPrinter(receipt.logoPng, options.width) : null;
+  if (logo) p.append(logo).feed(1);
+  p.bold(true).large(true);
   p.wrapped(receipt.businessName, Math.floor(p.columns / 2));
   p.large(false).bold(false);
   if (receipt.branchName) p.line(receipt.branchName);
+  if (receipt.address) p.wrapped(receipt.address);
+  if (receipt.phone) p.line(`Tel: ${receipt.phone}`);
   if (receipt.taxId) p.line(`TIN: ${receipt.taxId}`);
   if (receipt.reprint) p.bold(true).line("*** REPRINT ***").bold(false);
   if (receipt.voided) p.bold(true).line("*** VOIDED ***").bold(false);
@@ -107,6 +117,8 @@ export function buildReceiptText(receipt: ReceiptData) {
   const money = (amount: number) => printMoney(amount, receipt.currency);
   const lines = [
     receipt.businessName,
+    ...(receipt.address ? [receipt.address] : []),
+    ...(receipt.phone ? [`Tel: ${receipt.phone}`] : []),
     ...(receipt.voided ? ["*** VOIDED ***"] : []),
     `Receipt ${receipt.number}`,
     formatDate(receipt.createdAt),
@@ -126,16 +138,26 @@ export function buildReceiptText(receipt: ReceiptData) {
   return lines.join("\n");
 }
 
+/** Shop contact details and logo printed at the top of receipts. */
+export interface ReceiptBranding {
+  phone?: string;
+  address?: string;
+  logoPng?: string;
+}
+
 /** Builds receipt data from a sale recorded on this device. */
 export function receiptFromSale(
   sale: { number: string; serverId?: string | null; createdAt: string; status?: string },
   record: SaleRecord & { tendered?: number },
   tenant: TenantSettings,
-  extra: { tendered?: number; reprint?: boolean } = {}
+  extra: { tendered?: number; reprint?: boolean; branding?: ReceiptBranding } = {}
 ): ReceiptData {
   return {
     businessName: tenant.businessName,
     taxId: tenant.taxId || undefined,
+    phone: extra.branding?.phone || undefined,
+    address: extra.branding?.address || undefined,
+    logoPng: extra.branding?.logoPng || undefined,
     footer: tenant.receiptFooter,
     currency: tenant.currency ?? "NGN",
     number: sale.serverId ?? sale.number,

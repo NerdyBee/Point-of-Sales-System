@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, FlatList, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { daySummary, recentSales, type LocalSale, type SaleRecord } from "../pos/actions";
 import { formatMoney } from "../pos/pricing";
 import { useApp } from "../shell/AppContext";
 import { voidSale } from "../standalone/business";
 import { isStandalone } from "../sync/settings";
 import { EmptyState, Sheet } from "../ui/appKit";
-import { printReceipt, printingAvailable, receiptFromSale, shareReceipt } from "../print/printer";
+import { printReceipt, printingAvailable, receiptFromSale } from "../print/printer";
+import { ReceiptShareSheet } from "../print/ReceiptShareSheet";
+import { loadReceiptBranding } from "../print/branding";
+import type { ReceiptBranding } from "../print/receipt";
 import { Badge, Banner, Button, Field, Muted } from "../ui/components";
 import { colors, font, radius, spacing } from "../ui/theme";
 
@@ -110,7 +113,12 @@ function SaleSheet(props: { sale: SaleWithRecord; currency: string; onClose(): v
   const canVoid = isStandalone(settings) && sale.status === "saved" && permissions.has("sale.void");
   const [printStatus, setPrintStatus] = useState<{ tone: "info" | "danger"; text: string } | null>(null);
   const [printing, setPrinting] = useState(false);
-  const receiptData = tenant ? receiptFromSale(sale, sale.record, tenant.settings, { reprint: true }) : null;
+  const [branding, setBranding] = useState<ReceiptBranding>({});
+  useEffect(() => {
+    void loadReceiptBranding(platform, settings).then(setBranding);
+  }, [platform, settings]);
+  const receiptData = tenant ? receiptFromSale(sale, sale.record, tenant.settings, { reprint: true, branding }) : null;
+  const [sharing, setSharing] = useState(false);
 
   const print = async () => {
     if (!receiptData) return;
@@ -149,6 +157,8 @@ function SaleSheet(props: { sale: SaleWithRecord; currency: string; onClose(): v
       }
     ]);
 
+  if (sharing && receiptData) return <ReceiptShareSheet receipt={receiptData} onClose={() => setSharing(false)} />;
+
   return (
     <Sheet
       title={`Sale ${sale.serverId ?? sale.number}`}
@@ -167,7 +177,10 @@ function SaleSheet(props: { sale: SaleWithRecord; currency: string; onClose(): v
       }
     >
       <View style={styles.receipt}>
+        {branding.logoPng ? <Image source={{ uri: `data:image/png;base64,${branding.logoPng}` }} style={styles.receiptLogo} resizeMode="contain" /> : null}
         <Text style={styles.receiptTitle}>{tenant?.settings.businessName}</Text>
+        {branding.address ? <Text style={styles.receiptMeta}>{branding.address}</Text> : null}
+        {branding.phone ? <Text style={styles.receiptMeta}>Tel: {branding.phone}</Text> : null}
         <Text style={styles.receiptMeta}>{new Date(sale.createdAt).toLocaleString()} · {staffName}</Text>
         {customer ? <Text style={styles.receiptMeta}>Customer: {customer.name} ({customer.phone})</Text> : null}
         <View style={styles.divider} />
@@ -190,7 +203,7 @@ function SaleSheet(props: { sale: SaleWithRecord; currency: string; onClose(): v
       {receiptData ? (
         <View style={styles.printRow}>
           {printingAvailable() ? <Button label="Print receipt" variant="secondary" busy={printing} onPress={() => void print()} style={{ flex: 1 }} /> : null}
-          <Button label="Share" variant="secondary" onPress={() => void shareReceipt(receiptData)} style={{ flex: 1 }} />
+          <Button label="Send (WhatsApp)" variant="secondary" onPress={() => setSharing(true)} style={{ flex: 1 }} />
         </View>
       ) : null}
       {printStatus ? <Banner tone={printStatus.tone} message={printStatus.text} /> : null}
@@ -240,6 +253,7 @@ const styles = StyleSheet.create({
   total: { fontSize: font.md, fontWeight: "700", color: colors.text },
   struck: { textDecorationLine: "line-through", color: colors.textMuted },
   receipt: { backgroundColor: colors.surfaceMuted, borderRadius: radius.md, padding: spacing.lg, gap: spacing.xs },
+  receiptLogo: { width: 140, height: 72, alignSelf: "center" },
   receiptTitle: { fontSize: font.lg, fontWeight: "700", color: colors.text, textAlign: "center" },
   receiptMeta: { fontSize: font.sm, color: colors.textMuted, textAlign: "center" },
   divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.sm },

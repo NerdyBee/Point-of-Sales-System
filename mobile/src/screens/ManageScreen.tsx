@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, FlatList, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { Alert, FlatList, Image, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { readModel, type Customer, type Product, type Staff } from "../data/readModel";
 import { formatMoney } from "../pos/pricing";
 import { useApp } from "../shell/AppContext";
@@ -24,6 +24,8 @@ import {
 } from "../standalone/business";
 import { EmptyState, Fab, Icon, ListItem, Sheet } from "../ui/appKit";
 import { recordInflow } from "../standalone/inventory";
+import { getBusinessLogo, setBusinessLogo } from "../print/branding";
+import { pickLogo } from "../standalone/logoPicker";
 import {
   availableCredit,
   customerLedger,
@@ -684,10 +686,15 @@ function StaffSheet(props: { staff: Staff | null; onClose(): void }) {
 // ----- business ----------------------------------------------------------------------
 
 function BusinessSection() {
-  const { platform, tenant } = useApp();
-  const { error, busy, run } = useRunner();
+  const { platform, tenant, dataVersion } = useApp();
+  const { error, busy, run, setError } = useRunner();
   const current = tenant?.settings;
   const [businessName, setBusinessName] = useState(current?.businessName ?? "");
+  const [phone, setPhone] = useState(current?.phone ?? "");
+  const [address, setAddress] = useState(current?.address ?? "");
+  const [printLogo, setPrintLogo] = useState(current?.printLogo !== false);
+  const [logo, setLogo] = useState<string | null>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
   const [vat, setVat] = useState(String(Math.round((current?.defaultTaxRate ?? 0) * 10000) / 100));
   const [serviceCharge, setServiceCharge] = useState(current?.serviceChargeEnabled ? String(Math.round((current.serviceChargeRate ?? 0) * 10000) / 100) : "0");
   const [footer, setFooter] = useState(current?.receiptFooter ?? "");
@@ -700,10 +707,72 @@ function BusinessSection() {
   const [saved, setSaved] = useState(false);
   const labels: Record<keyof typeof methods, string> = { cash: "Cash", card: "Card (POS terminal)", bankTransfer: "Bank transfer", mobileMoney: "Mobile money" };
 
+  useEffect(() => {
+    void getBusinessLogo(platform).then(setLogo);
+  }, [platform, dataVersion]);
+
+  const chooseLogo = async () => {
+    setLogoBusy(true);
+    setError(null);
+    try {
+      const picked = await pickLogo();
+      if (picked) {
+        await setBusinessLogo(platform, picked);
+        setLogo(picked);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setLogoBusy(false);
+    }
+  };
+
+  const removeLogo = () =>
+    confirm("Remove logo?", "Receipts will show only your business name and details.", "Remove", () =>
+      void (async () => {
+        await setBusinessLogo(platform, null);
+        setLogo(null);
+      })()
+    );
+
   return (
     <ScrollView contentContainerStyle={[styles.page, { alignItems: "center" }]} keyboardShouldPersistTaps="handled">
       <Card style={{ width: "100%", maxWidth: 640 }}>
-        <Field label="Business name (shown on receipts)" value={businessName} onChangeText={setBusinessName} />
+        <Text style={styles.subheading}>Receipt header</Text>
+        <View style={styles.logoRow}>
+          <View style={styles.logoBox}>
+            {logo ? (
+              <Image source={{ uri: `data:image/png;base64,${logo}` }} style={styles.logoImage} resizeMode="contain" accessibilityLabel="Business logo" />
+            ) : (
+              <Icon name="image-outline" size={32} color={colors.textMuted} />
+            )}
+          </View>
+          <View style={{ flex: 1, gap: spacing.sm }}>
+            <Button label={logo ? "Change logo" : "Choose logo"} variant="secondary" busy={logoBusy} onPress={() => void chooseLogo()} />
+            {logo ? <Button label="Remove logo" variant="ghost" onPress={removeLogo} /> : null}
+          </View>
+        </View>
+        <Muted>Use a simple, high-contrast logo (dark on white or transparent). Receipt printers print in black and white.</Muted>
+        {logo ? (
+          <View style={styles.switchRow}>
+            <Text style={styles.toggleLabel}>Print logo on receipts</Text>
+            <Switch value={printLogo} onValueChange={(value) => { setSaved(false); setPrintLogo(value); }} />
+          </View>
+        ) : null}
+        <Field label="Business name" value={businessName} onChangeText={setBusinessName} />
+        <Field label="Phone number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="e.g. 0803 123 4567" />
+        <Field label="Address" value={address} onChangeText={setAddress} placeholder="e.g. 12 Market Road, Onitsha" multiline />
+
+        <View style={styles.receiptPreview} accessibilityLabel="Receipt header preview">
+          {logo && printLogo ? <Image source={{ uri: `data:image/png;base64,${logo}` }} style={styles.previewLogo} resizeMode="contain" /> : null}
+          <Text style={styles.previewName}>{businessName || "Business name"}</Text>
+          {address.trim() ? <Text style={styles.previewLine}>{address.trim()}</Text> : null}
+          {phone.trim() ? <Text style={styles.previewLine}>Tel: {phone.trim()}</Text> : null}
+        </View>
+      </Card>
+
+      <Card style={{ width: "100%", maxWidth: 640 }}>
+        <Text style={styles.subheading}>Charges and payments</Text>
         <View style={styles.twoColumns}>
           <View style={styles.column}><Field label="VAT %" value={vat} onChangeText={setVat} keyboardType="decimal-pad" /></View>
           <View style={styles.column}><Field label="Service charge %" value={serviceCharge} onChangeText={setServiceCharge} keyboardType="decimal-pad" hint="0 = none" /></View>
@@ -717,13 +786,23 @@ function BusinessSection() {
           </View>
         ))}
         {error ? <Banner tone="danger" message={error} /> : null}
-        {saved ? <Banner tone="info" message="Saved. New charges apply from the next sale." /> : null}
+        {saved ? <Banner tone="info" message="Saved. Changes apply from the next receipt." /> : null}
         <Button
           label="Save settings"
           busy={busy}
           onPress={() =>
             void run(
-              () => updateBusinessSettings(platform, { businessName, vatPercent: Number(vat) || 0, serviceChargePercent: Number(serviceCharge) || 0, receiptFooter: footer, paymentMethods: methods }),
+              () =>
+                updateBusinessSettings(platform, {
+                  businessName,
+                  phone,
+                  address,
+                  printLogo,
+                  vatPercent: Number(vat) || 0,
+                  serviceChargePercent: Number(serviceCharge) || 0,
+                  receiptFooter: footer,
+                  paymentMethods: methods
+                }),
               () => setSaved(true)
             )
           }
@@ -771,5 +850,12 @@ const styles = StyleSheet.create({
   debtorsValue: { fontSize: font.xl, color: colors.danger, fontWeight: "800" },
   debtorsMeta: { fontSize: font.sm, color: colors.danger, textAlign: "right", flexShrink: 1 },
   statLabel: { fontSize: font.sm, color: colors.textMuted },
-  switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }
+  switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  logoRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  logoBox: { width: 96, height: 96, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  logoImage: { width: 88, height: 88 },
+  receiptPreview: { alignItems: "center", gap: 2, padding: spacing.lg, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, borderStyle: "dashed", backgroundColor: "#FFFFFF" },
+  previewLogo: { width: 120, height: 72, marginBottom: spacing.xs },
+  previewName: { fontSize: font.lg, fontWeight: "800", color: "#000000", textAlign: "center" },
+  previewLine: { fontSize: font.sm, color: "#000000", textAlign: "center" }
 });

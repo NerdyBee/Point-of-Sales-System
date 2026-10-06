@@ -1,6 +1,7 @@
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { AboutLine, BrandHeader } from "./src/ui/BrandMark";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { AppProvider } from "./src/shell/AppContext";
 import { Shell } from "./src/shell/Shell";
@@ -36,7 +37,9 @@ export default function App() {
           </AppProvider>
         ) : (
           <View style={styles.center}>
-            {error ? <Text style={styles.error}>Could not open the local database: {error}</Text> : <ActivityIndicator size="large" color={colors.primary} />}
+            <BrandHeader size={120} />
+          {error ? <Text style={styles.error}>Could not open the local database: {error}</Text> : <ActivityIndicator size="large" color={colors.primary} />}
+          <AboutLine />
           </View>
         )}
       </SafeAreaView>
@@ -46,6 +49,6 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl, gap: spacing.lg },
   error: { color: colors.danger, fontSize: font.md }
 });

@@ -10,6 +10,11 @@ export interface TenantSettings {
   serviceChargeEnabled?: boolean;
   serviceChargeRate?: number;
   receiptFooter?: string;
+  /** Shown on receipts. */
+  phone?: string;
+  address?: string;
+  /** Print the saved logo on receipts (default true when a logo exists). */
+  printLogo?: boolean;
   productCategories?: string[];
   paymentMethods?: { cash?: boolean; card?: boolean; bankTransfer?: boolean; mobileMoney?: boolean };
 }
