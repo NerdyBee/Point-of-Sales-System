@@ -17,7 +17,7 @@ const commandLabels: Record<string, string> = {
 };
 
 export function SyncScreen(props: { onRepair: () => void }) {
-  const { platform, engine, settings, syncStatus, dataVersion, refresh, staff, permissions } = useApp();
+  const { platform, engine, settings, syncStatus, dataVersion, refresh, staff, permissions, signOut } = useApp();
   const [commands, setCommands] = useState<CommandRow[]>([]);
 
   useEffect(() => {
@@ -42,6 +42,7 @@ export function SyncScreen(props: { onRepair: () => void }) {
               await setServerToken(platform, "local", null);
               await setServerToken(platform, "cloud", null);
               await resetLocalData(platform.db);
+              signOut();
               await refresh();
             })()
         }

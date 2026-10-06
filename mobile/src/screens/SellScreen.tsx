@@ -14,6 +14,10 @@ import {
 } from "../pos/actions";
 import { calculateSale, formatMoney, type CartLine, type SaleSummary } from "../pos/pricing";
 import { Badge, Banner, Button, Field, Muted, Title } from "../ui/components";
+import { useLayout } from "../ui/layout";
+import { EmptyState } from "../ui/appKit";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { isStandalone } from "../sync/settings";
 import { colors, font, radius, spacing } from "../ui/theme";
 
 const methodLabels: Record<PaymentMethod, string> = { cash: "Cash", card: "Card", bank_transfer: "Transfer", mobile_money: "Mobile money" };
@@ -33,7 +37,7 @@ interface Receipt {
   customer?: string;
 }
 
-export function SellScreen(props: { onOpenRegister: () => void }) {
+export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: () => void }) {
   const { platform, settings, tenant, staff, permissions, dataVersion, refresh, engine, touch } = useApp();
   const [products, setProducts] = useState<Product[]>([]);
   const [deductions, setDeductions] = useState<Map<string, number>>(new Map());
@@ -45,6 +49,8 @@ export function SellScreen(props: { onOpenRegister: () => void }) {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [cartOpen, setCartOpen] = useState(false);
+  const { compact, productColumns } = useLayout();
 
   const currency = tenant?.settings.currency ?? "NGN";
 
@@ -97,14 +103,72 @@ export function SellScreen(props: { onOpenRegister: () => void }) {
   if (!permissions.has("sale.create")) {
     return (
       <View style={styles.empty}>
-        <Banner tone="warning" message="Your role cannot record sales on this tablet." />
+        <Banner tone="warning" message="Your role cannot record sales here." />
       </View>
     );
   }
 
+  const cartPanel = (
+    <View style={compact ? styles.cartCompact : styles.cart}>
+      <View style={styles.cartHeader}>
+        <Text style={styles.cartTitle}>Current sale</Text>
+        <Button
+          label={customer ? customer.name : "Add customer"}
+          variant="secondary"
+          onPress={() => {
+            setCartOpen(false);
+            setCustomerOpen(true);
+          }}
+        />
+      </View>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: spacing.sm }}>
+        {cart.length === 0 ? <Muted>Tap products to add them.</Muted> : null}
+        {cart.map((line) => (
+          <View key={line.product.id} style={styles.line}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.lineName}>{line.product.name}</Text>
+              <Text style={styles.lineMeta}>{formatMoney(line.product.price, currency)} each</Text>
+            </View>
+            <View style={styles.stepper}>
+              <Pressable accessibilityLabel="Remove one" onPress={() => changeQuantity(line.product.id, -1)} style={styles.stepButton}><Text style={styles.stepLabel}>−</Text></Pressable>
+              <Text style={styles.quantity}>{line.quantity}</Text>
+              <Pressable accessibilityLabel="Add one" onPress={() => changeQuantity(line.product.id, 1)} style={styles.stepButton}><Text style={styles.stepLabel}>+</Text></Pressable>
+            </View>
+            <Text style={[styles.lineTotal, compact && { width: 80 }]}>{formatMoney(line.product.price * line.quantity, currency)}</Text>
+          </View>
+        ))}
+      </ScrollView>
+      {summary ? (
+        <View style={styles.totals}>
+          <TotalRow label="Subtotal" value={formatMoney(summary.subtotal, currency)} />
+          {summary.discount ? <TotalRow label="Discount" value={`−${formatMoney(summary.discount, currency)}`} /> : null}
+          <TotalRow label="VAT" value={formatMoney(summary.vat, currency)} />
+          {summary.serviceCharge ? <TotalRow label="Service charge" value={formatMoney(summary.serviceCharge, currency)} /> : null}
+          <TotalRow label="Total" value={formatMoney(summary.total, currency)} strong />
+        </View>
+      ) : null}
+      <View style={{ flexDirection: "row", gap: spacing.sm }}>
+        {compact ? <Button label="Back" variant="secondary" onPress={() => setCartOpen(false)} /> : null}
+        <Button label="Clear" variant="secondary" onPress={() => { setCart([]); setCustomer(null); setCartOpen(false); }} disabled={!cart.length} />
+        <Button
+          label="Charge"
+          onPress={() => {
+            setCartOpen(false);
+            setCheckoutOpen(true);
+          }}
+          disabled={!cart.length}
+          style={{ flex: 1 }}
+          large
+        />
+      </View>
+    </View>
+  );
+
+  const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
+
   return (
-    <View style={styles.page}>
-      <View style={styles.catalog}>
+    <View style={[styles.page, compact && { flexDirection: "column" }]}>
+      <View style={[styles.catalog, compact && styles.catalogCompact]}>
         <TextInput value={search} onChangeText={setSearch} placeholder="Search name, SKU or scan barcode" placeholderTextColor={colors.textMuted} style={styles.search} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }} style={{ flexGrow: 0 }}>
           {[null, ...categories].map((item) => (
@@ -114,17 +178,39 @@ export function SellScreen(props: { onOpenRegister: () => void }) {
           ))}
         </ScrollView>
         <FlatList
+          key={`columns-${productColumns}`}
           data={visible}
           keyExtractor={(item) => item.id}
-          numColumns={3}
-          columnWrapperStyle={{ gap: spacing.md }}
-          contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xl }}
-          ListEmptyComponent={<Muted>No products for this branch yet. Sync to download the catalogue.</Muted>}
+          numColumns={productColumns}
+          columnWrapperStyle={{ gap: compact ? spacing.sm : spacing.md }}
+          contentContainerStyle={{ gap: compact ? spacing.sm : spacing.md, paddingBottom: spacing.xl }}
+          ListEmptyComponent={
+            products.length ? (
+              <EmptyState icon="search" title="No matching products" message="Try another name, SKU or category." />
+            ) : (
+              <EmptyState
+                icon="cube-outline"
+                title="No products yet"
+                message={
+                  isStandalone(settings)
+                    ? props.onOpenManage
+                      ? "Add what you sell, with its price and how many you have."
+                      : "Ask an owner or manager to add products."
+                    : "Sync to download the catalogue for this branch."
+                }
+                action={props.onOpenManage ? <Button label="Add products" onPress={props.onOpenManage} /> : undefined}
+              />
+            )
+          }
           renderItem={({ item }) => {
             const left = available(item);
             const out = tracksStock(item) && left <= 0;
             return (
-              <Pressable accessibilityRole="button" onPress={() => add(item)} style={({ pressed }) => [styles.product, pressed && { borderColor: colors.primary }]}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => add(item)}
+                style={({ pressed }) => [styles.product, { maxWidth: `${Math.floor(100 / productColumns) - 1}%` }, compact && styles.productCompact, pressed && { borderColor: colors.primary }]}
+              >
                 <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
                 <Text style={styles.productPrice}>{formatMoney(item.price, currency)}</Text>
                 {tracksStock(item) ? <Badge label={out ? "Out of stock" : `${left} left`} tone={out ? "danger" : left <= 5 ? "warning" : "neutral"} /> : null}
@@ -134,42 +220,22 @@ export function SellScreen(props: { onOpenRegister: () => void }) {
         />
       </View>
 
-      <View style={styles.cart}>
-        <View style={styles.cartHeader}>
-          <Text style={styles.cartTitle}>Current sale</Text>
-          <Button label={customer ? customer.name : "Add customer"} variant="secondary" onPress={() => setCustomerOpen(true)} />
-        </View>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: spacing.sm }}>
-          {cart.length === 0 ? <Muted>Tap products to add them.</Muted> : null}
-          {cart.map((line) => (
-            <View key={line.product.id} style={styles.line}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.lineName}>{line.product.name}</Text>
-                <Text style={styles.lineMeta}>{formatMoney(line.product.price, currency)} each</Text>
-              </View>
-              <View style={styles.stepper}>
-                <Pressable accessibilityLabel="Remove one" onPress={() => changeQuantity(line.product.id, -1)} style={styles.stepButton}><Text style={styles.stepLabel}>−</Text></Pressable>
-                <Text style={styles.quantity}>{line.quantity}</Text>
-                <Pressable accessibilityLabel="Add one" onPress={() => changeQuantity(line.product.id, 1)} style={styles.stepButton}><Text style={styles.stepLabel}>+</Text></Pressable>
-              </View>
-              <Text style={styles.lineTotal}>{formatMoney(line.product.price * line.quantity, currency)}</Text>
-            </View>
-          ))}
-        </ScrollView>
-        {summary ? (
-          <View style={styles.totals}>
-            <TotalRow label="Subtotal" value={formatMoney(summary.subtotal, currency)} />
-            {summary.discount ? <TotalRow label="Discount" value={`−${formatMoney(summary.discount, currency)}`} /> : null}
-            <TotalRow label="VAT" value={formatMoney(summary.vat, currency)} />
-            {summary.serviceCharge ? <TotalRow label="Service charge" value={formatMoney(summary.serviceCharge, currency)} /> : null}
-            <TotalRow label="Total" value={formatMoney(summary.total, currency)} strong />
-          </View>
-        ) : null}
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <Button label="Clear" variant="secondary" onPress={() => { setCart([]); setCustomer(null); }} disabled={!cart.length} />
-          <Button label="Charge" onPress={() => setCheckoutOpen(true)} disabled={!cart.length} style={{ flex: 1 }} large />
-        </View>
-      </View>
+      {compact ? (
+        cart.length ? (
+          <Pressable accessibilityRole="button" onPress={() => setCartOpen(true)} style={styles.cartBar}>
+            <Text style={styles.cartBarLabel}>View sale · {itemCount} item{itemCount === 1 ? "" : "s"}</Text>
+            <Text style={styles.cartBarLabel}>{summary ? formatMoney(summary.total, currency) : ""}</Text>
+          </Pressable>
+        ) : null
+      ) : (
+        cartPanel
+      )}
+
+      {compact && cartOpen ? (
+        <Modal animationType="slide" onRequestClose={() => setCartOpen(false)}>
+          <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>{cartPanel}</SafeAreaView>
+        </Modal>
+      ) : null}
 
       {checkoutOpen && summary && tenant && settings && staff ? (
         <CheckoutModal
@@ -200,11 +266,12 @@ export function SellScreen(props: { onOpenRegister: () => void }) {
         <CustomerModal
           canCreate={permissions.has("customer.manage")}
           onClose={() => setCustomerOpen(false)}
-          onPick={(picked) => { setCustomer(picked); setCustomerOpen(false); }}
+          onPick={(picked) => { setCustomer(picked); setCustomerOpen(false); if (compact) setCartOpen(true); }}
           onCreate={async (input) => {
             const created = await createCustomer(platform, staff, input);
             setCustomer(created);
             setCustomerOpen(false);
+            if (compact) setCartOpen(true);
             await refresh();
           }}
         />
@@ -368,11 +435,16 @@ const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: "row", backgroundColor: colors.background },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md, padding: spacing.xl },
   catalog: { flex: 3, padding: spacing.lg, gap: spacing.md },
+  catalogCompact: { flex: 1, padding: spacing.md, gap: spacing.sm },
+  productCompact: { minHeight: 96, padding: spacing.sm },
+  cartCompact: { flex: 1, padding: spacing.lg, gap: spacing.md, backgroundColor: colors.surface },
+  cartBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  cartBarLabel: { color: colors.primaryText, fontSize: font.lg, fontWeight: "700" },
   search: { minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, fontSize: font.md, backgroundColor: colors.surface, color: colors.text },
   chip: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: 999, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipLabel: { fontSize: font.md, color: colors.text, fontWeight: "600" },
-  product: { flex: 1, minHeight: 110, maxWidth: "33%", padding: spacing.md, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 2, borderColor: colors.border, gap: spacing.xs, justifyContent: "space-between" },
+  product: { flex: 1, minHeight: 110, padding: spacing.md, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 2, borderColor: colors.border, gap: spacing.xs, justifyContent: "space-between" },
   productName: { fontSize: font.md, fontWeight: "600", color: colors.text },
   productPrice: { fontSize: font.lg, fontWeight: "700", color: colors.primary },
   cart: { flex: 2, minWidth: 320, backgroundColor: colors.surface, borderLeftWidth: 1, borderLeftColor: colors.border, padding: spacing.lg, gap: spacing.md },
@@ -389,8 +461,8 @@ const styles = StyleSheet.create({
   totals: { gap: spacing.xs, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md },
   totalLabel: { fontSize: font.md, color: colors.textMuted },
   totalStrong: { fontSize: font.xl, fontWeight: "700", color: colors.text },
-  backdrop: { flex: 1, backgroundColor: "rgba(16, 24, 32, 0.45)", alignItems: "center", justifyContent: "center", padding: spacing.xl },
-  modal: { width: "100%", maxWidth: 560, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.xl, gap: spacing.md },
+  backdrop: { flex: 1, backgroundColor: "rgba(16, 24, 32, 0.45)", alignItems: "center", justifyContent: "center", padding: spacing.md },
+  modal: { width: "100%", maxWidth: 560, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.md },
   methods: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   method: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceMuted },
   methodActive: { backgroundColor: colors.primary, borderColor: colors.primary },

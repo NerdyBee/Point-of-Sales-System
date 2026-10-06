@@ -204,6 +204,11 @@ export class SyncEngine {
   }
 
   private async run() {
+    // A standalone tablet has no server: nothing to send or fetch.
+    if ((await loadSettings(this.platform))?.mode === "standalone") {
+      await this.refreshCounts();
+      return this.status;
+    }
     this.emit({ running: true });
     try {
       await this.push();

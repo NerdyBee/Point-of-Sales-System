@@ -7,6 +7,7 @@ NaijaPOS is deployed **one business per installation**. A business can run any o
 | Offline only | One office server (API + MySQL). Optional tablets on the shop Wi-Fi. | No |
 | Office + cloud | Office server(s) that also sync with the business's cloud server. | Only for the office↔cloud link |
 | Cloud only | The cloud server, plus web browsers and tablets with internet. | Yes |
+| Tablet only | One tablet in standalone mode; it is the whole system (see `mobile/README.md`). Backups go to a file. | No |
 
 ```
                     ┌──────────────────────┐

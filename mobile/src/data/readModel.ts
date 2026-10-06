@@ -32,6 +32,10 @@ export interface Product {
   image: string;
   stock: number;
   station: string;
+  cost?: number;
+  reorderPoint?: number;
+  /** Standalone only: hidden from selling but kept for sales history. */
+  archived?: boolean;
 }
 
 export interface Staff {
@@ -49,6 +53,8 @@ export interface Customer {
   id: string;
   name: string;
   phone: string;
+  email?: string | null;
+  notes?: string | null;
   group: string;
   loyaltyPoints: number;
   creditLimit: number;
@@ -87,9 +93,12 @@ export const readModel = {
   terminal: (db: Db, terminalId: string) => rowOf<Terminal>(db, "terminals", terminalId),
   staff: (db: Db, staffId: string) => rowOf<Staff>(db, "staff_members", staffId),
 
-  async products(db: Db, branchId: string) {
+  /** Products on sale at a branch. Archived products (standalone mode) are hidden unless asked for. */
+  async products(db: Db, branchId: string, options: { includeArchived?: boolean } = {}) {
     const products = await rowsOf<Product>(db, "products", "AND branchId = ?", [branchId]);
-    return products.map((product) => ({ ...product, price: Number(product.price), taxRate: Number(product.taxRate), stock: Number(product.stock) }));
+    return products
+      .filter((product) => options.includeArchived || !product.archived)
+      .map((product) => ({ ...product, price: Number(product.price), taxRate: Number(product.taxRate), stock: Number(product.stock) }));
   },
 
   async signInStaff(db: Db) {

@@ -32,6 +32,10 @@ export async function saveSettings(platform: Platform, settings: DeviceSettings)
   await platform.db.run("INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [settingsKey, JSON.stringify(settings)]);
 }
 
+export function isStandalone(settings: DeviceSettings | null | undefined) {
+  return settings?.mode === "standalone";
+}
+
 export function getServerToken(platform: Platform, server: ServerKey) {
   return platform.secrets.get(tokenKey(server));
 }
@@ -43,6 +47,7 @@ export async function setServerToken(platform: Platform, server: ServerKey, toke
 
 /** Servers the tablet may use, in order of preference (office LAN first). */
 export function serverPreference(settings: DeviceSettings): ServerKey[] {
+  if (settings.mode === "standalone") return [];
   const order: ServerKey[] = settings.mode === "cloud" ? ["cloud"] : settings.mode === "local" ? ["local"] : ["local", "cloud"];
   return order.filter((key) => settings.servers[key]);
 }
