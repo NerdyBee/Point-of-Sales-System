@@ -62,7 +62,8 @@ export interface Customer {
   notes?: string | null;
   group: string;
   loyaltyPoints: number;
-  creditLimit: number;
+  /** null/blank = no limit; 0 = cash only; otherwise the most the customer may owe. */
+  creditLimit: number | null;
   outstandingBalance: number;
 }
 

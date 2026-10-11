@@ -198,7 +198,7 @@ function SaleSheet(props: { sale: SaleWithRecord; currency: string; onClose(): v
         {payments.map((payment, index) => (
           <Row key={index} label={`${methodNames[payment.method] ?? payment.method}${payment.reference ? ` (${payment.reference})` : ""}`} value={formatMoney(payment.amount, currency)} />
         ))}
-        {sale.record.credit ? <Row label="Account balance after" value={formatMoney(sale.record.credit.balanceAfter, currency)} /> : null}
+        {sale.record.credit || sale.record.customerBalance !== undefined ? <Row label="Account balance after" value={formatMoney(sale.record.credit?.balanceAfter ?? sale.record.customerBalance ?? 0, currency)} /> : null}
       </View>
       {receiptData ? (
         <View style={styles.printRow}>

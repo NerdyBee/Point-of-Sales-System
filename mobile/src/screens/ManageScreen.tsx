@@ -24,13 +24,17 @@ import {
 } from "../standalone/business";
 import { EmptyState, Fab, Icon, ListItem, Sheet } from "../ui/appKit";
 import { recordInflow } from "../standalone/inventory";
-import { getBusinessLogo, setBusinessLogo } from "../print/branding";
+import { getBusinessLogo, loadReceiptBranding, setBusinessLogo } from "../print/branding";
+import { printPaymentReceipt, printingAvailable } from "../print/printer";
+import { paymentReceiptFromEntry, type ReceiptBranding } from "../print/receipt";
+import { PaymentReceiptShareSheet } from "../print/ReceiptShareSheet";
 import { pickLogo } from "../standalone/logoPicker";
 import {
   availableCredit,
   customerLedger,
   debtorsSummary,
-  hasCreditAccount,
+  canBuyOnCredit,
+  creditLimitOf,
   ledgerLabels,
   receivePayment,
   statementText,
@@ -342,8 +346,8 @@ function CustomersSection() {
   const { platform, tenant, dataVersion } = useApp();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "owing" | "accounts">("all");
-  const [summary, setSummary] = useState<{ owed: number; debtors: number; accounts: number } | null>(null);
+  const [filter, setFilter] = useState<"all" | "owing">("all");
+  const [summary, setSummary] = useState<{ owed: number; debtors: number } | null>(null);
   const [editing, setEditing] = useState<Customer | "new" | null>(null);
   const currency = tenant?.settings.currency ?? "NGN";
 
@@ -353,24 +357,24 @@ function CustomersSection() {
   }, [platform, search, dataVersion]);
 
   const visible = customers
-    .filter((customer) => (filter === "owing" ? Number(customer.outstandingBalance ?? 0) > 0 : filter === "accounts" ? hasCreditAccount(customer) : true))
+    .filter((customer) => (filter === "owing" ? Number(customer.outstandingBalance ?? 0) > 0 : true))
     .sort((left, right) => (filter === "owing" ? Number(right.outstandingBalance ?? 0) - Number(left.outstandingBalance ?? 0) : 0));
 
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.toolbar}>
-        {summary && summary.accounts ? (
+        {summary && summary.debtors ? (
           <View style={styles.debtors}>
             <View style={{ flex: 1 }}>
               <Text style={styles.debtorsLabel}>Owed to you</Text>
               <Text style={styles.debtorsValue}>{formatMoney(summary.owed, currency)}</Text>
             </View>
-            <Text style={styles.debtorsMeta}>{summary.debtors} of {summary.accounts} credit customer{summary.accounts === 1 ? "" : "s"} owe</Text>
+            <Text style={styles.debtorsMeta}>{summary.debtors} customer{summary.debtors === 1 ? " owes" : "s owe"}</Text>
           </View>
         ) : null}
         <SearchBar value={search} onChange={setSearch} placeholder="Search name or phone" />
         <View style={styles.wrapRow}>
-          {([["all", "All"], ["owing", "Owing"], ["accounts", "Credit accounts"]] as const).map(([key, label]) => (
+          {([["all", "All"], ["owing", "Owing"]] as const).map(([key, label]) => (
             <Pressable key={key} onPress={() => setFilter(key)} style={[styles.chip, filter === key && styles.chipActive]}>
               <Text style={[styles.chipLabel, filter === key && { color: colors.primaryText }]}>{label}</Text>
             </Pressable>
@@ -384,7 +388,7 @@ function CustomersSection() {
         contentContainerStyle={{ paddingBottom: 96 }}
         ListEmptyComponent={
           search || filter !== "all" ? (
-            <EmptyState icon="search" title={filter === "owing" ? "Nobody owes you" : filter === "accounts" ? "No credit accounts yet" : "No matching customers"} message={filter === "accounts" ? "Open a customer and set a credit limit to let them buy on account." : undefined} />
+            <EmptyState icon="search" title={filter === "owing" ? "Nobody owes you" : "No matching customers"} />
           ) : (
             <EmptyState icon="people-outline" title="No customers yet" message="Customers you add here or at checkout appear in this list." />
           )
@@ -394,7 +398,7 @@ function CustomersSection() {
           return (
             <ListItem
               title={item.name}
-              subtitle={`${item.phone} · ${item.group}${hasCreditAccount(item) ? ` · limit ${formatMoney(Number(item.creditLimit), currency)}` : ""}`}
+              subtitle={`${item.phone} · ${item.group}${creditLimitOf(item) === 0 ? " · cash only" : creditLimitOf(item) !== null ? ` · limit ${formatMoney(Number(creditLimitOf(item)), currency)}` : ""}`}
               onPress={() => setEditing(item)}
               right={owes > 0 ? <Badge label={`Owes ${formatMoney(owes, currency)}`} tone="danger" /> : <Badge label={`${item.loyaltyPoints ?? 0} pts`} tone="info" />}
             />
@@ -408,7 +412,7 @@ function CustomersSection() {
 }
 
 function CustomerSheet(props: { customer: Customer | null; onClose(): void }) {
-  const { platform, tenant, permissions, staff, dataVersion } = useApp();
+  const { platform, tenant, permissions, staff, settings, dataVersion } = useApp();
   const { error, busy, run, setError } = useRunner();
   const [existing, setExisting] = useState<Customer | null>(props.customer);
   const [tab, setTab] = useState<"details" | "account">(props.customer && Number(props.customer.outstandingBalance ?? 0) > 0 ? "account" : "details");
@@ -417,7 +421,7 @@ function CustomerSheet(props: { customer: Customer | null; onClose(): void }) {
   const [email, setEmail] = useState(existing?.email ?? "");
   const [group, setGroup] = useState(existing?.group ?? "Walk-in");
   const [notes, setNotes] = useState(existing?.notes ?? "");
-  const [creditLimit, setCreditLimit] = useState(existing?.creditLimit ? String(existing.creditLimit) : "");
+  const [creditLimit, setCreditLimit] = useState(existing && creditLimitOf(existing) !== null ? String(creditLimitOf(existing)) : "");
   const [history, setHistory] = useState<{ count: number; total: number } | null>(null);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [paying, setPaying] = useState(false);
@@ -425,6 +429,13 @@ function CustomerSheet(props: { customer: Customer | null; onClose(): void }) {
   const [payMethod, setPayMethod] = useState<PaymentChannel>("cash");
   const [payReference, setPayReference] = useState("");
   const [payNote, setPayNote] = useState("");
+  /** Payment just received (shows the receipt panel), or one picked from the statement. */
+  const [receiptEntry, setReceiptEntry] = useState<{ entry: LedgerEntry; reprint: boolean } | null>(null);
+  const [sharingReceipt, setSharingReceipt] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  const [printStatus, setPrintStatus] = useState<{ tone: "info" | "danger"; text: string } | null>(null);
+  const [branding, setBranding] = useState<ReceiptBranding>({});
+  const [staffNames, setStaffNames] = useState<Record<string, string>>({});
   const currency = tenant?.settings.currency ?? "NGN";
   const money = (amount: number) => formatMoney(amount, currency);
   const canSetCredit = permissions.has("customer.credit");
@@ -437,16 +448,51 @@ function CustomerSheet(props: { customer: Customer | null; onClose(): void }) {
     void customerLedger(platform, props.customer.id).then(setLedger);
   }, [platform, props.customer, dataVersion]);
 
+  useEffect(() => {
+    void loadReceiptBranding(platform, settings).then(setBranding);
+    void listStaff(platform).then((members) => setStaffNames(Object.fromEntries(members.map((member) => [member.id, member.name]))));
+  }, [platform, settings]);
+
+  const paymentReceipt =
+    receiptEntry && existing && tenant
+      ? paymentReceiptFromEntry(receiptEntry.entry, existing, tenant.settings, {
+          staffName: staffNames[receiptEntry.entry.createdBy] ?? (receiptEntry.entry.createdBy === staff?.id ? staff.name : "Staff"),
+          reprint: receiptEntry.reprint,
+          branding
+        })
+      : null;
+
+  const printPayment = async () => {
+    if (!paymentReceipt) return;
+    setPrinting(true);
+    setPrintStatus(null);
+    try {
+      await printPaymentReceipt(platform, paymentReceipt);
+      setPrintStatus({ tone: "info", text: "Receipt sent to the printer." });
+    } catch (cause) {
+      setPrintStatus({ tone: "danger", text: cause instanceof Error ? cause.message : String(cause) });
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  const showReceipt = (entry: LedgerEntry, reprint: boolean) => {
+    setPrintStatus(null);
+    setError(null);
+    setReceiptEntry({ entry, reprint });
+  };
+
   const save = () =>
     void run(
-      () => saveCustomer(platform, { id: existing?.id, name, phone, email: email ?? "", group, notes: notes ?? "", creditLimit: canSetCredit ? digitsOnly(creditLimit) : undefined }),
+      () => saveCustomer(platform, { id: existing?.id, name, phone, email: email ?? "", group, notes: notes ?? "", creditLimit: canSetCredit ? (creditLimit.trim() === "" ? null : digitsOnly(creditLimit)) : undefined }),
       props.onClose
     );
 
   const pay = () =>
     void run(async () => {
-      await receivePayment(platform, { customerId: existing!.id, amount: digitsOnly(payAmount), method: payMethod, reference: payReference, note: payNote, staffId: staff!.id });
+      const entry = await receivePayment(platform, { customerId: existing!.id, amount: digitsOnly(payAmount), method: payMethod, reference: payReference, note: payNote, staffId: staff!.id });
       setPaying(false);
+      showReceipt(entry, false);
       setPayAmount("");
       setPayReference("");
       setPayNote("");
@@ -470,7 +516,15 @@ function CustomerSheet(props: { customer: Customer | null; onClose(): void }) {
     </>
   );
 
-  const accountFooter = paying ? (
+  const receiptFooter = (
+    <>
+      <Button label="Done" variant="secondary" onPress={() => { setReceiptEntry(null); setPrintStatus(null); }} />
+      {printingAvailable() ? <Button label="Print" variant="secondary" busy={printing} onPress={() => void printPayment()} style={{ flex: 1 }} /> : null}
+      <Button label="Send (WhatsApp)" onPress={() => setSharingReceipt(true)} style={{ flex: 1 }} />
+    </>
+  );
+
+  const accountFooter = receiptEntry ? receiptFooter : paying ? (
     <>
       <Button label="Back" variant="secondary" onPress={() => { setPaying(false); setError(null); }} />
       <Button label={`Receive ${digitsOnly(payAmount) ? money(digitsOnly(payAmount)) : "payment"}`} busy={busy} style={{ flex: 1 }} onPress={pay} />
@@ -481,6 +535,8 @@ function CustomerSheet(props: { customer: Customer | null; onClose(): void }) {
       <Button label="Receive payment" style={{ flex: 1 }} disabled={owes <= 0} onPress={() => { setPaying(true); setPayAmount(String(owes)); setError(null); }} />
     </>
   );
+
+  if (sharingReceipt && paymentReceipt) return <PaymentReceiptShareSheet receipt={paymentReceipt} onClose={() => setSharingReceipt(false)} />;
 
   return (
     <Sheet title={existing ? existing.name : "New customer"} onClose={props.onClose} footer={tab === "details" ? detailsFooter : accountFooter}>
@@ -495,14 +551,31 @@ function CustomerSheet(props: { customer: Customer | null; onClose(): void }) {
         <>
           <View style={styles.stats}>
             <Stat label="Owes" value={money(owes)} />
-            <Stat label="Credit limit" value={hasCreditAccount(existing) ? money(Number(existing.creditLimit)) : "None"} />
-            <Stat label="Available" value={money(availableCredit(existing))} />
+            <Stat label="Credit limit" value={creditLimitOf(existing) === null ? "No limit" : creditLimitOf(existing) === 0 ? "Cash only" : money(Number(creditLimitOf(existing)))} />
+            <Stat label="Available" value={availableCredit(existing) === Infinity ? "No limit" : money(availableCredit(existing))} />
           </View>
-          {!hasCreditAccount(existing) ? (
-            <Muted>{canSetCredit ? "No credit account. Set a credit limit on the Details tab to let this customer buy on account." : "No credit account. Ask an owner or manager to set a credit limit."}</Muted>
+          {!canBuyOnCredit(existing) ? (
+            <Muted>{canSetCredit ? "Cash only: this customer cannot buy on credit. Clear the credit limit on the Details tab (blank = no limit) to allow it." : "Cash only: ask an owner or manager to allow credit."}</Muted>
           ) : null}
 
-          {paying ? (
+          {receiptEntry && paymentReceipt ? (
+            <View style={styles.paymentPanel}>
+              <Text style={styles.paymentTitle}>{receiptEntry.reprint ? "Payment receipt" : "Payment recorded"} · {paymentReceipt.number}</Text>
+              <Text style={styles.historyMeta}>{new Date(paymentReceipt.createdAt).toLocaleString()} · received by {paymentReceipt.staffName}</Text>
+              <View style={styles.stats}>
+                <Stat label="Previous balance" value={money(paymentReceipt.balanceBefore)} />
+                <Stat label="Paid" value={money(paymentReceipt.amount)} />
+                <Stat label="Balance owed" value={money(paymentReceipt.balanceAfter)} />
+              </View>
+              <Muted>
+                {payLabels[paymentReceipt.method as PaymentChannel] ?? paymentReceipt.method}
+                {paymentReceipt.reference ? ` · ${paymentReceipt.reference}` : ""}
+                {paymentReceipt.note ? ` · ${paymentReceipt.note}` : ""}
+              </Muted>
+              {!printingAvailable() ? <Muted>Printing needs the installed app (not Expo Go). You can still send the receipt as a picture.</Muted> : null}
+              {printStatus ? <Banner tone={printStatus.tone} message={printStatus.text} /> : null}
+            </View>
+          ) : paying ? (
             <>
               <Field label="Amount received" value={payAmount} onChangeText={setPayAmount} keyboardType="number-pad" hint={`Owes ${money(owes)}`} />
               <View style={styles.wrapRow}>
@@ -519,10 +592,11 @@ function CustomerSheet(props: { customer: Customer | null; onClose(): void }) {
             <>
               <Text style={styles.subheading}>Statement</Text>
               {ledger.length === 0 ? <Muted>No credit sales or payments yet.</Muted> : null}
+              {ledger.some((entry) => entry.type === "payment") ? <Muted>Tap a payment to print or send its receipt.</Muted> : null}
               {[...ledger].reverse().map((entry) => (
-                <View key={entry.id} style={styles.historyRow}>
+                <Pressable key={entry.id} style={styles.historyRow} disabled={entry.type !== "payment"} onPress={() => showReceipt(entry, true)}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.historyReason}>{ledgerLabels[entry.type] ?? entry.type}{entry.reference ? ` · ${entry.reference}` : ""}</Text>
+                    <Text style={styles.historyReason}>{ledgerLabels[entry.type] ?? entry.type}{entry.reference ?? entry.receiptNumber ? ` · ${entry.reference ?? entry.receiptNumber}` : ""}</Text>
                     <Text style={styles.historyMeta}>
                       {new Date(entry.createdAt).toLocaleString()}
                       {entry.paymentMethod ? ` · ${payLabels[entry.paymentMethod]}${entry.paymentReference ? ` ${entry.paymentReference}` : ""}` : ""}
@@ -533,7 +607,8 @@ function CustomerSheet(props: { customer: Customer | null; onClose(): void }) {
                     {entry.amount > 0 ? "+" : "−"}{money(Math.abs(entry.amount))}
                   </Text>
                   <Text style={[styles.historyBalance, { minWidth: 80 }]}>{money(entry.balanceAfter)}</Text>
-                </View>
+                  {entry.type === "payment" ? <Icon name="receipt-outline" size={18} color={colors.textMuted} /> : null}
+                </Pressable>
               ))}
             </>
           )}
@@ -566,11 +641,11 @@ function CustomerSheet(props: { customer: Customer | null; onClose(): void }) {
               value={creditLimit}
               onChangeText={setCreditLimit}
               keyboardType="number-pad"
-              placeholder="0 = no credit"
-              hint="The most this customer may owe at any time. Leave 0 for cash-only customers."
+              placeholder="No limit"
+              hint="The most this customer may owe. Leave blank for no limit; 0 = cash only."
             />
-          ) : existing && hasCreditAccount(existing) ? (
-            <Muted>Credit limit: {money(Number(existing.creditLimit))}</Muted>
+          ) : existing ? (
+            <Muted>Credit limit: {creditLimitOf(existing) === null ? "no limit" : creditLimitOf(existing) === 0 ? "cash only" : money(Number(creditLimitOf(existing)))}</Muted>
           ) : null}
           <Field label="Notes" value={notes ?? ""} onChangeText={setNotes} placeholder="Optional" multiline />
         </>
@@ -837,6 +912,8 @@ const styles = StyleSheet.create({
   chipLabel: { fontSize: font.sm, fontWeight: "600", color: colors.text },
   fieldLabel: { color: colors.text, fontSize: font.sm, fontWeight: "600" },
   subheading: { fontSize: font.md, fontWeight: "700", color: colors.text, marginTop: spacing.sm },
+  paymentPanel: { gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceMuted },
+  paymentTitle: { fontSize: font.md, fontWeight: "700", color: colors.text },
   historyRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.surfaceMuted },
   historyReason: { fontSize: font.md, color: colors.text },
   historyMeta: { fontSize: font.sm, color: colors.textMuted },

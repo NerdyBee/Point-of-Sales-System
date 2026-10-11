@@ -1,19 +1,19 @@
 import * as Sharing from "expo-sharing";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode, type RefObject } from "react";
 import { ScrollView, View } from "react-native";
 import { captureRef } from "react-native-view-shot";
 import { Sheet } from "../ui/appKit";
 import { Banner, Button, Muted } from "../ui/components";
 import { spacing } from "../ui/theme";
-import { shareReceipt } from "./printer";
-import type { ReceiptData } from "./receipt";
-import { ReceiptCard } from "./ReceiptCard";
+import { sharePaymentReceipt, shareReceipt } from "./printer";
+import type { PaymentReceiptData, ReceiptData } from "./receipt";
+import { PaymentReceiptCard, ReceiptCard } from "./ReceiptCard";
 
-/** Renders the receipt card and shares it as a PNG image (pick WhatsApp in the share sheet). */
-export async function shareReceiptImage(view: View, receipt: ReceiptData) {
+/** Captures a receipt card and shares it as a PNG image (pick WhatsApp in the share sheet). */
+export async function shareReceiptImage(view: View, receipt: { number: string }, title = `Receipt ${receipt.number}`) {
   const uri = await captureRef(view, { format: "png", quality: 1, result: "tmpfile", fileName: `receipt-${receipt.number.replace(/[^A-Za-z0-9-]/g, "")}` });
   if (!(await Sharing.isAvailableAsync())) throw new Error("Sharing is not available on this device");
-  await Sharing.shareAsync(uri.startsWith("file://") ? uri : `file://${uri}`, { mimeType: "image/png", UTI: "public.png", dialogTitle: `Receipt ${receipt.number}` });
+  await Sharing.shareAsync(uri.startsWith("file://") ? uri : `file://${uri}`, { mimeType: "image/png", UTI: "public.png", dialogTitle: title });
 }
 
 /**
@@ -21,7 +21,13 @@ export async function shareReceiptImage(view: View, receipt: ReceiptData) {
  * taps Share once and picks WhatsApp. The card is captured on screen because Android can return
  * a blank image for views that are hidden or off-screen.
  */
-export function ReceiptShareSheet(props: { receipt: ReceiptData; onClose(): void }) {
+function ImageShareSheet(props: {
+  title: string;
+  receipt: { number: string; logoPng?: string };
+  card(ref: RefObject<View | null>): ReactNode;
+  shareText(): Promise<void>;
+  onClose(): void;
+}) {
   const card = useRef<View>(null);
   const started = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -32,7 +38,7 @@ export function ReceiptShareSheet(props: { receipt: ReceiptData; onClose(): void
     setBusy(true);
     setError(null);
     try {
-      await shareReceiptImage(card.current, props.receipt);
+      await shareReceiptImage(card.current, props.receipt, props.title);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -53,7 +59,7 @@ export function ReceiptShareSheet(props: { receipt: ReceiptData; onClose(): void
       onClose={props.onClose}
       footer={
         <>
-          <Button label="Send as text" variant="secondary" onPress={() => void shareReceipt(props.receipt)} />
+          <Button label="Send as text" variant="secondary" onPress={() => void props.shareText()} />
           <Button label="Share receipt image" busy={busy} onPress={() => void share()} style={{ flex: 1 }} />
         </>
       }
@@ -62,9 +68,33 @@ export function ReceiptShareSheet(props: { receipt: ReceiptData; onClose(): void
       {error ? <Banner tone="danger" message={`Could not create the image: ${error}. You can send it as text instead.`} /> : null}
       <ScrollView horizontal contentContainerStyle={{ flexGrow: 1, justifyContent: "center", paddingVertical: spacing.sm }}>
         <View style={{ borderWidth: 1, borderColor: "#D9DEE4", borderRadius: 4, overflow: "hidden" }} onLayout={onLayout}>
-          <ReceiptCard ref={card} receipt={props.receipt} />
+          {props.card(card)}
         </View>
       </ScrollView>
     </Sheet>
+  );
+}
+
+export function ReceiptShareSheet(props: { receipt: ReceiptData; onClose(): void }) {
+  return (
+    <ImageShareSheet
+      title={`Receipt ${props.receipt.number}`}
+      receipt={props.receipt}
+      card={(ref) => <ReceiptCard ref={ref} receipt={props.receipt} />}
+      shareText={() => shareReceipt(props.receipt)}
+      onClose={props.onClose}
+    />
+  );
+}
+
+export function PaymentReceiptShareSheet(props: { receipt: PaymentReceiptData; onClose(): void }) {
+  return (
+    <ImageShareSheet
+      title={`Payment receipt ${props.receipt.number}`}
+      receipt={props.receipt}
+      card={(ref) => <PaymentReceiptCard ref={ref} receipt={props.receipt} />}
+      shareText={() => sharePaymentReceipt(props.receipt)}
+      onClose={props.onClose}
+    />
   );
 }

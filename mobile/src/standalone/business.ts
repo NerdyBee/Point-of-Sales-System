@@ -21,7 +21,7 @@ const allActions = [
   "register.manage", "register.close", "reports.profit.view", "settings.manage", "sync.manage"
 ];
 
-/** customer.credit = open credit accounts and set credit limits (selling on account needs only sale.create). */
+/** customer.credit = set or change customers' credit limits (selling on account needs only sale.create). */
 const roleActions: Record<StandaloneRole, string[]> = {
   owner: allActions,
   manager: ["sale.create", "sale.refund", "sale.void", "catalog.manage", "inventory.adjust", "customer.manage", "customer.credit", "register.manage", "register.close", "reports.profit.view"],
@@ -146,6 +146,12 @@ export async function ensureStandaloneUpgrades(platform: Platform) {
     if (!(await getRow(db, "access_permissions", permissionId))) {
       await putRow(db, "access_permissions", permissionId, { id: permissionId, tenantId, action, label: action, group: action.split(".")[0], description: action });
     }
+  }
+  // Before "blank = no limit", every customer was created with limit 0 meaning "no credit".
+  // Every customer may now buy on credit, so turn those 0s into "no limit" once.
+  if (!(await db.first("SELECT key FROM kv WHERE key = 'upgrade.creditLimitBlank'"))) {
+    await db.run("UPDATE rows SET data = json_set(data, '$.creditLimit', json('null')) WHERE tbl = 'customers' AND COALESCE(json_extract(data, '$.creditLimit'), 0) = 0");
+    await db.run("INSERT INTO kv (key, value) VALUES ('upgrade.creditLimitBlank', ?) ON CONFLICT(key) DO NOTHING", [new Date().toISOString()]);
   }
   for (const role of Object.keys(roleActions) as StandaloneRole[]) {
     const roleId = `role-${tenantId}-${role}`;
@@ -501,8 +507,8 @@ export interface CustomerInput {
   email?: string;
   group?: string;
   notes?: string;
-  /** 0 = no credit account. Leave undefined to keep the current limit. */
-  creditLimit?: number;
+  /** null = no limit, 0 = cash only, n = most they may owe. Leave undefined to keep the current limit. */
+  creditLimit?: number | null;
 }
 
 export async function listCustomers(platform: Platform, search = "") {
@@ -524,7 +530,9 @@ export async function saveCustomer(platform: Platform, input: CustomerInput) {
   if (phone.length < 7) throw new Error("Enter a valid phone number");
   const email = input.email?.trim() ?? "";
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Enter a valid email or leave it empty");
-  if (input.creditLimit !== undefined && (!Number.isInteger(input.creditLimit) || input.creditLimit < 0)) throw new Error("Credit limit must be 0 or more");
+  if (input.creditLimit !== undefined && input.creditLimit !== null && (!Number.isInteger(input.creditLimit) || input.creditLimit < 0)) {
+    throw new Error("Credit limit must be a whole amount, or left blank for no limit");
+  }
 
   const existing = input.id ? await getRow<Customer & Record<string, unknown>>(platform.db, "customers", input.id) : null;
   const id = existing?.id ?? `cust-${platform.uuid()}`;
@@ -532,14 +540,14 @@ export async function saveCustomer(platform: Platform, input: CustomerInput) {
   if (clash) throw new Error("Another customer already has this phone number");
 
   const customer = {
-    ...(existing ?? { tenantId: settings.tenantId, loyaltyPoints: 0, creditLimit: 0, outstandingBalance: 0, createdAt: now() }),
+    ...(existing ?? { tenantId: settings.tenantId, loyaltyPoints: 0, creditLimit: null, outstandingBalance: 0, createdAt: now() }),
     id,
     name,
     phone,
     email: email || null,
     group: input.group && (customerGroups as readonly string[]).includes(input.group) ? input.group : existing?.group ?? "Walk-in",
     notes: input.notes?.trim() || null,
-    creditLimit: input.creditLimit ?? existing?.creditLimit ?? 0
+    creditLimit: input.creditLimit !== undefined ? input.creditLimit : existing ? existing.creditLimit ?? null : null
   };
   await putRow(platform.db, "customers", id, customer);
   return customer as unknown as Customer;

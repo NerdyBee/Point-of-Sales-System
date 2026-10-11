@@ -4,7 +4,7 @@ import { getKv, setKv } from "../sync/settings";
 import { bluetoothSupport, PrinterError, sendToPrinter, type PrinterDevice } from "./bluetooth";
 import { EscPosBuilder, type PaperWidth } from "./escpos";
 import { logoForPrinter } from "./logo";
-import { buildReceiptBytes, buildReceiptText, type ReceiptData } from "./receipt";
+import { buildPaymentReceiptBytes, buildPaymentReceiptText, buildReceiptBytes, buildReceiptText, type PaymentReceiptData, type ReceiptData } from "./receipt";
 
 export { receiptFromSale } from "./receipt";
 
@@ -40,6 +40,18 @@ export async function printReceipt(platform: Platform, receipt: ReceiptData) {
   const cashSale = receipt.payments.some((payment) => payment.method === "cash");
   const bytes = buildReceiptBytes(receipt, { width: settings.paperWidth, openDrawer: settings.openDrawer && cashSale && !receipt.reprint });
   await sendToPrinter(settings.device, bytes);
+}
+
+/** Prints a receipt for money received on a customer's account (opens the drawer for cash). */
+export async function printPaymentReceipt(platform: Platform, receipt: PaymentReceiptData) {
+  const settings = await loadPrinterSettings(platform);
+  if (!settings.device) throw new PrinterError("No receipt printer set up yet.");
+  const bytes = buildPaymentReceiptBytes(receipt, { width: settings.paperWidth, openDrawer: settings.openDrawer && receipt.method === "cash" && !receipt.reprint });
+  await sendToPrinter(settings.device, bytes);
+}
+
+export async function sharePaymentReceipt(receipt: PaymentReceiptData) {
+  await Share.share({ title: `Payment receipt ${receipt.number}`, message: buildPaymentReceiptText(receipt) });
 }
 
 export async function printTestPage(device: PrinterDevice, width: PaperWidth, businessName: string, logoPng?: string | null) {

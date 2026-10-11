@@ -56,8 +56,10 @@ export interface SaleRecord {
   payments: Payment[];
   customer?: Pick<Customer, "id" | "name" | "phone">;
   staffName: string;
-  /** Part of the sale put on the customer's account, and what they owe afterwards. */
-  credit?: { amount: number; balanceAfter: number; limit: number };
+  /** Part of the sale put on the customer's account, and what they owe afterwards (limit null = no limit). */
+  credit?: { amount: number; balanceAfter: number; limit: number | null };
+  /** What the customer owes after this sale (printed on their receipt). */
+  customerBalance?: number;
 }
 
 export class PosError extends Error {}
@@ -174,6 +176,13 @@ export async function recordSale(
     if (onAccount && input.customer) {
       record.credit = await chargeToAccount(platform, { customerId: input.customer.id, amount: onAccount, saleNumber: number, staffId: input.staff.id });
     }
+    if (input.customer && !input.customer.id.startsWith("local-")) {
+      const balance = await platform.db.first<{ balance: number | null }>(
+        "SELECT json_extract(data, '$.outstandingBalance') AS balance FROM rows WHERE tbl = 'customers' AND id = ?",
+        [input.customer.id]
+      );
+      if (balance) record.customerBalance = Number(balance.balance ?? 0);
+    }
     await platform.db.run(
       "INSERT INTO sales (id, number, shiftId, idempotencyKey, staffId, customerId, data, total, status, reconciled, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [id, number, shift.id, idempotencyKey, input.staff.id, input.customer?.id ?? null, JSON.stringify(record), summary.total, standalone ? "saved" : "pending", standalone ? 1 : 0, createdAt]
@@ -223,7 +232,7 @@ export async function createCustomer(platform: Platform, staff: Staff, input: { 
     phone,
     group: "Walk-in",
     loyaltyPoints: 0,
-    creditLimit: 0,
+    creditLimit: null,
     outstandingBalance: 0
   };
   // Route with the open shift so the sale that uses this customer goes to the same server.

@@ -24,7 +24,7 @@ import type { ReceiptData } from "../print/receipt";
 import { PrinterSheet } from "./PrinterSheet";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { isStandalone } from "../sync/settings";
-import { availableCredit, hasCreditAccount } from "../standalone/credit";
+import { availableCredit, canBuyOnCredit, creditLimitOf } from "../standalone/credit";
 import { colors, font, radius, spacing } from "../ui/theme";
 
 const methodLabels: Record<PaymentMethod, string> = { cash: "Cash", card: "Card", bank_transfer: "Transfer", mobile_money: "Mobile money", customer_credit: "On account" };
@@ -360,17 +360,21 @@ function CheckoutModal(props: {
   const paidNowValue = Math.min(amount(paidNow), props.total);
   const onAccount = props.total - paidNowValue;
   const owed = Number(account?.outstandingBalance ?? 0);
-  const canCredit = Boolean(account && hasCreditAccount(account));
+  const canCredit = canBuyOnCredit(account);
   const available = account ? availableCredit(account) : 0;
+  const limit = account ? creditLimitOf(account) : null;
+  const limitText = limit === null ? "No limit" : money(limit);
+  const availableText = available === Infinity ? "No limit" : money(available);
 
   const confirm = async () => {
     setError(null);
     let payments: Payment[];
     let cashTendered: number | undefined;
     if (credit) {
-      if (!canCredit) return setError("Choose a registered customer with a credit account.");
+      if (!account) return setError("Choose the customer who is buying on credit.");
+      if (!canCredit) return setError(`${account.name} is set to cash only.`);
       if (onAccount <= 0) return setError("Nothing is left to put on account. Choose how the customer is paying instead.");
-      if (onAccount > available) return setError(`Only ${money(available)} credit is available for ${account!.name}. Take more payment now.`);
+      if (onAccount > available) return setError(`Only ${availableText} credit is available for ${account.name}. Take more payment now.`);
       if (paidNowValue > 0 && referenceRequired.includes(paidNowMethod) && !reference.trim()) return setError("Enter the payment reference");
       payments = [{ method: "customer_credit", amount: onAccount }, ...(paidNowValue > 0 ? [{ method: paidNowMethod, amount: paidNowValue, reference: reference.trim() || undefined }] : [])];
     } else {
@@ -405,19 +409,19 @@ function CheckoutModal(props: {
             {credit ? (
               !account ? (
                 <>
-                  <Banner tone="warning" message="Credit is only for registered customers with a credit account. Choose the customer first." />
+                  <Banner tone="info" message="Choose (or add) the customer who is buying on credit, so the amount goes on their account." />
                   <Button label="Choose customer" variant="secondary" onPress={props.onPickCustomer} />
                 </>
               ) : !canCredit ? (
                 <>
-                  <Banner tone="warning" message={`${account.name} does not have a credit account. An owner or manager can set a credit limit in Manage → Customers.`} />
+                  <Banner tone="warning" message={`${account.name} is set to cash only (credit limit 0). An owner or manager can change this in Manage → Customers.`} />
                   <Button label="Choose another customer" variant="secondary" onPress={props.onPickCustomer} />
                 </>
               ) : (
                 <>
                   <View style={styles.creditBox}>
                     <Text style={styles.creditName}>{account.name}</Text>
-                    <Text style={styles.lineMeta}>Owes {money(owed)} · Limit {money(Number(account.creditLimit))} · Available {money(available)}</Text>
+                    <Text style={styles.lineMeta}>Owes {money(owed)} · Limit {limitText}{limit !== null ? ` · Available ${availableText}` : ""}</Text>
                   </View>
                   <Field label="Paid now (optional)" value={paidNow} onChangeText={setPaidNow} keyboardType="number-pad" placeholder="0" />
                   {paidNowValue > 0 ? (
@@ -487,7 +491,8 @@ function CustomerModal(props: { canCreate: boolean; onClose(): void; onPick(cust
                 <Text style={styles.lineName}>{item.name}</Text>
                 <Text style={styles.lineMeta}>
                   {item.phone} · {item.loyaltyPoints} pts
-                  {hasCreditAccount(item) ? ` · credit: owes ${formatMoney(Number(item.outstandingBalance ?? 0), currency)} of ${formatMoney(Number(item.creditLimit), currency)}` : ""}
+                  {Number(item.outstandingBalance ?? 0) > 0 ? ` · owes ${formatMoney(Number(item.outstandingBalance), currency)}` : ""}
+                  {creditLimitOf(item) === 0 ? " · cash only" : creditLimitOf(item) !== null ? ` · limit ${formatMoney(Number(creditLimitOf(item)), currency)}` : ""}
                 </Text>
               </Pressable>
             ))}

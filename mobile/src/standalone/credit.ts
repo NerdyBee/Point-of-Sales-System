@@ -1,13 +1,13 @@
 import type { Platform } from "../data/db";
 import type { Customer } from "../data/readModel";
-import type { DeviceSettings } from "../sync/settings";
+import { getKv, setKv, type DeviceSettings } from "../sync/settings";
 import { context, getRow, now, putRow } from "./store";
 
 /**
  * Customer credit ("on account") for a standalone device.
  *
- * - Only registered customers with a credit account (credit limit > 0) can buy on credit,
- *   and a sale may not take them over their limit.
+ * - Any registered customer can buy on credit. Credit limit: blank (null) = no limit,
+ *   0 = cash only, any other number = the most they may owe. A sale may not go over it.
  * - Every change to what a customer owes is a ledger entry (same shape as the server's
  *   customer_ledger_entries): amount > 0 increases the debt, amount < 0 reduces it.
  * - customers.outstandingBalance always equals the last entry's balanceAfter.
@@ -26,6 +26,8 @@ export interface LedgerEntry {
   reference?: string;
   paymentMethod?: PaymentChannel;
   paymentReference?: string;
+  /** Payment receipt number (PAY-00001), payments only. */
+  receiptNumber?: string;
   createdBy: string;
   createdAt: string;
 }
@@ -58,12 +60,24 @@ async function writeEntry(platform: Platform, settings: DeviceSettings, customer
   return record as LedgerEntry;
 }
 
-export function availableCredit(customer: Pick<Customer, "creditLimit" | "outstandingBalance">) {
-  return Math.max(0, Number(customer.creditLimit ?? 0) - Number(customer.outstandingBalance ?? 0));
+/** The customer's credit limit, or null when there is no limit (blank). */
+export function creditLimitOf(customer: Pick<Customer, "creditLimit">): number | null {
+  const limit = customer.creditLimit as unknown;
+  return limit === null || limit === undefined || limit === "" ? null : Number(limit);
 }
 
-export function hasCreditAccount(customer: Pick<Customer, "creditLimit"> | null | undefined) {
-  return Boolean(customer && Number(customer.creditLimit ?? 0) > 0);
+/** How much more the customer can owe: Infinity when there is no limit. */
+export function availableCredit(customer: Pick<Customer, "creditLimit" | "outstandingBalance">) {
+  const limit = creditLimitOf(customer);
+  if (limit === null) return Infinity;
+  return Math.max(0, limit - Number(customer.outstandingBalance ?? 0));
+}
+
+/** Every customer can buy on credit unless their limit is set to 0 (cash only). */
+export function canBuyOnCredit(customer: Pick<Customer, "creditLimit"> | null | undefined) {
+  if (!customer) return false;
+  const limit = creditLimitOf(customer);
+  return limit === null || limit > 0;
 }
 
 /**
@@ -74,8 +88,8 @@ export async function chargeToAccount(platform: Platform, input: { customerId: s
   const settings = await context(platform);
   if (!Number.isInteger(input.amount) || input.amount <= 0) throw new CreditError("Invalid credit amount");
   const customer = await loadCustomer(platform, input.customerId);
-  if (!hasCreditAccount(customer)) {
-    throw new CreditError(`${customer.name} does not have a credit account. An owner or manager can set a credit limit in Manage → Customers.`);
+  if (!canBuyOnCredit(customer)) {
+    throw new CreditError(`${customer.name} is set to cash only (credit limit 0). An owner or manager can change this in Manage → Customers.`);
   }
   const available = availableCredit(customer);
   if (input.amount > available) {
@@ -88,7 +102,7 @@ export async function chargeToAccount(platform: Platform, input: { customerId: s
     reference: input.saleNumber,
     createdBy: input.staffId
   });
-  return { amount: input.amount, balanceAfter: entry.balanceAfter, limit: Number(customer.creditLimit) };
+  return { amount: input.amount, balanceAfter: entry.balanceAfter, limit: creditLimitOf(customer) };
 }
 
 /** Undoes the credit part of a voided sale. */
@@ -102,6 +116,12 @@ export async function reverseAccountCharge(platform: Platform, input: { customer
     reference: input.saleNumber,
     createdBy: input.staffId
   });
+}
+
+async function nextPaymentNumber(platform: Platform) {
+  const next = Number((await getKv(platform, "payment.counter")) ?? 0) + 1;
+  await setKv(platform, "payment.counter", String(next));
+  return `PAY-${String(next).padStart(5, "0")}`;
 }
 
 /** Records money received against a customer's account. Cash goes into the open register. */
@@ -126,8 +146,10 @@ export async function receivePayment(
       await platform.db.run("UPDATE shifts SET cashIn = cashIn + ? WHERE id = ?", [input.amount, shift.id]);
     }
 
+    const receiptNumber = await nextPaymentNumber(platform);
     entry = await writeEntry(platform, settings, customer, {
       type: "payment",
+      receiptNumber,
       amount: -input.amount,
       note: input.note?.trim() || "Payment received",
       paymentMethod: input.method,
@@ -149,13 +171,12 @@ export async function customerLedger(platform: Platform, customerId: string) {
 
 /** Total owed to the shop and how many customers owe. */
 export async function debtorsSummary(platform: Platform) {
-  const row = await platform.db.first<{ owed: number; debtors: number; accounts: number }>(
+  const row = await platform.db.first<{ owed: number; debtors: number }>(
     `SELECT COALESCE(SUM(CASE WHEN json_extract(data, '$.outstandingBalance') > 0 THEN json_extract(data, '$.outstandingBalance') ELSE 0 END), 0) AS owed,
-            SUM(CASE WHEN json_extract(data, '$.outstandingBalance') > 0 THEN 1 ELSE 0 END) AS debtors,
-            SUM(CASE WHEN json_extract(data, '$.creditLimit') > 0 THEN 1 ELSE 0 END) AS accounts
+            COALESCE(SUM(CASE WHEN json_extract(data, '$.outstandingBalance') > 0 THEN 1 ELSE 0 END), 0) AS debtors
      FROM rows WHERE tbl = 'customers'`
   );
-  return { owed: Number(row?.owed ?? 0), debtors: Number(row?.debtors ?? 0), accounts: Number(row?.accounts ?? 0) };
+  return { owed: Number(row?.owed ?? 0), debtors: Number(row?.debtors ?? 0) };
 }
 
 const ledgerLabels: Record<LedgerType, string> = { credit_sale: "Credit sale", payment: "Payment", credit_void: "Voided sale", adjustment: "Adjustment" };
@@ -171,10 +192,11 @@ export function statementText(input: { businessName: string; customer: Customer;
   for (const entry of input.entries) {
     const date = new Date(entry.createdAt).toLocaleDateString();
     const amount = entry.amount > 0 ? `+${input.money(entry.amount)}` : `-${input.money(Math.abs(entry.amount))}`;
-    lines.push(`${date}  ${ledgerLabels[entry.type] ?? entry.type}${entry.reference ? ` ${entry.reference}` : ""}  ${amount}  bal ${input.money(entry.balanceAfter)}`);
+    lines.push(`${date}  ${ledgerLabels[entry.type] ?? entry.type}${entry.reference ?? entry.receiptNumber ? ` ${entry.reference ?? entry.receiptNumber}` : ""}  ${amount}  bal ${input.money(entry.balanceAfter)}`);
   }
   lines.push("", `Balance owed: ${input.money(Number(input.customer.outstandingBalance ?? 0))}`);
-  if (Number(input.customer.creditLimit ?? 0) > 0) lines.push(`Credit limit: ${input.money(Number(input.customer.creditLimit))}`);
+  const limit = creditLimitOf(input.customer);
+  if (limit !== null) lines.push(`Credit limit: ${input.money(limit)}`);
   return lines.join("\n");
 }
 

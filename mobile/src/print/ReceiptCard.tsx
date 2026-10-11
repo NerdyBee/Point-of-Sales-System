@@ -2,7 +2,7 @@ import { forwardRef } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 import { BRAND } from "../brand";
 import { formatMoney } from "../pos/pricing";
-import type { ReceiptData } from "./receipt";
+import type { PaymentReceiptData, ReceiptData } from "./receipt";
 
 const methodNames: Record<string, string> = { cash: "Cash", card: "Card", bank_transfer: "Transfer", mobile_money: "Mobile money", customer_credit: "On account" };
 
@@ -75,11 +75,52 @@ export const ReceiptCard = forwardRef<View, { receipt: ReceiptData }>(function R
   );
 });
 
+/** A payment received on a customer's account, as shared in the image. */
+export const PaymentReceiptCard = forwardRef<View, { receipt: PaymentReceiptData }>(function PaymentReceiptCard({ receipt }, ref) {
+  const money = (amount: number) => formatMoney(amount, receipt.currency);
+  const date = new Date(receipt.createdAt);
+
+  return (
+    <View ref={ref} collapsable={false} style={styles.paper}>
+      {receipt.logoPng ? <Image source={{ uri: `data:image/png;base64,${receipt.logoPng}` }} style={styles.logo} resizeMode="contain" /> : null}
+      <Text style={styles.business}>{receipt.businessName}</Text>
+      {receipt.address ? <Text style={styles.center}>{receipt.address}</Text> : null}
+      {receipt.phone ? <Text style={styles.center}>Tel: {receipt.phone}</Text> : null}
+      {receipt.taxId ? <Text style={styles.center}>TIN: {receipt.taxId}</Text> : null}
+      <Text style={styles.title}>PAYMENT RECEIPT</Text>
+
+      <View style={styles.divider} />
+      <Row label="Receipt" value={receipt.number} />
+      <Row label="Date" value={`${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`} />
+      <Row label="Received by" value={receipt.staffName} />
+      <Row label="Customer" value={receipt.customer.name} />
+      {receipt.customer.phone ? <Row label="Phone" value={receipt.customer.phone} /> : null}
+      <View style={styles.divider} />
+
+      <Row label="Previous balance" value={money(receipt.balanceBefore)} />
+      <View style={styles.totalBox}>
+        <Text style={styles.totalLabel}>PAID</Text>
+        <Text style={styles.totalValue}>{money(receipt.amount)}</Text>
+      </View>
+      <Row label={`${methodNames[receipt.method] ?? receipt.method}${receipt.reference ? ` (${receipt.reference})` : ""}`} value={money(receipt.amount)} muted />
+      {receipt.note ? <Text style={[styles.text, styles.muted]}>{receipt.note}</Text> : null}
+      <View style={styles.divider} />
+      <Row label="Balance owed" value={money(receipt.balanceAfter)} strong />
+      {receipt.balanceAfter <= 0 ? <Text style={[styles.center, { fontWeight: "700", marginTop: 6 }]}>Account fully paid. Thank you!</Text> : null}
+
+      <View style={styles.divider} />
+      {receipt.footer ? <Text style={[styles.center, styles.footer]}>{receipt.footer}</Text> : null}
+      <Text style={styles.powered}>Powered by {BRAND.appName}</Text>
+    </View>
+  );
+});
+
 const styles = StyleSheet.create({
   paper: { width: RECEIPT_IMAGE_WIDTH, backgroundColor: "#FFFFFF", paddingHorizontal: 22, paddingVertical: 24, alignSelf: "center" },
   logo: { width: 150, height: 84, alignSelf: "center", marginBottom: 8 },
   business: { fontSize: 20, fontWeight: "800", color: "#000000", textAlign: "center" },
   center: { fontSize: 13, color: "#222222", textAlign: "center", marginTop: 2 },
+  title: { marginTop: 10, fontSize: 15, fontWeight: "800", color: "#000000", textAlign: "center", letterSpacing: 2 },
   stamp: { marginTop: 8, fontSize: 18, fontWeight: "800", color: "#B42318", letterSpacing: 4 },
   divider: { borderBottomWidth: 1, borderStyle: "dashed", borderColor: "#999999", marginVertical: 10 },
   row: { flexDirection: "row", justifyContent: "space-between", gap: 12, marginVertical: 1 },
