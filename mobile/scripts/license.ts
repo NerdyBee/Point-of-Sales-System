@@ -37,6 +37,12 @@ function writePublicKey(publicKeyHex: string) {
   );
 }
 
+// Show mistakes as a plain message, not a stack trace.
+process.on("uncaughtException", (error) => {
+  console.error(`\n${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(1);
+});
+
 const command = process.argv[2];
 
 if (command === "keygen") {
@@ -54,7 +60,13 @@ if (command === "keygen") {
 } else if (command === "issue") {
   const device = option("device");
   const name = option("name");
-  if (!device || !name) throw new Error('Usage: issue --device ABCD-EFGH-JKLM --name "Shop name" [--days 365 | --expires YYYY-MM-DD]');
+  if (!device || !name) {
+    throw new Error(
+      `${!device ? "Missing --device." : "Missing --name (the shop or customer the licence is for)."}\n\n` +
+        'Example:\n  npm run license -- issue --device "3CUN-B7EN-MAWB" --name "Mama Nkechi Stores" --days 365\n\n' +
+        "  --days 365 or --expires 2027-12-31 sets an expiry; leave both out for a licence that never expires."
+    );
+  }
   if (!/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(normalizeDeviceCode(device))) {
     throw new Error(`"${device}" is not a device code. It looks like ABCD-EFGH-JKLM (12 letters/digits); put it in quotes if it has spaces.`);
   }
