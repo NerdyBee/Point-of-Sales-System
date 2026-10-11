@@ -31,7 +31,12 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.ajokecodesphere.ajokepos",
-      "versionCode": 1
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -62,9 +67,13 @@
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",
-          "imageWidth": 220,
+          "imageWidth": 300,
           "resizeMode": "contain",
-          "backgroundColor": "#060C18"
+          "backgroundColor": "#060C18",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#060C18"
+          }
         }
       ],
       [
@@ -79,7 +88,10 @@
     "backgroundColor": "#060C18",
     "extra": {
       "developer": "Ajoke Code Sphere",
-      "brand": "Ajoke POS"
+      "brand": "Ajoke POS",
+      "eas": {
+        "projectId": "858473c4-9bc4-4a76-a224-062d5c14a85f"
+      }
     }
   }
 }

@@ -1,19 +1,21 @@
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import { AboutLine, BrandHeader } from "./src/ui/BrandMark";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { AppProvider } from "./src/shell/AppContext";
-import { Shell } from "./src/shell/Shell";
+import appConfig from "./app.json";
 import type { Platform } from "./src/data/db";
 import { createExpoPlatform } from "./src/data/expoPlatform";
 import { migrate } from "./src/data/schema";
+import { AppProvider } from "./src/shell/AppContext";
+import { Shell } from "./src/shell/Shell";
+import { AppSplash, SPLASH_MIN_MS } from "./src/ui/AppSplash";
+import { AboutLine, BrandHeader } from "./src/ui/BrandMark";
 import { colors, font, spacing } from "./src/ui/theme";
-import appConfig from "./app.json";
 
 export default function App() {
   const [platform, setPlatform] = useState<Platform | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [splashVisible, setSplashVisible] = useState(true);
 
   useEffect(() => {
     void (async () => {
@@ -27,22 +29,32 @@ export default function App() {
     })();
   }, []);
 
+  // Status bar icons: light on the navy splash, dark on the app.
+  useEffect(() => {
+    const timer = setTimeout(() => setSplashVisible(false), SPLASH_MIN_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={styles.root}>
-        <StatusBar style="dark" />
-        {platform ? (
-          <AppProvider platform={platform}>
-            <Shell />
-          </AppProvider>
-        ) : (
-          <View style={styles.center}>
-            <BrandHeader size={120} />
-          {error ? <Text style={styles.error}>Could not open the local database: {error}</Text> : <ActivityIndicator size="large" color={colors.primary} />}
-          <AboutLine />
-          </View>
-        )}
-      </SafeAreaView>
+      <View style={styles.root}>
+        <StatusBar style={splashVisible ? "light" : "dark"} />
+        <SafeAreaView style={styles.root}>
+          {platform ? (
+            <AppProvider platform={platform}>
+              <Shell />
+            </AppProvider>
+          ) : (
+            <View style={styles.center}>
+              <BrandHeader size={120} />
+              {error ? <Text style={styles.error}>Could not open the local database: {error}</Text> : <ActivityIndicator size="large" color={colors.primary} />}
+              <AboutLine />
+            </View>
+          )}
+        </SafeAreaView>
+        {/* Branded splash over everything while the app starts (min. 2.5 s), then fades out. */}
+        <AppSplash ready={Boolean(platform || error)} />
+      </View>
     </SafeAreaProvider>
   );
 }
