@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, type TextInputProps, type ViewStyle } from "react-native";
+import { groupDigits } from "./numberFormat";
 import { colors, font, radius, spacing } from "./theme";
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
@@ -42,6 +43,15 @@ export function Field(props: TextInputProps & { label: string; hint?: string }) 
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </View>
   );
+}
+
+/**
+ * Field for amounts and quantities: shows 30,000 while typing, but the value going in and
+ * coming out is plain digits ("30000"), so callers parse it exactly as before.
+ */
+export function NumberField(props: Omit<TextInputProps, "value" | "onChangeText" | "keyboardType"> & { label: string; hint?: string; value: string; onChangeText(digits: string): void }) {
+  const { value, onChangeText, ...rest } = props;
+  return <Field {...rest} value={groupDigits(value)} onChangeText={(text) => onChangeText(text.replace(/\D/g, ""))} keyboardType="number-pad" />;
 }
 
 export function Card(props: { children: ReactNode; style?: ViewStyle }) {

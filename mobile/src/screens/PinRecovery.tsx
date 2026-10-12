@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { KeyboardAwareScrollView } from "../ui/keyboard";
 import type { Staff } from "../data/readModel";
 import { LICENSE_VENDOR } from "../license/config";
 import { useApp } from "../shell/AppContext";
@@ -80,7 +81,7 @@ export function PinRecovery(props: { owner: Staff; onCancel(): void; onDone(owne
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+    <KeyboardAwareScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
       <View style={styles.column}>
         <Button label="← Back to sign in" variant="ghost" onPress={props.onCancel} style={{ alignSelf: "flex-start" }} />
         <Title>Reset {props.owner.name}'s PIN</Title>
@@ -117,7 +118,7 @@ export function PinRecovery(props: { owner: Staff; onCancel(): void; onDone(owne
         )}
         {error ? <Banner tone="danger" message={error} /> : null}
       </View>
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

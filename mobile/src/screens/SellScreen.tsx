@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { KeyboardAwareScrollView, KeyboardSafe } from "../ui/keyboard";
 import { useApp } from "../shell/AppContext";
 import { readModel, type Customer, type Product } from "../data/readModel";
 import {
@@ -14,7 +15,7 @@ import {
   type PaymentMethod
 } from "../pos/actions";
 import { calculateSale, formatMoney, type CartLine, type SaleSummary } from "../pos/pricing";
-import { Badge, Banner, Button, Field, Muted, Title } from "../ui/components";
+import { Badge, Banner, Button, Field, Muted, NumberField, Title } from "../ui/components";
 import { useLayout } from "../ui/layout";
 import { EmptyState, Icon } from "../ui/appKit";
 import { loadPrinterSettings, printReceipt, printingAvailable, receiptFromSale } from "../print/printer";
@@ -243,7 +244,9 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
 
       {compact && cartOpen ? (
         <Modal animationType="slide" onRequestClose={() => setCartOpen(false)}>
-          <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>{cartPanel}</SafeAreaView>
+          <KeyboardSafe>
+            <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>{cartPanel}</SafeAreaView>
+          </KeyboardSafe>
         </Modal>
       ) : null}
 
@@ -394,8 +397,8 @@ function CheckoutModal(props: {
 
   return (
     <Modal transparent animationType="fade" onRequestClose={props.onCancel}>
-      <View style={styles.backdrop}>
-        <ScrollView style={{ width: "100%", maxWidth: 560 }} contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }} keyboardShouldPersistTaps="handled">
+      <KeyboardSafe style={styles.backdrop}>
+        <KeyboardAwareScrollView style={{ width: "100%", maxWidth: 560 }} contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}>
           <View style={styles.modal}>
             <Title>Charge {money(props.total)}</Title>
             <View style={styles.methods}>
@@ -423,7 +426,7 @@ function CheckoutModal(props: {
                     <Text style={styles.creditName}>{account.name}</Text>
                     <Text style={styles.lineMeta}>Owes {money(owed)} · Limit {limitText}{limit !== null ? ` · Available ${availableText}` : ""}</Text>
                   </View>
-                  <Field label="Paid now (optional)" value={paidNow} onChangeText={setPaidNow} keyboardType="number-pad" placeholder="0" />
+                  <NumberField label="Paid now (optional)" value={paidNow} onChangeText={setPaidNow} placeholder="0" />
                   {paidNowValue > 0 ? (
                     <>
                       <View style={styles.methods}>
@@ -443,7 +446,7 @@ function CheckoutModal(props: {
               )
             ) : method === "cash" ? (
               <>
-                <Field label="Cash received" value={tendered} onChangeText={setTendered} keyboardType="number-pad" />
+                <NumberField label="Cash received" value={tendered} onChangeText={setTendered} />
                 <View style={styles.quickCash}>
                   {[props.total, Math.ceil(props.total / 1000) * 1000, Math.ceil(props.total / 5000) * 5000].filter((value, index, all) => all.indexOf(value) === index).map((value) => (
                     <Button key={value} label={money(value)} variant="secondary" onPress={() => setTendered(String(value))} />
@@ -460,8 +463,8 @@ function CheckoutModal(props: {
               <Button label={credit ? "Complete credit sale" : "Complete sale"} onPress={() => void confirm()} busy={busy} disabled={credit && !canCredit} style={{ flex: 1 }} large />
             </View>
           </View>
-        </ScrollView>
-      </View>
+        </KeyboardAwareScrollView>
+      </KeyboardSafe>
     </Modal>
   );
 }
@@ -481,7 +484,8 @@ function CustomerModal(props: { canCreate: boolean; onClose(): void; onPick(cust
 
   return (
     <Modal transparent animationType="fade" onRequestClose={props.onClose}>
-      <View style={styles.backdrop}>
+      <KeyboardSafe style={styles.backdrop}>
+        <KeyboardAwareScrollView style={{ width: "100%", maxWidth: 560 }} contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}>
         <View style={styles.modal}>
           <Title>Customer</Title>
           <Field label="Search" value={search} onChangeText={setSearch} placeholder="Name or phone" />
@@ -514,7 +518,8 @@ function CustomerModal(props: { canCreate: boolean; onClose(): void; onPick(cust
           ) : null}
           <Button label="Close" variant="ghost" onPress={props.onClose} />
         </View>
-      </View>
+        </KeyboardAwareScrollView>
+      </KeyboardSafe>
     </Modal>
   );
 }

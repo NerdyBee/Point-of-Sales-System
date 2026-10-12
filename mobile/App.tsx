@@ -10,6 +10,7 @@ import { AppProvider } from "./src/shell/AppContext";
 import { Shell } from "./src/shell/Shell";
 import { AppSplash, SPLASH_MIN_MS } from "./src/ui/AppSplash";
 import { AboutLine, BrandHeader } from "./src/ui/BrandMark";
+import { KeyboardSafe } from "./src/ui/keyboard";
 import { colors, font, spacing } from "./src/ui/theme";
 
 export default function App() {
@@ -39,6 +40,7 @@ export default function App() {
     <SafeAreaProvider>
       <View style={styles.root}>
         <StatusBar style={splashVisible ? "light" : "dark"} />
+        <KeyboardSafe>
         <SafeAreaView style={styles.root}>
           {platform ? (
             <AppProvider platform={platform}>
@@ -52,6 +54,7 @@ export default function App() {
             </View>
           )}
         </SafeAreaView>
+        </KeyboardSafe>
         {/* Branded splash over everything while the app starts (min. 2.5 s), then fades out. */}
         <AppSplash ready={Boolean(platform || error)} />
       </View>

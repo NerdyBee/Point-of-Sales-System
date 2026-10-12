@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { KeyboardAwareScrollView } from "../ui/keyboard";
 import { useApp } from "../shell/AppContext";
 import { readModel, type ServerShift } from "../data/readModel";
 import { currentShift, openShift, requestCloseShift, shiftHistory, type LocalShift, type ShiftHistoryRow } from "../pos/actions";
 import { formatMoney } from "../pos/pricing";
 import { isStandalone } from "../sync/settings";
-import { Badge, Banner, Button, Card, Field, Muted, Title } from "../ui/components";
+import { Badge, Banner, Button, Card, Field, Muted, NumberField, Title } from "../ui/components";
 import { Icon } from "../ui/appKit";
 import { colors, font, radius, spacing } from "../ui/theme";
 
@@ -54,17 +55,17 @@ export function RegisterScreen(props: { onOpened: () => void }) {
 
   if (!shift) {
     return (
-      <ScrollView contentContainerStyle={styles.page}>
+      <KeyboardAwareScrollView contentContainerStyle={styles.page}>
         <Card style={styles.card}>
           {closedMessage ? <Banner tone="info" message={closedMessage} /> : null}
           <Title>Open register</Title>
           <Muted>Count the float in the drawer before you start.</Muted>
-          <Field label="Opening float" value={amount} onChangeText={setAmount} keyboardType="number-pad" placeholder="0" />
+          <NumberField label="Opening float" value={amount} onChangeText={setAmount} placeholder="0" />
           {error ? <Banner tone="danger" message={error} /> : null}
           <Button label="Open register" busy={busy} disabled={!amount} large onPress={() => void run(async () => { await openShift(platform, staff, value); props.onOpened(); })} />
         </Card>
         <ShiftHistory currency={currency} />
-      </ScrollView>
+      </KeyboardAwareScrollView>
     );
   }
 
@@ -73,7 +74,7 @@ export function RegisterScreen(props: { onOpened: () => void }) {
   const expected = serverShift ? Number(serverShift.expectedCash) : shift.openingBalance + shift.cashSales + cashIn;
 
   return (
-    <ScrollView contentContainerStyle={styles.page}>
+    <KeyboardAwareScrollView contentContainerStyle={styles.page}>
       <Card style={styles.card}>
         <View style={styles.row}>
           <Title>Register</Title>
@@ -89,7 +90,7 @@ export function RegisterScreen(props: { onOpened: () => void }) {
           <Banner tone="info" message={`Count of ${formatMoney(shift.countedCash ?? 0, currency)} sent. A manager approves and closes the shift in the web app; this tablet updates on the next sync.`} />
         ) : (
           <>
-            <Field label="Counted cash" value={amount} onChangeText={setAmount} keyboardType="number-pad" placeholder="Count the drawer" />
+            <NumberField label="Counted cash" value={amount} onChangeText={setAmount} placeholder="Count the drawer" />
             {amount ? <Muted>Difference: {formatMoney(value - expected, currency)}</Muted> : null}
             <Field label="Note (optional)" value={note} onChangeText={setNote} />
             {error ? <Banner tone="danger" message={error} /> : null}
@@ -113,7 +114,7 @@ export function RegisterScreen(props: { onOpened: () => void }) {
         )}
       </Card>
       <ShiftHistory currency={currency} excludeId={shift.id} />
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

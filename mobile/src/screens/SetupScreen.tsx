@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { KeyboardAwareScrollView } from "../ui/keyboard";
 import type { TenantSettings } from "../data/readModel";
 import { useApp } from "../shell/AppContext";
 import { createStandaloneBusiness, restoreBackup } from "../standalone/business";
@@ -40,7 +41,7 @@ export function SetupScreen() {
   const [mode, setMode] = useState<SyncMode>(settings?.mode ?? "local");
 
   return (
-    <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+    <KeyboardAwareScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
       <View style={styles.column}>
         <BrandHeader size={88} />
         <Title>Set up this device</Title>
@@ -64,7 +65,7 @@ export function SetupScreen() {
         {mode === "standalone" ? <StandaloneSetup /> : <ServerSetup mode={mode} />}
         <AboutLine />
       </View>
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

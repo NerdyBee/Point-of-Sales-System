@@ -42,7 +42,8 @@ import {
   type PaymentChannel
 } from "../standalone/credit";
 import { InflowSection } from "./InventoryScreens";
-import { Badge, Banner, Button, Card, Field, Muted } from "../ui/components";
+import { KeyboardAwareScrollView } from "../ui/keyboard";
+import { Badge, Banner, Button, Card, Field, Muted, NumberField } from "../ui/components";
 import { colors, font, radius, spacing } from "../ui/theme";
 
 type Section = "products" | "inflow" | "customers" | "staff" | "business";
@@ -264,12 +265,12 @@ function ProductSheet(props: { product: Product | null; categories: string[]; on
             </ScrollView>
           ) : null}
           <View style={styles.twoColumns}>
-            <View style={styles.column}><Field label="Selling price" value={price} onChangeText={setPrice} keyboardType="number-pad" /></View>
-            <View style={styles.column}><Field label="Cost price" value={cost} onChangeText={setCost} keyboardType="number-pad" placeholder="Optional" /></View>
+            <View style={styles.column}><NumberField label="Selling price" value={price} onChangeText={setPrice} /></View>
+            <View style={styles.column}><NumberField label="Cost price" value={cost} onChangeText={setCost} placeholder="Optional" /></View>
           </View>
           <View style={styles.twoColumns}>
-            {existing ? null : <View style={styles.column}><Field label="Quantity in stock" value={stock} onChangeText={setStock} keyboardType="number-pad" /></View>}
-            <View style={styles.column}><Field label="Low-stock warning at" value={reorder} onChangeText={setReorder} keyboardType="number-pad" placeholder="0" /></View>
+            {existing ? null : <View style={styles.column}><NumberField label="Quantity in stock" value={stock} onChangeText={setStock} /></View>}
+            <View style={styles.column}><NumberField label="Low-stock warning at" value={reorder} onChangeText={setReorder} placeholder="0" /></View>
           </View>
           <Field label="Barcode" value={barcode} onChangeText={setBarcode} autoCapitalize="none" placeholder="Optional" />
           {existing && tracked ? <Muted>To change the quantity use the Stock tab, so every change is recorded.</Muted> : null}
@@ -301,8 +302,8 @@ function StockPanel(props: { product: Product; onDone(): void }) {
         <Button label="Remove (−)" variant={direction === "out" ? "danger" : "secondary"} onPress={() => setDirection("out")} style={{ flex: 1 }} />
       </View>
       <View style={styles.twoColumns}>
-        <View style={styles.column}><Field label="Quantity" value={quantity} onChangeText={setQuantity} keyboardType="number-pad" /></View>
-        {direction === "in" ? <View style={styles.column}><Field label="Cost per unit" value={unitCost} onChangeText={setUnitCost} keyboardType="number-pad" placeholder="Optional" /></View> : null}
+        <View style={styles.column}><NumberField label="Quantity" value={quantity} onChangeText={setQuantity} /></View>
+        {direction === "in" ? <View style={styles.column}><NumberField label="Cost per unit" value={unitCost} onChangeText={setUnitCost} placeholder="Optional" /></View> : null}
         <View style={[styles.column, { flex: 2 }]}><Field label={direction === "in" ? "Supplier / note" : "Reason"} value={reason} onChangeText={setReason} placeholder={direction === "in" ? "Optional" : "Damaged / expired / recount"} /></View>
       </View>
       {amount ? <Muted>New quantity: {props.product.stock + (direction === "in" ? amount : -amount)}</Muted> : null}
@@ -577,7 +578,7 @@ function CustomerSheet(props: { customer: Customer | null; onClose(): void }) {
             </View>
           ) : paying ? (
             <>
-              <Field label="Amount received" value={payAmount} onChangeText={setPayAmount} keyboardType="number-pad" hint={`Owes ${money(owes)}`} />
+              <NumberField label="Amount received" value={payAmount} onChangeText={setPayAmount} hint={`Owes ${money(owes)}`} />
               <View style={styles.wrapRow}>
                 {(Object.keys(payLabels) as PaymentChannel[]).map((item) => (
                   <Pressable key={item} onPress={() => setPayMethod(item)} style={[styles.chip, payMethod === item && styles.chipActive]}>
@@ -636,11 +637,10 @@ function CustomerSheet(props: { customer: Customer | null; onClose(): void }) {
             ))}
           </View>
           {canSetCredit ? (
-            <Field
+            <NumberField
               label="Credit limit"
               value={creditLimit}
               onChangeText={setCreditLimit}
-              keyboardType="number-pad"
               placeholder="No limit"
               hint="The most this customer may owe. Leave blank for no limit; 0 = cash only."
             />
@@ -814,7 +814,7 @@ function BusinessSection() {
     );
 
   return (
-    <ScrollView contentContainerStyle={[styles.page, { alignItems: "center" }]} keyboardShouldPersistTaps="handled">
+    <KeyboardAwareScrollView contentContainerStyle={[styles.page, { alignItems: "center" }]}>
       <Card style={{ width: "100%", maxWidth: 640 }}>
         <Text style={styles.subheading}>Receipt header</Text>
         <View style={styles.logoRow}>
@@ -886,7 +886,7 @@ function BusinessSection() {
           }
         />
       </Card>
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

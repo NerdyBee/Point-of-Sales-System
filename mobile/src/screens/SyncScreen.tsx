@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import { KeyboardAwareScrollView } from "../ui/keyboard";
 import { useApp } from "../shell/AppContext";
 import { resetLocalData } from "../data/schema";
 import { setServerToken } from "../sync/settings";
@@ -53,7 +54,7 @@ export function SyncScreen(props: { onRepair: () => void }) {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.page}>
+    <KeyboardAwareScrollView contentContainerStyle={styles.page}>
       <View style={styles.column}>
         <Title>Sync</Title>
         {syncStatus.revoked ? <Banner tone="danger" message="This tablet was removed on the server. Pair it again." /> : null}
@@ -115,7 +116,7 @@ export function SyncScreen(props: { onRepair: () => void }) {
         ) : null}
         <AboutLine />
       </View>
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

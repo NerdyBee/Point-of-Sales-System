@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import type { ComponentProps, ReactNode } from "react";
-import { KeyboardAvoidingView, Modal, Platform as RNPlatform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { Modal, Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { KeyboardAwareScrollView, KeyboardSafe } from "./keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLayout } from "./layout";
 import { colors, font, radius, spacing } from "./theme";
@@ -88,7 +89,7 @@ export function Sheet(props: { title: string; onClose: () => void; children: Rea
   const insets = useSafeAreaInsets();
   return (
     <Modal transparent animationType={compact ? "slide" : "fade"} onRequestClose={props.onClose}>
-      <KeyboardAvoidingView behavior={RNPlatform.OS === "ios" ? "padding" : undefined} style={[styles.backdrop, compact ? styles.backdropCompact : styles.backdropWide]}>
+      <KeyboardSafe style={[styles.backdrop, compact ? styles.backdropCompact : styles.backdropWide]}>
         <Pressable style={StyleSheet.absoluteFill} accessibilityLabel="Close" onPress={props.onClose} />
         <View style={[styles.sheet, compact ? [styles.sheetCompact, { paddingBottom: Math.max(insets.bottom, spacing.lg) }] : styles.sheetWide, props.style]}>
           {compact ? <View style={styles.grabber} /> : null}
@@ -96,12 +97,12 @@ export function Sheet(props: { title: string; onClose: () => void; children: Rea
             <Text style={styles.sheetTitle} numberOfLines={1}>{props.title}</Text>
             <IconButton icon="close" label="Close" onPress={props.onClose} />
           </View>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.sm }}>
+          <KeyboardAwareScrollView contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.sm }}>
             {props.children}
-          </ScrollView>
+          </KeyboardAwareScrollView>
           {props.footer ? <View style={styles.sheetFooter}>{props.footer}</View> : null}
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardSafe>
     </Modal>
   );
 }

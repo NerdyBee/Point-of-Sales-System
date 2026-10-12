@@ -5,7 +5,7 @@ import { formatMoney } from "../pos/pricing";
 import { useApp } from "../shell/AppContext";
 import { cancelInflow, listInflows, recordInflow, type Inflow } from "../standalone/inventory";
 import { EmptyState, Fab, Icon, IconButton, ListItem, Sheet } from "../ui/appKit";
-import { Badge, Banner, Button, Field, Muted } from "../ui/components";
+import { Badge, Banner, Button, Field, Muted, NumberField } from "../ui/components";
 import { colors, font, radius, spacing } from "../ui/theme";
 
 const digits = (value: string) => Number(value.replace(/[^0-9]/g, "")) || 0;
@@ -145,8 +145,8 @@ function InflowSheet(props: { onClose(): void; initialProduct?: Product }) {
             <IconButton icon="trash-outline" label={`Remove ${line.product.name}`} tone="danger" onPress={() => setLines((current) => current.filter((item) => item.product.id !== line.product.id))} />
           </View>
           <View style={styles.twoColumns}>
-            <View style={styles.column}><Field label="Quantity received" value={line.quantity} onChangeText={(value) => update(line.product.id, { quantity: value })} keyboardType="number-pad" /></View>
-            {showCosts ? <View style={styles.column}><Field label="Cost per unit" value={line.unitCost} onChangeText={(value) => update(line.product.id, { unitCost: value })} keyboardType="number-pad" placeholder="Optional" /></View> : null}
+            <View style={styles.column}><NumberField label="Quantity received" value={line.quantity} onChangeText={(value) => update(line.product.id, { quantity: value })} /></View>
+            {showCosts ? <View style={styles.column}><NumberField label="Cost per unit" value={line.unitCost} onChangeText={(value) => update(line.product.id, { unitCost: value })} placeholder="Optional" /></View> : null}
           </View>
         </View>
       ))}

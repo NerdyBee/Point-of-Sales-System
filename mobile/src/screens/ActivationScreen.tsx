@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
+import { KeyboardAwareScrollView } from "../ui/keyboard";
 import { BRAND } from "../brand";
 import { LICENSE_VENDOR } from "../license/config";
 import { activateLicense } from "../license/licenseStore";
@@ -35,7 +36,7 @@ export function ActivationScreen(props: { state: LicenseState; onActivated(): vo
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+    <KeyboardAwareScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
       <View style={styles.column}>
         <BrandHeader size={96} />
         <Title>{previous?.reason === "expired" ? "Renew your licence" : `Activate ${BRAND.appName}`}</Title>
@@ -73,7 +74,7 @@ export function ActivationScreen(props: { state: LicenseState; onActivated(): vo
           </View>
         ) : null}
       </View>
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

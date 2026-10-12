@@ -76,16 +76,19 @@ export function LockScreen(props: { onOpenSync: () => void }) {
           ))}
         </View>
       )}
-      <Button label={standalone ? "Backup" : "Sync & settings"} variant="ghost" onPress={props.onOpenSync} style={{ alignSelf: "flex-start" }} />
-      {licence && licence.daysLeft !== null && licence.daysLeft <= LICENSE_WARN_DAYS ? (
-        <Banner tone="warning" message={`Licence expires in ${licence.daysLeft} day${licence.daysLeft === 1 ? "" : "s"}. Contact your supplier to renew (device code ${license?.deviceCode}).`} />
-      ) : null}
-      <AboutLine />
-      {licence ? (
-        <Text style={styles.licence}>
-          Licensed to {licence.license.name} · {licence.license.expires ? `valid until ${licence.license.expires}` : "no expiry"} · device {license?.deviceCode}
-        </Text>
-      ) : null}
+      {/* Pinned to the bottom of the screen when there are only a few staff. */}
+      <View style={styles.footer}>
+        <Button label={standalone ? "Backup" : "Sync & settings"} variant="ghost" onPress={props.onOpenSync} style={{ alignSelf: "flex-start" }} />
+        {licence && licence.daysLeft !== null && licence.daysLeft <= LICENSE_WARN_DAYS ? (
+          <Banner tone="warning" message={`Licence expires in ${licence.daysLeft} day${licence.daysLeft === 1 ? "" : "s"}. Contact your supplier to renew (device code ${license?.deviceCode}).`} />
+        ) : null}
+        <AboutLine />
+        {licence ? (
+          <Text style={styles.licence}>
+            Licensed to {licence.license.name} · {licence.license.expires ? `valid until ${licence.license.expires}` : "no expiry"} · device {license?.deviceCode}
+          </Text>
+        ) : null}
+      </View>
     </View>
   );
 
@@ -126,7 +129,7 @@ export function LockScreen(props: { onOpenSync: () => void }) {
 
   return (
     <View style={styles.page}>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: spacing.md }}>{list}</ScrollView>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }}>{list}</ScrollView>
       <View style={{ flex: 1, justifyContent: "center" }}>{pad}</View>
     </View>
   );
@@ -135,7 +138,8 @@ export function LockScreen(props: { onOpenSync: () => void }) {
 const styles = StyleSheet.create({
   page: { flex: 1, flexDirection: "row", backgroundColor: colors.background, padding: spacing.xl, gap: spacing.xl },
   compactPage: { flexGrow: 1, backgroundColor: colors.background, padding: spacing.lg, gap: spacing.md },
-  list: { gap: spacing.md },
+  list: { flexGrow: 1, gap: spacing.md },
+  footer: { marginTop: "auto", gap: spacing.md, paddingTop: spacing.md },
   listWide: { flex: 1 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
   pad: { alignItems: "center", gap: spacing.lg },

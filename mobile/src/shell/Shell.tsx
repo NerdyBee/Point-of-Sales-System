@@ -14,6 +14,7 @@ import { lastBackupAt } from "../standalone/business";
 import { isStandalone } from "../sync/settings";
 import { Icon, IconButton, type IconName } from "../ui/appKit";
 import { Button } from "../ui/components";
+import { useKeyboardVisible } from "../ui/keyboard";
 import { useLayout } from "../ui/layout";
 import { colors, font, radius, spacing } from "../ui/theme";
 import { useApp } from "./AppContext";
@@ -39,6 +40,7 @@ export function Shell() {
   const [lastBackup, setLastBackup] = useState<string | null>(null);
   const standalone = isStandalone(settings);
   const { compact } = useLayout();
+  const typing = useKeyboardVisible();
 
   useEffect(() => {
     if (standalone) void lastBackupAt(platform).then(setLastBackup);
@@ -149,7 +151,8 @@ export function Shell() {
           <IconButton icon="lock-closed-outline" label="Lock" onPress={signOut} />
         </View>
         {content}
-        <View style={styles.bottomBar} accessibilityRole="tablist">
+        {/* Hidden while the keyboard is open so the form gets the space above it. */}
+        <View style={[styles.bottomBar, typing && { display: "none" }]} accessibilityRole="tablist">
           {tabs.map((item) => {
             const active = tab === item.key;
             return (
