@@ -2,7 +2,7 @@
 export const LICENSE_VENDOR = {
   name: "Ajoke Code Sphere",
   /** WhatsApp/phone number shown to customers, e.g. "+234 803 000 0000". Leave empty to hide. */
-  phone: ""
+  phone: "+234 803 415 0437"
 };
 
 /** Warn this many days before a licence expires. */

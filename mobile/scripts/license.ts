@@ -4,6 +4,7 @@
  *   npm run license -- keygen                       create the signing key (once) and update src/license/publicKey.ts
  *   npm run license -- issue --device ABCD-EFGH-JKLM --name "Mama Nkechi Stores" [--days 365 | --expires 2027-12-31]
  *   npm run license -- verify --device ABCD-EFGH-JKLM --code <activation code>
+ *   npm run license -- reset-pin --request ABCD-EFGH-JKLM-WXYZ-2345   one-time code for a forgotten owner PIN
  *
  * The private key lives in mobile/.license/private-key.json (git-ignored). Back it up: without
  * it you cannot issue codes for apps already built with its public key.
@@ -12,12 +13,13 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { issueLicense, normalizeDeviceCode, publicKeyFor, verifyLicense, type LicensePayload } from "../src/license/license";
+import { issueLicense, issuePinReset, normalizeDeviceCode, parsePinResetRequest, pinResetRequestCode, publicKeyFor, verifyLicense, type LicensePayload } from "../src/license/license";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const keyDir = join(root, ".license");
 const keyFile = join(keyDir, "private-key.json");
 const issuedLog = join(keyDir, "issued.csv");
+const resetLog = join(keyDir, "pin-resets.csv");
 const publicKeyModule = join(root, "src", "license", "publicKey.ts");
 
 function option(name: string) {
@@ -92,6 +94,33 @@ if (command === "keygen") {
   if (!device || !code) throw new Error("Usage: verify --device ABCD-EFGH-JKLM --code <activation code>");
   const result = verifyLicense(code, { publicKeyHex: publicKeyFor(loadSecret()), deviceCode: device });
   console.log(result.ok ? `Valid: ${JSON.stringify(result.license)}` : `Invalid (${result.reason}): ${result.message}`);
+} else if (command === "reset-pin") {
+  const request = option("request");
+  if (!request) {
+    throw new Error(
+      "Missing --request (the request code shown on the shop's phone under Forgot PIN?).\n\n" +
+        'Example:\n  npm run license -- reset-pin --request "3CUN-B7EN-MAWB-7KQ2-X9TD"'
+    );
+  }
+  const parsed = parsePinResetRequest(request);
+  if (!parsed) throw new Error(`"${request}" is not a request code. It looks like ABCD-EFGH-JKLM-WXYZ-2345 (20 letters/digits).`);
+  // Who is this device licensed to? Check it matches the person asking before sending the code.
+  const licensedTo = existsSync(issuedLog)
+    ? readFileSync(issuedLog, "utf8")
+        .split(/\r?\n/)
+        .filter((line) => line.includes(`,${parsed.device},`))
+        .map((line) => line.split(",").slice(1, -3).join(",").replace(/^"|"$/g, "").replace(/""/g, '"'))
+    : [];
+  const id = `PIN-${randomUUID().slice(0, 8).toUpperCase()}`;
+  const code = issuePinReset(loadSecret(), { v: 1, kind: "pin_reset", id, device: parsed.device, nonce: parsed.nonce, issued: new Date().toISOString().slice(0, 10) });
+  mkdirSync(keyDir, { recursive: true });
+  if (!existsSync(resetLog)) appendFileSync(resetLog, "reset id,device,request,issued at\n");
+  appendFileSync(resetLog, `${id},${parsed.device},${pinResetRequestCode(parsed.device, parsed.nonce)},${new Date().toISOString()}\n`);
+  console.log(
+    `Device ${parsed.device} is licensed to: ${licensedTo.length ? [...new Set(licensedTo)].join(" / ") : "(not in your issued.csv - check who is asking!)"}\n` +
+      "Only send this code if you are sure the request comes from that shop's owner.\n\n" +
+      `Reset ${id}. Send this reset code (copy it exactly). It works once, on that phone only:\n\n${code}\n`
+  );
 } else {
-  console.log("Commands: keygen | issue --device <code> --name <shop> [--days N | --expires YYYY-MM-DD] | verify --device <code> --code <code>");
+  console.log("Commands: keygen | issue --device <code> --name <shop> [--days N | --expires YYYY-MM-DD] | verify --device <code> --code <code> | reset-pin --request <request code>");
 }

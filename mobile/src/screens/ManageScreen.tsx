@@ -753,6 +753,9 @@ function StaffSheet(props: { staff: Staff | null; onClose(): void }) {
         <View style={styles.column}><Field label={existing ? "New PIN" : "6-digit PIN"} value={pin} onChangeText={(value) => setPin(digits(value))} keyboardType="number-pad" secureTextEntry placeholder={existing ? "Leave empty to keep" : undefined} /></View>
         <View style={styles.column}><Field label="Repeat PIN" value={pinAgain} onChangeText={(value) => setPinAgain(digits(value))} keyboardType="number-pad" secureTextEntry /></View>
       </View>
+      {existing && (existing as Staff & { pinResetAt?: string }).pinResetAt ? (
+        <Muted>PIN last reset with a recovery code on {new Date(String((existing as Staff & { pinResetAt?: string }).pinResetAt)).toLocaleString()}.</Muted>
+      ) : null}
       {error ? <Banner tone="danger" message={error} /> : null}
     </Sheet>
   );

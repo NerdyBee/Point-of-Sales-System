@@ -28,3 +28,8 @@ export async function verifyPin(platform: Platform, staffId: string, pin: string
   failures.delete(staffId);
   return { ok: true, staff };
 }
+
+/** Lifts the wrong-PIN lockout, e.g. after an owner's PIN is reset. */
+export function clearPinFailures(staffId: string) {
+  failures.delete(staffId);
+}

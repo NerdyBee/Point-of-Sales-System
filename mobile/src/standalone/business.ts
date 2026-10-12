@@ -49,7 +49,7 @@ export function validatePin(pin: string) {
   return null;
 }
 
-async function pinHash(platform: Platform, pin: string) {
+export async function pinHash(platform: Platform, pin: string) {
   return `sha256:${await platform.sha256Hex(pin)}`;
 }
 

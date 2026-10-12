@@ -151,3 +151,72 @@ export function verifyLicense(code: string, input: { publicKeyHex: string; devic
   }
   return { ok: true, license, daysLeft: null };
 }
+
+// ----- owner PIN reset --------------------------------------------------------------------
+
+/**
+ * A forgotten owner PIN is reset with a one-time code from the vendor:
+ *   app shows a request code = device code + a random one-time nonce (DEVC-CODE-XXXX-NNNN-NNNN)
+ *   vendor signs { device, nonce } with the licence key (scripts/license.ts reset-pin)
+ *   app accepts the reset code only for this device and only for the request it is waiting on.
+ */
+export interface PinResetPayload {
+  v: 1;
+  kind: "pin_reset";
+  /** Reset id, for the vendor's records. */
+  id: string;
+  device: string;
+  nonce: string;
+  issued: string;
+}
+
+export type PinResetCheck = { ok: true; reset: PinResetPayload } | { ok: false; message: string };
+
+/** Random request nonce: 8 characters from the device-code alphabet. */
+export async function newPinResetNonce(randomSeed: string, sha256Hex: (value: string) => Promise<string>) {
+  const hex = await sha256Hex(`naijapos-pin-reset:${randomSeed}`);
+  let nonce = "";
+  for (let index = 0; index < 8; index += 1) nonce += deviceAlphabet[parseInt(hex.slice(index * 2, index * 2 + 2), 16) % deviceAlphabet.length];
+  return nonce;
+}
+
+export function pinResetRequestCode(deviceCode: string, nonce: string) {
+  return `${normalizeDeviceCode(deviceCode)}-${nonce.slice(0, 4)}-${nonce.slice(4)}`;
+}
+
+/** Splits a request code into device code and nonce, or null if it is not one. */
+export function parsePinResetRequest(requestCode: string) {
+  const clean = requestCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (clean.length !== 20 || [...clean].some((char) => !deviceAlphabet.includes(char))) return null;
+  return { device: normalizeDeviceCode(clean.slice(0, 12)), nonce: clean.slice(12) };
+}
+
+/** Vendor side: signs a reset code for one request. */
+export function issuePinReset(secretKeyHex: string, payload: PinResetPayload) {
+  return issueLicense(secretKeyHex, payload as unknown as LicensePayload);
+}
+
+/** App side: checks a pasted reset code against this device and the pending request. */
+export function verifyPinReset(code: string, input: { publicKeyHex: string; deviceCode: string; nonce: string }): PinResetCheck {
+  const invalid = { ok: false as const, message: "That is not a valid reset code. Copy the whole code you were sent." };
+  const [bodyPart, signaturePart, extra] = code.trim().split(".");
+  if (!bodyPart || !signaturePart || extra !== undefined) return invalid;
+  let body: Uint8Array;
+  let reset: PinResetPayload;
+  try {
+    body = fromBase64Url(bodyPart);
+    reset = JSON.parse(fromUtf8(body)) as PinResetPayload;
+  } catch {
+    return invalid;
+  }
+  let valid = false;
+  try {
+    valid = ed25519.verify(fromBase64Url(signaturePart), body, hexToBytes(input.publicKeyHex));
+  } catch {
+    valid = false;
+  }
+  if (!valid || reset.v !== 1 || reset.kind !== "pin_reset") return { ok: false, message: "This reset code is not genuine or was changed." };
+  if (normalizeDeviceCode(reset.device) !== normalizeDeviceCode(input.deviceCode)) return { ok: false, message: "This reset code is for a different device." };
+  if (reset.nonce !== input.nonce) return { ok: false, message: "This reset code is for an older request. Send the request code shown now and ask for a new reset code." };
+  return { ok: true, reset };
+}

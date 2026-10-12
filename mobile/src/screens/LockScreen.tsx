@@ -9,6 +9,7 @@ import { AboutLine, BrandHeader } from "../ui/BrandMark";
 import { Banner, Button, Muted, PinPad, Title } from "../ui/components";
 import { useLayout } from "../ui/layout";
 import { colors, font, radius, spacing } from "../ui/theme";
+import { PinRecovery } from "./PinRecovery";
 
 /**
  * Staff pick their name and enter their 6-digit PIN. Works fully offline.
@@ -22,6 +23,7 @@ export function LockScreen(props: { onOpenSync: () => void }) {
   const [selected, setSelected] = useState<Staff | null>(null);
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [recovering, setRecovering] = useState(false);
   const standalone = isStandalone(settings);
 
   useEffect(() => {
@@ -93,12 +95,30 @@ export function LockScreen(props: { onOpenSync: () => void }) {
       <Text style={styles.prompt}>PIN for {selected.name}</Text>
       <PinPad value={pin} length={6} onChange={setPin} onSubmit={(value) => void submit(value)} />
       {error ? <Banner tone="danger" message={error} /> : null}
+      {standalone && selected.role === "owner" ? (
+        <Button label="Forgot PIN?" variant="ghost" onPress={() => setRecovering(true)} />
+      ) : standalone ? (
+        <Muted>Forgot your PIN? Ask an owner to set a new one in Manage → Staff.</Muted>
+      ) : null}
     </View>
   ) : (
     <View style={styles.pad}>
       <Muted>Select your name to sign in</Muted>
     </View>
   );
+
+  if (recovering && selected) {
+    return (
+      <PinRecovery
+        owner={selected}
+        onCancel={() => setRecovering(false)}
+        onDone={(owner) => {
+          setRecovering(false);
+          void signIn(owner);
+        }}
+      />
+    );
+  }
 
   if (compact) {
     return <ScrollView contentContainerStyle={styles.compactPage}>{selected ? pad : list}</ScrollView>;

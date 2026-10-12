@@ -106,7 +106,24 @@ Updates only install over the old app if they're signed with the same key (secti
 | App updated on the same phone | Nothing to do. Data and activation stay. |
 | App uninstalled and reinstalled | Same device code: paste the existing activation code again, then restore their latest backup. |
 | Phone date set back to dodge expiry | The app notices and asks for the correct date. |
+| Owner forgot their PIN | See **5.1** below. Another owner on the phone can also simply set a new PIN in *Manage → Staff*. |
 | A second phone in the same shop | Each phone needs its own licence (its own device code). Standalone phones do not share data; for several tills sharing one stock, set up the office/cloud server instead. |
+
+### 5.1 Resetting a forgotten owner PIN
+
+Staff PINs are reset by an owner in *Manage → Staff*. If the **only** owner forgets their PIN, they get a one-time reset code from you:
+
+1. On the sign-in screen they tap their name, then **Forgot PIN?**. The phone shows a **request code** like `3CUN-B7EN-MAWB-7KQ2-X9TD` (device code + a one-time part). They tap *Share request code* and send it to you.
+2. **Check who is asking.** The command below shows who that device is licensed to (from `issued.csv`). Confirm it is the shop's owner (e.g. call the number you have on file) before sending anything: a reset code lets whoever holds the phone take over the owner account.
+3. Run:
+
+   ```powershell
+   npm run license -- reset-pin --request "3CUN-B7EN-MAWB-7KQ2-X9TD"
+   ```
+
+4. Send them the reset code it prints. They paste it, tap *Continue*, choose a new 6-digit PIN twice, and are signed in. Nothing else on the phone changes.
+
+A reset code works **once**, only on that phone, and only for the request shown at that moment, within 7 days. Each reset is logged in `mobile/.license/pin-resets.csv`, and the owner's record in *Manage → Staff* shows when the PIN was last reset with a code. Advise every shop to add a trusted second owner so they rarely need this.
 
 ---
 
@@ -117,6 +134,7 @@ Updates only install over the old app if they're signed with the same key (secti
 | *App not installed* / blocked | Allow installing unknown apps for the app used to open the APK. If an older Ajoke POS is installed, the new APK needs a higher `versionCode` and the same signing key. |
 | *This code is for device …, not this device* | The code was issued for another phone's device code. Ask for the code shown on **this** phone and issue a new one. |
 | *Not genuine or was changed* | The code was cut off or altered when copied. Send it again in one piece. |
+| Reset code: *for an older request* | They tapped *Back* and chose a different owner, or the request is over 7 days old, so the phone now shows a new request code. Ask for the code shown now and run `reset-pin` again. |
 | Printing not available | Bluetooth printing works only in the installed APK, not in Expo Go. On Android 12+, allow the *Nearby devices* permission when asked. |
 | Printer not in the list | Pair it in the phone's **Bluetooth settings** first (PIN is often `0000` or `1234`), or use *Bluetooth LE (scan)*. |
 | Logo prints too dark or blotchy | Use a simple, high-contrast logo (dark on white or transparent). Printers print black dots only. |
