@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ajoke POS Android Guide</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm 18mm 15mm; }
+  :root {
+    --navy: #060C18;
+    --ink: #1B2430;
+    --muted: #5B6675;
+    --line: #DDE2E8;
+    --brand: #0E7C66;
+    --brand-soft: #E7F4F0;
+    --warn-soft: #FFF5E0;
+    --warn: #A15C00;
+    --danger-soft: #FDECEA;
+    --danger: #B42318;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #FFFFFF; color: var(--ink); font-family: "Segoe UI", Roboto, Arial, sans-serif; font-size: 10.5pt; line-height: 1.5; }
+  h1, h2, h3 { color: var(--navy); line-height: 1.2; }
+  h2 { font-size: 17pt; margin: 0 0 4mm; padding-bottom: 2mm; border-bottom: 2px solid var(--brand); }
+  h3 { font-size: 12pt; margin: 5mm 0 2mm; }
+  p { margin: 0 0 2.5mm; }
+  ul, ol { margin: 0 0 3mm; padding-left: 6mm; }
+  li { margin-bottom: 1.2mm; }
+  .section { page-break-before: always; }
+  .keep { page-break-inside: avoid; }
+  .num { display: inline-block; min-width: 9mm; color: var(--brand); }
+
+  /* Cover */
+  .cover { height: 260mm; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: var(--navy); color: #FFFFFF; margin: -16mm -15mm 0; padding: 20mm; }
+  .cover img { width: 58mm; margin-bottom: 10mm; }
+  .cover h1 { color: #FFFFFF; font-size: 34pt; margin: 0 0 3mm; letter-spacing: 0.5px; }
+  .cover .sub { font-size: 15pt; color: #C9D3E0; margin-bottom: 18mm; }
+  .cover .meta { font-size: 10pt; color: #9AA7B8; }
+  .cover .meta strong { color: #FFFFFF; }
+
+  /* Contents */
+  .toc { columns: 2; column-gap: 10mm; padding: 0; list-style: none; }
+  .toc li { break-inside: avoid; padding: 1.6mm 0; border-bottom: 1px dotted var(--line); }
+
+  /* Elements */
+  .ui { display: inline-block; padding: 0 1.8mm; border: 1px solid #B9C3CF; border-radius: 1.5mm; background: #F4F6F9; font-weight: 600; font-size: 9.5pt; white-space: nowrap; }
+  .tab { display: inline-block; padding: 0 1.8mm; border-radius: 1.5mm; background: var(--navy); color: #FFFFFF; font-weight: 600; font-size: 9.5pt; white-space: nowrap; }
+  .box { border-radius: 2mm; padding: 3mm 4mm; margin: 3mm 0; page-break-inside: avoid; }
+  .box p:last-child, .box ul:last-child { margin-bottom: 0; }
+  .tip { background: var(--brand-soft); border-left: 4px solid var(--brand); }
+  .warn { background: var(--warn-soft); border-left: 4px solid var(--warn); }
+  .danger { background: var(--danger-soft); border-left: 4px solid var(--danger); }
+  .box .label { font-weight: 700; display: block; margin-bottom: 1mm; }
+  .tip .label { color: var(--brand); }
+  .warn .label { color: var(--warn); }
+  .danger .label { color: var(--danger); }
+
+  table { width: 100%; border-collapse: collapse; margin: 2mm 0 4mm; page-break-inside: avoid; font-size: 9.8pt; }
+  th, td { text-align: left; vertical-align: top; padding: 1.8mm 2.5mm; border-bottom: 1px solid var(--line); }
+  th { background: #F1F4F7; color: var(--navy); font-weight: 700; }
+  td.c, th.c { text-align: center; }
+
+  .steps { counter-reset: step; list-style: none; padding-left: 0; }
+  .steps > li { counter-increment: step; position: relative; padding-left: 9mm; margin-bottom: 2.2mm; }
+  .steps > li::before { content: counter(step); position: absolute; left: 0; top: 0.2mm; width: 6mm; height: 6mm; border-radius: 50%; background: var(--brand); color: #FFFFFF; font-size: 8.5pt; font-weight: 700; text-align: center; line-height: 6mm; }
+
+  /* Bottom bar illustration */
+  .navbar { display: flex; border: 1px solid var(--line); border-radius: 3mm; overflow: hidden; margin: 3mm 0 4mm; page-break-inside: avoid; }
+  .navbar div { flex: 1; text-align: center; padding: 2.5mm 1mm; font-size: 9pt; font-weight: 600; border-right: 1px solid var(--line); }
+  .navbar div:last-child { border-right: 0; }
+  .navbar div span { display: block; font-size: 8pt; font-weight: 400; color: var(--muted); }
+
+  /* Receipt illustration */
+  .receipts { display: flex; gap: 6mm; margin: 3mm 0; page-break-inside: avoid; }
+  .receipts > div { flex: 1; }
+  .receipt { border: 1px dashed #9AA4B1; border-radius: 1.5mm; padding: 3mm 4mm; font-family: Consolas, "Courier New", monospace; font-size: 8.6pt; line-height: 1.45; background: #FFFFFF; }
+  .receipt .r { display: flex; justify-content: space-between; gap: 3mm; }
+  .receipt .center { text-align: center; }
+  .receipt .rule { border-top: 1px dashed #9AA4B1; margin: 1.5mm 0; }
+  .receipt .big { font-weight: 700; font-size: 9.6pt; }
+  .caption { font-size: 9pt; color: var(--muted); text-align: center; margin-top: 1mm; }
+
+  .footer-note { margin-top: 8mm; font-size: 9pt; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+
+<!-- ================= COVER ================= -->
+<div class="cover">
+  <img src="../../assets/logo.png" alt="Ajoke Code Sphere logo">
+  <h1>Ajoke POS</h1>
+  <div class="sub">Step-by-step guide for Android phones and tablets</div>
+  <div class="meta">
+    <p><strong>For shop owners, managers and cashiers</strong></p>
+    <p>Covers app version 1.0 · October 2026</p>
+    <p>Developed by <strong>Ajoke Code Sphere</strong></p>
+  </div>
+</div>
+
+<!-- ================= CONTENTS ================= -->
+<div class="section">
+  <h2>What's in this guide</h2>
+  <ol class="toc">
+    <li><span class="num">1</span>Before you start</li>
+    <li><span class="num">2</span>Install the app</li>
+    <li><span class="num">3</span>Activate your licence</li>
+    <li><span class="num">4</span>Set up your shop</li>
+    <li><span class="num">5</span>Signing in and finding your way</li>
+    <li><span class="num">6</span>Add your products</li>
+    <li><span class="num">7</span>Add your staff</li>
+    <li><span class="num">8</span>Open the register</li>
+    <li><span class="num">9</span>Make a sale</li>
+    <li><span class="num">10</span>Receipts: print or send by WhatsApp</li>
+    <li><span class="num">11</span>Selling on credit</li>
+    <li><span class="num">12</span>Customers, payments and statements</li>
+    <li><span class="num">13</span>Sales history and voiding a sale</li>
+    <li><span class="num">14</span>Recording new stock (Inflow)</li>
+    <li><span class="num">15</span>Stock report</li>
+    <li><span class="num">16</span>Setting up a receipt printer</li>
+    <li><span class="num">17</span>Business details and logo</li>
+    <li><span class="num">18</span>Close the register</li>
+    <li><span class="num">19</span>Backup and moving to a new device</li>
+    <li><span class="num">20</span>Problems and answers</li>
+  </ol>
+
+  <div class="box tip">
+    <span class="label">How to read this guide</span>
+    <p>Buttons and boxes you tap in the app look like this: <span class="ui">Complete sale</span>. The tabs along the bottom of the screen look like this: <span class="tab">Sell</span>.</p>
+    <p>Most of this guide is about the <strong>“This device only”</strong> setup, where one phone or tablet runs the whole shop. If your phone is linked to an office or online server, see the note in section 4.</p>
+  </div>
+
+  <h3>A typical day</h3>
+  <table>
+    <tr><th>When</th><th>What to do</th><th>Section</th></tr>
+    <tr><td>Morning</td><td>Sign in with your PIN, then open the register with the cash in the drawer</td><td>5, 8</td></tr>
+    <tr><td>All day</td><td>Sell, print or send receipts, receive customer payments</td><td>9 – 12</td></tr>
+    <tr><td>When goods arrive</td><td>Record them under Inflow so quantities stay correct</td><td>14</td></tr>
+    <tr><td>Evening</td><td>Count the cash and close the register; check the stock report</td><td>18, 15</td></tr>
+    <tr><td>At least weekly</td><td>Make a backup and keep it off the phone</td><td>19</td></tr>
+  </table>
+</div>
+
+<!-- ================= 1 ================= -->
+<div class="section">
+  <h2>1. Before you start</h2>
+  <p>You need:</p>
+  <ul>
+    <li><strong>An Android phone or tablet.</strong> A tablet is more comfortable at the counter, but a phone works well too.</li>
+    <li><strong>The Ajoke POS app file</strong> (an <em>.apk</em> file) from Ajoke Code Sphere, usually sent by WhatsApp or a download link.</li>
+    <li><strong>An activation code</strong> for this device. You get it after you send your device code (section 3).</li>
+    <li><strong>Optional:</strong> a Bluetooth thermal receipt printer (58 mm or 80 mm paper).</li>
+  </ul>
+  <p>The app works <strong>without internet</strong>. You only need data or Wi-Fi to download the app, send receipts by WhatsApp and save backups online.</p>
+
+  <div class="box warn">
+    <span class="label">One licence = one device</span>
+    <p>Each licence only works on the phone or tablet it was activated on. If you change device, contact Ajoke Code Sphere for a new activation code. Back up your records first (section 19).</p>
+  </div>
+
+  <h2 style="margin-top:8mm">2. Install the app</h2>
+  <ol class="steps">
+    <li>Open the <em>.apk</em> file you received (in WhatsApp, tap the file; or open it from <strong>Files → Downloads</strong>).</li>
+    <li>Android may say the app is from an unknown source. Tap <span class="ui">Settings</span>, turn on <strong>Allow from this source</strong>, then go back.</li>
+    <li>Tap <span class="ui">Install</span>. If Google Play Protect asks, choose <span class="ui">Install anyway</span>. The app is safe; it is just not from the Play Store.</li>
+    <li>Tap <span class="ui">Open</span>. The Ajoke POS logo appears for a few seconds while the app starts.</li>
+  </ol>
+  <div class="box tip">
+    <span class="label">Updating later</span>
+    <p>When you get a newer version, install it the same way, over the old one. Do <strong>not</strong> uninstall first, because uninstalling deletes the shop's records on the device.</p>
+  </div>
+</div>
+
+<!-- ================= 3 ================= -->
+<div class="section">
+  <h2>3. Activate your licence</h2>
+  <p>The first time the app opens, it shows the <strong>Activate Ajoke POS</strong> screen with a <strong>device code</strong> such as <code>K7QF-29XM-C4TB</code>.</p>
+  <ol class="steps">
+    <li>Tap <span class="ui">Share device code</span> and send it to Ajoke Code Sphere by WhatsApp (or write it down carefully).</li>
+    <li>You receive a long <strong>activation code</strong> back. Copy <em>all</em> of it; it is about 230 characters long.</li>
+    <li>Paste it into the box <strong>Paste the activation code here</strong> and tap <span class="ui">Activate</span>.</li>
+    <li>The app moves on to setting up your shop.</li>
+  </ol>
+  <div class="box warn">
+    <span class="label">“This code is for device …, not this device”</span>
+    <p>The code was made for a different device code. Check that you sent the code shown on <em>this</em> device, then ask for a new one.</p>
+  </div>
+  <p>If your licence has an end date, the app warns you before it runs out. If it does expire, the app shows <strong>Renew your licence</strong>. Contact Ajoke Code Sphere to renew; you will get a new code to paste the same way, and your records stay as they are.</p>
+
+  <h2 style="margin-top:8mm">4. Set up your shop</h2>
+  <p>Choose how this device will work:</p>
+  <table>
+    <tr><th style="width:38%">Option</th><th>Choose it when</th></tr>
+    <tr><td><strong>This device only (no server)</strong></td><td>Small shop, one phone or tablet. Everything is kept on the device. <em>Most shops choose this.</em></td></tr>
+    <tr><td>Office server only</td><td>The shop has the Ajoke POS server on an office computer. Syncs over the shop Wi-Fi.</td></tr>
+    <tr><td>Cloud only</td><td>The business uses the online server. Syncs whenever there is internet.</td></tr>
+    <tr><td>Office server + cloud</td><td>Uses the office server on shop Wi-Fi and the cloud elsewhere.</td></tr>
+  </table>
+
+  <h3>“This device only” setup</h3>
+  <ol class="steps">
+    <li>Enter the <strong>Business name</strong> (as you want it on receipts) and choose your <strong>Currency</strong>.</li>
+    <li>Enter <strong>VAT %</strong> (use 0 if you do not charge VAT). Turn on <strong>Add a service charge</strong> only if you charge one.</li>
+    <li>Enter the <strong>Owner's name</strong>, then a <strong>6-digit PIN</strong> and <strong>Repeat PIN</strong>. Remember this PIN: it is the owner's key to everything.</li>
+    <li>Tap <span class="ui">Create business on this device</span>.</li>
+  </ol>
+  <p>Moving from another device? Tap <span class="ui">Restore from a backup file instead</span> and choose your backup file (section 19).</p>
+  <div class="box tip">
+    <span class="label">Linked to a server?</span>
+    <p>For the server options, a manager gets a <strong>Server address</strong> and <strong>Pairing code</strong> from the web app (<em>Sync monitor → Pair a tablet</em>). Enter them, tap <span class="ui">Test connection</span>, then continue. On a linked device, products, staff and reports are managed in the web app, and the bottom bar shows <span class="tab">Sync</span> instead of <span class="tab">Backup</span>.</p>
+  </div>
+</div>
+
+<!-- ================= 5 ================= -->
+<div class="section">
+  <h2>5. Signing in and finding your way</h2>
+  <p>Every time the app opens, or after someone taps <span class="ui">Lock</span>, it shows the sign-in screen. Tap your name and enter your PIN. Each staff member has their own PIN, so every sale shows who made it.</p>
+  <div class="box tip">
+    <span class="label">Lock when you step away</span>
+    <p>Tap the padlock <span class="ui">Lock</span> at the top so nobody can sell or see figures under your name.</p>
+  </div>
+
+  <h3>The bottom bar</h3>
+  <div class="navbar">
+    <div>Sell<span>ring up sales</span></div>
+    <div>Sales<span>today's sales, reprint</span></div>
+    <div>Register<span>open / close cash</span></div>
+    <div>Reports<span>stock report</span></div>
+    <div>Manage<span>products, customers…</span></div>
+    <div>Backup<span>backup &amp; printer</span></div>
+  </div>
+  <p><span class="tab">Reports</span> and <span class="tab">Manage</span> only appear for staff whose role allows them (section 7).</p>
+
+  <h3>The status badge</h3>
+  <p>At the top of the screen a small badge shows whether your records are safe:</p>
+  <ul>
+    <li><strong>Backed up</strong> (green): a backup was made in the last 7 days.</li>
+    <li><strong>Not backed up</strong> or <strong>Backup 9d old</strong> (orange): make a backup soon. Tap the badge to go straight to Backup.</li>
+  </ul>
+
+  <h2 style="margin-top:8mm">6. Add your products</h2>
+  <p>Go to <span class="tab">Manage</span> → <strong>Products</strong> and tap <span class="ui">+ Product</span> (the round button at the bottom right).</p>
+  <table>
+    <tr><th style="width:32%">Field</th><th>What to enter</th></tr>
+    <tr><td>Name</td><td>As customers know it, e.g. “Golden Penny Semovita 1kg”.</td></tr>
+    <tr><td>Category</td><td>Groups products on the Sell screen, e.g. Drinks, Groceries.</td></tr>
+    <tr><td>Selling price</td><td>Price per unit.</td></tr>
+    <tr><td>Cost price</td><td>What you pay the supplier per unit (optional, used for stock value).</td></tr>
+    <tr><td>Barcode</td><td>Optional. Lets you search or scan instead of scrolling.</td></tr>
+    <tr><td>Quantity in stock</td><td>How many you have now.</td></tr>
+    <tr><td>Low-stock warning at</td><td>The app warns when stock falls to this number.</td></tr>
+    <tr><td>Service</td><td>Turn on for services (e.g. delivery). Services have no stock count.</td></tr>
+  </table>
+  <p>Tap <span class="ui">Save</span>. To change a product, tap it in the list.</p>
+  <h3>Correcting stock</h3>
+  <p>Open the product and use the stock section: choose <span class="ui">Received (+)</span> or <span class="ui">Remove (−)</span>, enter the <strong>Quantity</strong> and a reason (e.g. “Damaged”, “Counted”), then tap <span class="ui">Save stock change</span>. Every change is kept in the product's history. For new deliveries, use <strong>Inflow</strong> instead (section 14).</p>
+  <p>Products you no longer sell can be <strong>archived</strong>: they disappear from the Sell screen but stay in old sales and reports.</p>
+</div>
+
+<!-- ================= 7 ================= -->
+<div class="section">
+  <h2>7. Add your staff</h2>
+  <p>Go to <span class="tab">Manage</span> → <strong>Staff</strong>, tap <span class="ui">+ Staff</span>, enter the name, phone, role and a 6-digit PIN (and repeat it), then tap <span class="ui">Save</span>. Give each person their own PIN and ask them not to share it.</p>
+  <table>
+    <tr><th>What they can do</th><th class="c">Owner</th><th class="c">Manager</th><th class="c">Cashier</th></tr>
+    <tr><td>Sell, open/close register, add customers</td><td class="c">✓</td><td class="c">✓</td><td class="c">✓</td></tr>
+    <tr><td>Receive customer payments</td><td class="c">✓</td><td class="c">✓</td><td class="c">✓</td></tr>
+    <tr><td>Void a sale</td><td class="c">✓</td><td class="c">✓</td><td class="c">–</td></tr>
+    <tr><td>Set customers' credit limits</td><td class="c">✓</td><td class="c">✓</td><td class="c">–</td></tr>
+    <tr><td>Products, stock, inflow, reports</td><td class="c">✓</td><td class="c">✓</td><td class="c">–</td></tr>
+    <tr><td>Staff and business settings</td><td class="c">✓</td><td class="c">–</td><td class="c">–</td></tr>
+  </table>
+  <p>When someone leaves, open their record and switch them off (deactivate). Their past sales stay on record but they can no longer sign in.</p>
+
+  <h2 style="margin-top:8mm">8. Open the register</h2>
+  <p>You must open the register before you can sell. This records how much cash was in the drawer at the start.</p>
+  <ol class="steps">
+    <li>Tap <span class="tab">Register</span>.</li>
+    <li>Count the cash in the drawer and enter it as the <strong>Opening float</strong> (enter 0 if it is empty).</li>
+    <li>Tap <span class="ui">Open register</span>. The app takes you to <span class="tab">Sell</span>.</li>
+  </ol>
+  <p>The register stays open until you close it (section 18), even if you lock the app or switch the phone off.</p>
+</div>
+
+<!-- ================= 9 ================= -->
+<div class="section">
+  <h2>9. Make a sale</h2>
+  <ol class="steps">
+    <li>On <span class="tab">Sell</span>, tap products to add them. Use <strong>Search name, SKU or scan barcode</strong> to find items quickly, or tap a category.</li>
+    <li>Each tap adds one. On a phone, tap the bar <strong>View sale</strong> at the bottom to see the cart. Change quantities with <strong>+</strong> and <strong>−</strong>, or remove a line.</li>
+    <li>Optional: tap <span class="ui">Add customer</span> to attach a customer (needed for credit, and it earns them points). You can search by name or phone, or add a new one with name and phone.</li>
+    <li>Tap <span class="ui">Charge</span>.</li>
+    <li>Choose how the customer pays: <span class="ui">Cash</span>, <span class="ui">Card</span>, <span class="ui">Transfer</span>, <span class="ui">Mobile money</span> or <span class="ui">On account</span> (credit).
+      <ul>
+        <li><strong>Cash:</strong> enter the <strong>Cash received</strong>; the app shows the <strong>Change</strong> to give.</li>
+        <li><strong>Card, Transfer, Mobile money:</strong> enter the <strong>Payment reference</strong> (terminal slip or transfer reference). It is required, so you can match it later.</li>
+        <li>A customer can pay with more than one method, e.g. part cash, part transfer.</li>
+      </ul>
+    </li>
+    <li>Tap <span class="ui">Complete sale</span>. The receipt appears.</li>
+    <li>Tap <span class="ui">New sale</span> for the next customer.</li>
+  </ol>
+  <div class="box tip">
+    <span class="label">Stock is updated automatically</span>
+    <p>Every sale takes the items out of stock. If an item shows <strong>Out of stock</strong>, record a delivery (section 14) or correct the count (section 6).</p>
+  </div>
+
+  <h2 style="margin-top:8mm">10. Receipts: print or send by WhatsApp</h2>
+  <p>After each sale, the receipt screen gives you:</p>
+  <ul>
+    <li><span class="ui">Print</span>: prints on your Bluetooth printer (set it up first, section 16).</li>
+    <li><span class="ui">Send (WhatsApp)</span>: makes a <strong>picture of the receipt</strong> and opens the share menu. Choose WhatsApp and the customer's chat. If the picture cannot be made, use <span class="ui">Send as text</span>.</li>
+  </ul>
+  <p>Receipts show your logo, address and phone (section 17), the items, payments and, when a customer is attached, the customer's current <strong>account balance</strong>. You can print or send any receipt again later from <span class="tab">Sales</span>; it is marked <strong>REPRINT</strong>.</p>
+</div>
+
+<!-- ================= 11 ================= -->
+<div class="section">
+  <h2>11. Selling on credit</h2>
+  <p>Any registered customer can buy on credit (“on account”) and pay later, unless the owner has set them to cash only.</p>
+  <ol class="steps">
+    <li>Add the items and attach the customer with <span class="ui">Add customer</span>. You can also add the customer at the payment step with <span class="ui">Choose customer</span>.</li>
+    <li>Tap <span class="ui">Charge</span> and choose <span class="ui">On account</span>. The app shows what the customer already owes and their limit.</li>
+    <li>If they pay part now, enter it under <strong>Paid now (optional)</strong>; the rest goes on their account.</li>
+    <li>Tap <span class="ui">Complete credit sale</span>. The receipt shows the amount on account and the <strong>Account balance</strong> they now owe.</li>
+  </ol>
+  <h3>Credit limits</h3>
+  <p>Owners and managers set this under <span class="tab">Manage</span> → <strong>Customers</strong> → customer → <strong>Details</strong> → <strong>Credit limit</strong>.</p>
+  <table>
+    <tr><th style="width:30%">Credit limit</th><th>Meaning</th></tr>
+    <tr><td>Blank (empty)</td><td>No limit: the customer can owe any amount.</td></tr>
+    <tr><td>A number, e.g. 50,000</td><td>The most they may owe. A sale that would go over it is refused, and nothing is saved.</td></tr>
+    <tr><td>0</td><td>Cash only: no credit for this customer.</td></tr>
+  </table>
+  <div class="box warn">
+    <span class="label">Credit is real money</span>
+    <p>Set limits for customers you do not know well, and check the <strong>Owing</strong> list regularly (section 12).</p>
+  </div>
+
+  <h2 style="margin-top:8mm">12. Customers, payments and statements</h2>
+  <p>Go to <span class="tab">Manage</span> → <strong>Customers</strong>. The top shows the total owed to the shop and how many customers owe. Use the <strong>Owing</strong> filter to see only debtors. Tap a customer to open them; the <strong>Account</strong> tab shows <strong>Owes</strong>, <strong>Credit limit</strong>, <strong>Available</strong> and a dated <strong>Statement</strong>.</p>
+
+  <h3>Receiving a payment</h3>
+  <ol class="steps">
+    <li>On the customer's <strong>Account</strong> tab, tap <span class="ui">Receive payment</span>. The full amount owed is filled in; change it for a part payment.</li>
+    <li>Choose <span class="ui">Cash</span>, <span class="ui">Transfer</span>, <span class="ui">Card</span> or <span class="ui">Mobile money</span>. For anything but cash, enter the <strong>Payment reference</strong>. Add a <strong>Note</strong> if useful.</li>
+    <li>Tap <span class="ui">Receive …</span>. Cash payments need an open register; they are added to the cash expected in the drawer.</li>
+    <li>The <strong>Payment recorded</strong> panel shows the receipt number (e.g. PAY-00001), previous balance, amount paid and balance owed. Tap <span class="ui">Print</span> or <span class="ui">Send (WhatsApp)</span>, then <span class="ui">Done</span>.</li>
+  </ol>
+  <p>To print or send an old payment receipt again, tap the payment in the <strong>Statement</strong>.</p>
+  <p>Tap <span class="ui">Share statement</span> to send the customer a full statement of credit sales, payments and balance by WhatsApp or SMS.</p>
+</div>
+
+<!-- ================= receipts illustration ================= -->
+<div class="section">
+  <h3 style="margin-top:0">What the receipts look like</h3>
+  <div class="receipts">
+    <div>
+      <div class="receipt">
+        <div class="center big">MAMA NKECHI PROVISIONS</div>
+        <div class="center">12 Market Road, Ibadan</div>
+        <div class="center">Tel: 0803 123 4567</div>
+        <div class="rule"></div>
+        <div class="r"><span>Receipt</span><span>TAB1-00042</span></div>
+        <div class="r"><span>Date</span><span>12/10/2026 14:05</span></div>
+        <div class="r"><span>Served by</span><span>Bisi</span></div>
+        <div class="r"><span>Customer</span><span>Mama Tunde</span></div>
+        <div class="rule"></div>
+        <div>Rice 5kg</div>
+        <div class="r"><span>&nbsp; 2 x N9,500</span><span>N19,000</span></div>
+        <div>Groundnut oil 1L</div>
+        <div class="r"><span>&nbsp; 1 x N3,000</span><span>N3,000</span></div>
+        <div class="rule"></div>
+        <div class="r big"><span>TOTAL</span><span>N22,000</span></div>
+        <div class="r"><span>Cash</span><span>N12,000</span></div>
+        <div class="r"><span>On account</span><span>N10,000</span></div>
+        <div class="rule"></div>
+        <div class="r big"><span>Account balance</span><span>N35,000</span></div>
+        <div class="center" style="margin-top:2mm">Thank you for shopping with us</div>
+      </div>
+      <div class="caption">Sale receipt with a customer</div>
+    </div>
+    <div>
+      <div class="receipt">
+        <div class="center big">MAMA NKECHI PROVISIONS</div>
+        <div class="center">12 Market Road, Ibadan</div>
+        <div class="center">Tel: 0803 123 4567</div>
+        <div class="center big" style="margin-top:1.5mm">PAYMENT RECEIPT</div>
+        <div class="rule"></div>
+        <div class="r"><span>Receipt</span><span>PAY-00007</span></div>
+        <div class="r"><span>Date</span><span>12/10/2026 16:40</span></div>
+        <div class="r"><span>Received by</span><span>Bisi</span></div>
+        <div class="r"><span>Customer</span><span>Mama Tunde</span></div>
+        <div class="rule"></div>
+        <div class="r"><span>Previous balance</span><span>N35,000</span></div>
+        <div class="r big"><span>PAID</span><span>N20,000</span></div>
+        <div class="r"><span>Method</span><span>Transfer</span></div>
+        <div class="r"><span>&nbsp; Ref</span><span>TRF-5521</span></div>
+        <div class="rule"></div>
+        <div class="r big"><span>Balance owed</span><span>N15,000</span></div>
+        <div class="center" style="margin-top:2mm">Thank you for shopping with us</div>
+      </div>
+      <div class="caption">Payment receipt</div>
+    </div>
+  </div>
+
+  <h2 style="margin-top:8mm">13. Sales history and voiding a sale</h2>
+  <p>Tap <span class="tab">Sales</span> to see today's sales, newest first. Tap a sale to see its items and payments, and to <span class="ui">Print receipt</span> or <span class="ui">Send (WhatsApp)</span> again.</p>
+  <h3>Voiding a sale (owner or manager)</h3>
+  <p>If a sale was rung up wrongly, open it, tap <span class="ui">Void sale</span>, enter the <strong>Reason for voiding</strong> (e.g. “Wrong item rung up”) and confirm. The app:</p>
+  <ul>
+    <li>puts the items back into stock,</li>
+    <li>takes any credit part off the customer's account,</li>
+    <li>keeps the sale on record marked <strong>Voided</strong>, with who voided it, when and why.</li>
+  </ul>
+  <p>Voided sales are never deleted, so the history always adds up.</p>
+</div>
+
+<!-- ================= 14 ================= -->
+<div class="section">
+  <h2>14. Recording new stock (Inflow)</h2>
+  <p>When goods arrive from a supplier, record them so your quantities stay correct.</p>
+  <ol class="steps">
+    <li>Go to <span class="tab">Manage</span> → <strong>Inflow</strong> and tap <span class="ui">Record inflow</span>.</li>
+    <li>Optional: enter the <strong>Supplier</strong> and the <strong>Invoice / waybill no.</strong></li>
+    <li>Use <strong>Find a product to add</strong> for each product received. Enter the <strong>Quantity received</strong> and, if you know it, the <strong>Cost per unit</strong>.</li>
+    <li>Leave <strong>Update products' cost price</strong> on if the new cost should replace the old one.</li>
+    <li>Tap <span class="ui">Record inflow</span>. Each delivery gets a number such as INF-00012 and the quantities go up at once.</li>
+  </ol>
+  <p>Entered something twice? Open the inflow, tap <span class="ui">Cancel inflow</span> and give a reason. The quantities are taken back out and the inflow stays on record as <strong>Cancelled</strong>.</p>
+
+  <h2 style="margin-top:8mm">15. Stock report</h2>
+  <p>Tap <span class="tab">Reports</span>. Choose a period (<strong>Today</strong>, <strong>Yesterday</strong>, <strong>This week</strong>, <strong>This month</strong>) or pick your own <strong>From</strong> and <strong>To</strong> dates.</p>
+  <table>
+    <tr><th style="width:22%">Column</th><th>Meaning</th></tr>
+    <tr><td>Opening</td><td>Quantity at the start of the period.</td></tr>
+    <tr><td>Out</td><td>Quantity that left: sales and removals.</td></tr>
+    <tr><td>In</td><td>Quantity that came in: inflows, returns and additions.</td></tr>
+    <tr><td>Closing</td><td>Quantity at the end of the period (Opening − Out + In).</td></tr>
+  </table>
+  <ul>
+    <li>Turn on <strong>Moved only</strong> to hide products that did not move in the period.</li>
+    <li>Use <strong>Filter products</strong> to find a product or category.</li>
+    <li>Tap <span class="ui">Share</span> to send the report as a spreadsheet file (CSV) that opens in Excel or Google Sheets.</li>
+  </ul>
+  <div class="box tip">
+    <span class="label">Check your stock regularly</span>
+    <p>Compare the <strong>Closing</strong> figure with what is really on the shelf. If they differ, correct the count on the product (section 6) with a reason such as “Counted”.</p>
+  </div>
+</div>
+
+<!-- ================= 16 ================= -->
+<div class="section">
+  <h2>16. Setting up a receipt printer</h2>
+  <p>Ajoke POS prints on most Bluetooth thermal receipt printers (58 mm or 80 mm).</p>
+  <ol class="steps">
+    <li>Switch the printer on and load paper.</li>
+    <li>On the phone, open Android <strong>Settings → Bluetooth</strong>, find the printer and pair it. The PIN is often <strong>0000</strong> or <strong>1234</strong>; see the printer's manual.</li>
+    <li>In Ajoke POS, open <span class="tab">Backup</span> → <strong>Receipt printer</strong>, or tap the printer icon on any receipt screen.</li>
+    <li>Under <strong>Connection</strong> choose <span class="ui">Bluetooth (paired)</span> and pick your printer. If it does not appear, try <span class="ui">Bluetooth LE (scan)</span>.</li>
+    <li>Choose the <strong>Paper width</strong>: <span class="ui">58 mm (small)</span> or <span class="ui">80 mm (wide)</span>.</li>
+    <li>Tap <span class="ui">Print test page</span>. If it looks right, you are ready.</li>
+  </ol>
+  <table>
+    <tr><th style="width:42%">Setting</th><th>What it does</th></tr>
+    <tr><td>Print automatically after each sale</td><td>Prints the receipt as soon as a sale is completed.</td></tr>
+    <tr><td>Open cash drawer on cash sales</td><td>For drawers connected to the printer: opens the drawer on cash sales and cash payments.</td></tr>
+    <tr><td>Forget printer</td><td>Removes the printer so you can choose another.</td></tr>
+  </table>
+  <div class="box warn">
+    <span class="label">Nothing prints?</span>
+    <ul>
+      <li>Check the printer is on, has paper, and is not connected to another phone.</li>
+      <li>Allow the app's <strong>Nearby devices</strong> / Bluetooth permission when Android asks. If you refused it, go to Android <strong>Settings → Apps → Ajoke POS → Permissions</strong>.</li>
+      <li>Switch the printer off and on, then try <span class="ui">Print test page</span> again.</li>
+      <li>You can always <span class="ui">Send (WhatsApp)</span> the receipt instead.</li>
+    </ul>
+  </div>
+
+  <h2 style="margin-top:8mm">17. Business details and logo</h2>
+  <p>The owner can change these under <span class="tab">Manage</span> → <strong>Business</strong>:</p>
+  <ul>
+    <li><strong>Business name</strong>, <strong>Phone number</strong> and <strong>Address</strong>: shown at the top of every receipt.</li>
+    <li><strong>Logo</strong>: tap <span class="ui">Choose logo</span> and pick a picture from the gallery. A simple logo on a white background prints best. Turn <strong>Print logo on receipts</strong> off if your printer is slow or the logo prints badly.</li>
+    <li><strong>VAT %</strong>, <strong>Service charge %</strong> and the payment methods you accept.</li>
+    <li><strong>Receipt footer</strong>: a line at the bottom of receipts, e.g. “No refund after payment. Thank you!”</li>
+  </ul>
+  <p>Tap <span class="ui">Save settings</span>. A preview shows how the top of your receipt will look.</p>
+</div>
+
+<!-- ================= 18 ================= -->
+<div class="section">
+  <h2>18. Close the register</h2>
+  <p>At the end of the day (or end of each shift), count the cash and close the register.</p>
+  <ol class="steps">
+    <li>Tap <span class="tab">Register</span>. The screen shows the <strong>Opening float</strong>, <strong>Cash sales on this device</strong>, <strong>Customer payments (cash)</strong> and the <strong>Expected cash in drawer</strong>.</li>
+    <li>Count the cash in the drawer and enter it under <strong>Counted cash</strong>.</li>
+    <li>The app shows <strong>Balanced</strong>, <strong>Over</strong> or <strong>Short</strong> and by how much. Add a <strong>Note (optional)</strong> to explain any difference.</li>
+    <li>Tap <span class="ui">Close register</span>.</li>
+  </ol>
+  <p><strong>Past shifts</strong> lists earlier shifts with who opened and closed them and any difference. Card, transfer and mobile money payments are not in the drawer, so they are not part of the expected cash.</p>
+
+  <h2 style="margin-top:8mm">19. Backup and moving to a new device</h2>
+  <div class="box danger">
+    <span class="label">Your records live only on this device</span>
+    <p>If the phone is lost, stolen or broken and you have no backup, the records are gone. Make a backup <strong>at least once a week</strong>; the app reminds you after 7 days.</p>
+  </div>
+  <h3>Make a backup</h3>
+  <ol class="steps">
+    <li>Tap <span class="tab">Backup</span> → <span class="ui">Back up now</span>.</li>
+    <li>The share menu opens with the backup file. Save it somewhere <strong>off the phone</strong>: Google Drive, email it to yourself, or send it to your own WhatsApp.</li>
+  </ol>
+  <h3>Restore on a new or repaired device</h3>
+  <ol class="steps">
+    <li>Install Ajoke POS on the new device and activate it with a new activation code (section 3).</li>
+    <li>On the setup screen choose <strong>This device only</strong>, then tap <span class="ui">Restore from a backup file instead</span>, and pick your latest backup file.</li>
+    <li>Sign in with your usual PIN. Products, staff, customers, balances and sales are all back.</li>
+  </ol>
+  <p>On a device already in use, <span class="tab">Backup</span> → <span class="ui">Restore from backup file</span> replaces everything on it with the backup. <span class="ui">Erase this device</span> deletes everything; make a backup first.</p>
+</div>
+
+<!-- ================= 20 ================= -->
+<div class="section">
+  <h2>20. Problems and answers</h2>
+  <table>
+    <tr><th style="width:38%">Problem</th><th>What to do</th></tr>
+    <tr><td>“Open the register before selling”</td><td>Go to <span class="tab">Register</span> and open it with the opening float (section 8).</td></tr>
+    <tr><td>Forgot a staff PIN</td><td>The owner opens <span class="tab">Manage</span> → <strong>Staff</strong>, taps the person and sets a new PIN.</td></tr>
+    <tr><td>Owner forgot their PIN</td><td>Contact Ajoke Code Sphere. Keep the owner PIN somewhere safe.</td></tr>
+    <tr><td>“Credit limit exceeded”</td><td>The customer would owe more than their limit. Take more payment now, or ask an owner/manager to raise or clear the limit.</td></tr>
+    <tr><td>“… is set to cash only”</td><td>The customer's credit limit is 0. An owner/manager can clear it (blank = no limit).</td></tr>
+    <tr><td>Cash payment refused: “Open the register…”</td><td>Cash payments go into the drawer, so the register must be open. Open it, or record the payment as Transfer/Card with a reference.</td></tr>
+    <tr><td>Expected cash looks wrong</td><td>Check <strong>Customer payments (cash)</strong> on the Register screen and any voided sales in <span class="tab">Sales</span>.</td></tr>
+    <tr><td>Receipt picture will not send</td><td>Make sure WhatsApp is installed and try again, or use <span class="ui">Send as text</span>.</td></tr>
+    <tr><td>Printer not found / not printing</td><td>See “Nothing prints?” in section 16.</td></tr>
+    <tr><td>Product shows wrong quantity</td><td>Check the product's stock history, then correct with Received (+) / Remove (−) and a reason.</td></tr>
+    <tr><td>Licence expired or new phone</td><td>Send your device code to Ajoke Code Sphere for a new activation code. Your records are kept.</td></tr>
+  </table>
+
+  <h3>Good habits</h3>
+  <ul>
+    <li>Every staff member signs in with their own PIN, and taps <span class="ui">Lock</span> when leaving the counter.</li>
+    <li>Always enter the payment reference for transfers and POS card payments.</li>
+    <li>Record every delivery under Inflow on the day it arrives.</li>
+    <li>Close the register every day and look into any difference straight away.</li>
+    <li>Back up every week, and keep the backup off the phone.</li>
+    <li>Do not uninstall the app to update it; install the new version over the old one.</li>
+  </ul>
+
+  <div class="footer-note">
+    <p><strong>Ajoke POS</strong> · Developed by Ajoke Code Sphere</p>
+    <p>For activation codes, renewals and help, contact Ajoke Code Sphere.</p>
+  </div>
+</div>
+
+</body>
+</html>
