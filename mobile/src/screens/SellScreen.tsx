@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView, KeyboardSafe } from "../ui/keyboard";
+import { groupDigits } from "../ui/numberFormat";
 import { useApp } from "../shell/AppContext";
 import { readModel, type Customer, type Product } from "../data/readModel";
 import {
@@ -27,6 +28,41 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { isStandalone } from "../sync/settings";
 import { availableCredit, canBuyOnCredit, creditLimitOf } from "../standalone/credit";
 import { colors, font, radius, spacing } from "../ui/theme";
+
+/** Highest quantity on one cart line (guards against a mistyped extra zero running away). */
+const MAX_QUANTITY = 99_999;
+
+/**
+ * Cart quantity you can tap and type (e.g. 50). While typing, a blank box is allowed; on
+ * leaving the box it shows the line's quantity again.
+ */
+function QuantityInput(props: { value: number; onChange(quantity: number): void; label: string }) {
+  const [text, setText] = useState(String(props.value));
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    if (!focused) setText(String(props.value));
+  }, [props.value, focused]);
+  return (
+    <TextInput
+      accessibilityLabel={props.label}
+      value={focused ? text : groupDigits(String(props.value))}
+      onChangeText={(value) => {
+        const digits = value.replace(/\D/g, "").slice(0, 5);
+        setText(digits);
+        if (Number(digits) > 0) props.onChange(Number(digits));
+      }}
+      onFocus={() => {
+        setText(String(props.value));
+        setFocused(true);
+      }}
+      onBlur={() => setFocused(false)}
+      selectTextOnFocus
+      keyboardType="number-pad"
+      returnKeyType="done"
+      style={styles.quantity}
+    />
+  );
+}
 
 const methodLabels: Record<PaymentMethod, string> = { cash: "Cash", card: "Card", bank_transfer: "Transfer", mobile_money: "Mobile money", customer_credit: "On account" };
 type ImmediateMethod = Exclude<PaymentMethod, "customer_credit">;
@@ -98,8 +134,19 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
 
   const changeQuantity = (productId: string, delta: number) => {
     touch();
-    setCart((current) => current.map((line) => (line.product.id === productId ? { ...line, quantity: line.quantity + delta } : line)).filter((line) => line.quantity > 0));
+    setCart((current) =>
+      current.map((line) => (line.product.id === productId ? { ...line, quantity: Math.min(MAX_QUANTITY, line.quantity + delta) } : line)).filter((line) => line.quantity > 0)
+    );
   };
+
+  /** Typed quantity (e.g. 50 bags). 0 or blank is ignored here; use − to remove a line. */
+  const setQuantity = (productId: string, quantity: number) => {
+    touch();
+    if (!Number.isInteger(quantity) || quantity <= 0) return;
+    setCart((current) => current.map((line) => (line.product.id === productId ? { ...line, quantity: Math.min(MAX_QUANTITY, quantity) } : line)));
+  };
+  /** Units on hand for a cart line (stock not yet including this cart). */
+  const onHand = (product: Product) => product.stock - (deductions.get(product.id) ?? 0);
 
   if (!shift || shift.status !== "open") {
     return (
@@ -132,23 +179,28 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
           }}
         />
       </View>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: spacing.sm }}>
+      <KeyboardAwareScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: spacing.sm }}>
         {cart.length === 0 ? <Muted>Tap products to add them.</Muted> : null}
-        {cart.map((line) => (
-          <View key={line.product.id} style={styles.line}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.lineName}>{line.product.name}</Text>
-              <Text style={styles.lineMeta}>{formatMoney(line.product.price, currency)} each</Text>
+        {cart.map((line) => {
+          const stock = onHand(line.product);
+          const short = tracksStock(line.product) && line.quantity > stock;
+          return (
+            <View key={line.product.id} style={styles.line}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.lineName}>{line.product.name}</Text>
+                <Text style={styles.lineMeta}>{formatMoney(line.product.price, currency)} each</Text>
+                {short ? <Text style={styles.lineWarning}>Only {Math.max(0, stock)} in stock</Text> : null}
+              </View>
+              <View style={styles.stepper}>
+                <Pressable accessibilityLabel="Remove one" onPress={() => changeQuantity(line.product.id, -1)} style={styles.stepButton}><Text style={styles.stepLabel}>−</Text></Pressable>
+                <QuantityInput value={line.quantity} onChange={(quantity) => setQuantity(line.product.id, quantity)} label={`Quantity of ${line.product.name}`} />
+                <Pressable accessibilityLabel="Add one" onPress={() => changeQuantity(line.product.id, 1)} style={styles.stepButton}><Text style={styles.stepLabel}>+</Text></Pressable>
+              </View>
+              <Text style={[styles.lineTotal, compact && { width: 80 }]}>{formatMoney(line.product.price * line.quantity, currency)}</Text>
             </View>
-            <View style={styles.stepper}>
-              <Pressable accessibilityLabel="Remove one" onPress={() => changeQuantity(line.product.id, -1)} style={styles.stepButton}><Text style={styles.stepLabel}>−</Text></Pressable>
-              <Text style={styles.quantity}>{line.quantity}</Text>
-              <Pressable accessibilityLabel="Add one" onPress={() => changeQuantity(line.product.id, 1)} style={styles.stepButton}><Text style={styles.stepLabel}>+</Text></Pressable>
-            </View>
-            <Text style={[styles.lineTotal, compact && { width: 80 }]}>{formatMoney(line.product.price * line.quantity, currency)}</Text>
-          </View>
-        ))}
-      </ScrollView>
+          );
+        })}
+      </KeyboardAwareScrollView>
       {summary ? (
         <View style={styles.totals}>
           <TotalRow label="Subtotal" value={formatMoney(summary.subtotal, currency)} />
@@ -634,7 +686,8 @@ const styles = StyleSheet.create({
   stepper: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
   stepButton: { width: 40, height: 40, borderRadius: radius.sm, backgroundColor: colors.surfaceMuted, alignItems: "center", justifyContent: "center" },
   stepLabel: { fontSize: font.xl, color: colors.text },
-  quantity: { minWidth: 28, textAlign: "center", fontSize: font.md, fontWeight: "700", color: colors.text },
+  quantity: { minWidth: 48, height: 40, paddingHorizontal: spacing.xs, paddingVertical: 0, textAlign: "center", fontSize: font.md, fontWeight: "700", color: colors.text, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, backgroundColor: colors.surface },
+  lineWarning: { fontSize: font.sm, color: colors.warning, fontWeight: "600" },
   totals: { gap: spacing.xs, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md },
   totalLabel: { fontSize: font.md, color: colors.textMuted },
   totalStrong: { fontSize: font.xl, fontWeight: "700", color: colors.text },
