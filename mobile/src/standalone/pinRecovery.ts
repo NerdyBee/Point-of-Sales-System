@@ -71,6 +71,6 @@ export async function completePinReset(platform: Platform, input: { staffId: str
   const updated = { ...owner, pinEnabled: true, pinHash: await pinHash(platform, input.pin), pinResetAt: now(), pinResetId: reset.id };
   await putRow(platform.db, "staff_members", owner.id, updated);
   await platform.secrets.remove(requestKey);
-  clearPinFailures(owner.id);
+  await clearPinFailures(platform, owner.id);
   return updated as unknown as Staff;
 }
