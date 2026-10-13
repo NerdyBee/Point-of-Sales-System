@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, type TextInputProps, type ViewStyle } from "react-native";
+import { markActivity } from "./activity";
 import { groupDigits } from "./numberFormat";
 import { colors, font, radius, spacing } from "./theme";
 
@@ -8,12 +9,20 @@ type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 export function Button(props: { label: string; onPress: () => void; variant?: ButtonVariant; disabled?: boolean; busy?: boolean; style?: ViewStyle; large?: boolean }) {
   const variant = props.variant ?? "primary";
   const disabled = props.disabled || props.busy;
+  // Ignore a second tap that lands before the button has redrawn as busy (double tap).
+  const lastPress = useRef(0);
+  const onPress = () => {
+    const now = Date.now();
+    if (now - lastPress.current < 700) return;
+    lastPress.current = now;
+    props.onPress();
+  };
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ disabled }}
       disabled={disabled}
-      onPress={props.onPress}
+      onPress={onPress}
       style={({ pressed }) => [
         styles.button,
         props.large && styles.buttonLarge,
@@ -35,11 +44,19 @@ export function Button(props: { label: string; onPress: () => void; variant?: Bu
 }
 
 export function Field(props: TextInputProps & { label: string; hint?: string }) {
-  const { label, hint, style, ...input } = props;
+  const { label, hint, style, onChangeText, ...input } = props;
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput placeholderTextColor={colors.textMuted} style={[styles.input, style]} {...input} />
+      <TextInput
+        placeholderTextColor={colors.textMuted}
+        style={[styles.input, style]}
+        {...input}
+        onChangeText={(text) => {
+          markActivity();
+          onChangeText?.(text);
+        }}
+      />
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </View>
   );
@@ -92,13 +109,21 @@ export function Banner(props: { tone: "warning" | "danger" | "info"; message: st
 }
 
 export function PinPad(props: { value: string; length: number; onChange: (value: string) => void; onSubmit: (value: string) => void; disabled?: boolean }) {
+  // Fast taps can arrive before the parent redraws with the new value; track it here too.
+  const current = useRef(props.value);
+  const shown = useRef(props.value);
+  if (props.value !== shown.current) {
+    shown.current = props.value;
+    current.current = props.value;
+  }
   const press = (key: string) => {
     if (props.disabled) return;
-    if (key === "back") return props.onChange(props.value.slice(0, -1));
-    if (key === "clear") return props.onChange("");
-    const next = (props.value + key).slice(0, props.length);
+    const value = current.current;
+    const next = key === "back" ? value.slice(0, -1) : key === "clear" ? "" : value.length >= props.length ? value : value + key;
+    if (next === value) return;
+    current.current = next;
     props.onChange(next);
-    if (next.length === props.length) props.onSubmit(next);
+    if (key !== "back" && key !== "clear" && next.length === props.length) props.onSubmit(next);
   };
   return (
     <View style={{ alignItems: "center", gap: spacing.lg }}>

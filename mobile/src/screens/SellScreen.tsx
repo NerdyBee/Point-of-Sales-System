@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView, KeyboardSafe } from "../ui/keyboard";
 import { useApp } from "../shell/AppContext";
@@ -265,7 +265,9 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
           onCancel={() => setCheckoutOpen(false)}
           onConfirm={async ({ payments, tendered }) => {
             const sale = await recordSale(platform, { settings, tenantSettings: tenant.settings, staff, cart, customer, payments });
-            const branding = await loadReceiptBranding(platform, settings);
+            // The sale is saved. Nothing after this may surface as a checkout error, or the
+            // cashier would tap Complete again and record the sale twice.
+            const branding = await loadReceiptBranding(platform, settings).catch(() => ({}));
             setReceipt({
               number: sale.number,
               summary: sale.summary,
@@ -277,8 +279,8 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
             setCart([]);
             setCustomer(null);
             setCheckoutOpen(false);
-            await refresh();
-            void engine.syncNow().then(refresh);
+            await refresh().catch(() => undefined);
+            void engine.syncNow().then(refresh).catch(() => undefined);
           }}
         />
       ) : null}
@@ -350,6 +352,7 @@ function CheckoutModal(props: {
   const [error, setError] = useState<string | null>(null);
   const money = (amount: number) => formatMoney(amount, props.currency);
   const amount = (value: string) => Number(value.replace(/[^0-9]/g, "")) || 0;
+  const submitting = useRef(false);
   const tenderedValue = amount(tendered);
   const change = method === "cash" ? tenderedValue - props.total : 0;
 
@@ -386,12 +389,15 @@ function CheckoutModal(props: {
       payments = [{ method, amount: props.total, reference: reference.trim() || undefined }];
       cashTendered = method === "cash" ? tenderedValue : undefined;
     }
+    if (submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     try {
       await props.onConfirm({ payments, tendered: cashTendered });
     } catch (cause) {
       setError(cause instanceof PosError || cause instanceof Error ? cause.message : String(cause));
       setBusy(false);
+      submitting.current = false;
     }
   };
 

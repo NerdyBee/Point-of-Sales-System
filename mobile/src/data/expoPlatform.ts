@@ -6,6 +6,10 @@ import * as SQLite from "expo-sqlite";
 import type { Db, Platform, SqlValue } from "./db";
 
 function expoDb(database: SQLite.SQLiteDatabase): Db {
+  // SQLite allows one transaction at a time per connection. Queue them so two quick actions
+  // (e.g. a double tap) wait their turn instead of failing with "cannot start a transaction
+  // within a transaction". Transactions must not be nested (the inner one would wait forever).
+  let queue: Promise<unknown> = Promise.resolve();
   return {
     exec: (sql) => database.execAsync(sql),
     run: async (sql, params: SqlValue[] = []) => {
@@ -13,13 +17,37 @@ function expoDb(database: SQLite.SQLiteDatabase): Db {
     },
     all: (sql, params: SqlValue[] = []) => database.getAllAsync(sql, params),
     first: (sql, params: SqlValue[] = []) => database.getFirstAsync(sql, params),
-    transaction: (work) => database.withTransactionAsync(work)
+    transaction: (work) => {
+      const next = queue.then(() => database.withTransactionAsync(work));
+      queue = next.catch(() => undefined);
+      return next;
+    }
   };
 }
 
+/**
+ * Opens the shop database on a fresh connection. expo-sqlite otherwise hands back a cached
+ * connection, which Android may already have closed (after a reload, or when the app comes
+ * back from the background), and every query then fails with a NullPointerException.
+ * The connection is checked with a real query and retried once before giving up.
+ */
+async function openShopDatabase() {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const database = await SQLite.openDatabaseAsync("naijapos.db", { useNewConnection: true });
+      await database.execAsync("PRAGMA journal_mode = WAL;");
+      await database.getFirstAsync("SELECT 1");
+      return database;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
 export async function createExpoPlatform(appVersion: string): Promise<Platform> {
-  const database = await SQLite.openDatabaseAsync("naijapos.db");
-  await database.execAsync("PRAGMA journal_mode = WAL;");
+  const database = await openShopDatabase();
   return {
     db: expoDb(database),
     secrets: {

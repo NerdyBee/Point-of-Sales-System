@@ -6,6 +6,7 @@ import { SyncEngine, type SyncStatus } from "../sync/engine";
 import { loadSettings, type DeviceSettings } from "../sync/settings";
 import { ensureStandaloneUpgrades } from "../standalone/business";
 import { loadLicense, type LicenseState } from "../license/licenseStore";
+import { onActivity } from "../ui/activity";
 
 const backgroundSyncMs = 20_000;
 const autoLockMs = 10 * 60_000;
@@ -14,6 +15,10 @@ interface AppContextValue {
   platform: Platform;
   engine: SyncEngine;
   settings: DeviceSettings | null;
+  /** False until the device settings have been read once (null settings then means "not set up"). */
+  ready: boolean;
+  /** Set when the shop's records could not be read; the shell shows it with a retry. */
+  loadError: string | null;
   tenant: Tenant | null;
   staff: Staff | null;
   permissions: Set<string>;
@@ -37,6 +42,8 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider(props: { platform: Platform; children: ReactNode }) {
   const engine = useMemo(() => new SyncEngine(props.platform), [props.platform]);
   const [settings, setSettings] = useState<DeviceSettings | null>(null);
+  const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [staff, setStaff] = useState<Staff | null>(null);
   const [permissions, setPermissions] = useState<Set<string>>(new Set());
@@ -48,7 +55,12 @@ export function AppProvider(props: { platform: Platform; children: ReactNode }) 
   const [devSkip, setDevSkip] = useState(false);
 
   const reloadLicense = useCallback(async () => {
-    setLicense(await loadLicense(props.platform));
+    try {
+      setLicense(await loadLicense(props.platform));
+    } catch {
+      // Could not even read the device code: show activation rather than spin forever.
+      setLicense((current) => current ?? { deviceCode: "UNKNOWN", check: null });
+    }
   }, [props.platform]);
 
   // Check at start and whenever the app comes back to the foreground (catches expiry while open).
@@ -61,16 +73,23 @@ export function AppProvider(props: { platform: Platform; children: ReactNode }) 
   }, [reloadLicense]);
 
   const refresh = useCallback(async () => {
-    if (!upgraded.current) {
-      upgraded.current = true;
-      // Devices set up with an older version get newly added permissions (e.g. customer credit).
-      await ensureStandaloneUpgrades(props.platform).catch(() => undefined);
+    try {
+      if (!upgraded.current) {
+        upgraded.current = true;
+        // Devices set up with an older version get newly added permissions (e.g. customer credit).
+        await ensureStandaloneUpgrades(props.platform).catch(() => undefined);
+      }
+      const next = await loadSettings(props.platform);
+      setSettings(next);
+      setTenant(next ? await readModel.tenant(props.platform.db, next.tenantId) : null);
+      await engine.refreshCounts();
+      setLoadError(null);
+      setReady(true);
+      setDataVersion((version) => version + 1);
+    } catch (error) {
+      // Never fall through to the setup screen just because a read failed.
+      setLoadError(error instanceof Error ? error.message : String(error));
     }
-    const next = await loadSettings(props.platform);
-    setSettings(next);
-    setTenant(next ? await readModel.tenant(props.platform.db, next.tenantId) : null);
-    await engine.refreshCounts();
-    setDataVersion((version) => version + 1);
   }, [props.platform, engine]);
 
   useEffect(() => engine.subscribe(setSyncStatus), [engine]);
@@ -79,14 +98,18 @@ export function AppProvider(props: { platform: Platform; children: ReactNode }) 
     void refresh();
   }, [refresh]);
 
-  // Background sync while the app is in the foreground and paired.
+  // Background sync while the app is in the foreground and paired (nothing to do standalone).
   useEffect(() => {
-    if (!settings) return;
+    if (!settings || settings.mode === "standalone") return;
     let cancelled = false;
     const tick = async () => {
       if (AppState.currentState !== "active") return;
-      await engine.syncNow();
-      if (!cancelled) await refresh();
+      try {
+        await engine.syncNow();
+        if (!cancelled) await refresh();
+      } catch {
+        // The engine records its own errors in the sync status; try again next tick.
+      }
     };
     void tick();
     const timer = setInterval(() => void tick(), backgroundSyncMs);
@@ -98,7 +121,16 @@ export function AppProvider(props: { platform: Platform; children: ReactNode }) 
       clearInterval(timer);
       subscription.remove();
     };
-  }, [settings?.terminalId, engine, refresh]);
+  }, [settings?.terminalId, settings?.mode, engine, refresh]);
+
+  // Taps inside pop-ups and typing count as activity for the auto-lock.
+  useEffect(
+    () =>
+      onActivity(() => {
+        lastActivity.current = Date.now();
+      }),
+    []
+  );
 
   // Lock the till after inactivity.
   useEffect(() => {
@@ -113,6 +145,8 @@ export function AppProvider(props: { platform: Platform; children: ReactNode }) 
     platform: props.platform,
     engine,
     settings,
+    ready,
+    loadError,
     tenant,
     staff,
     permissions,

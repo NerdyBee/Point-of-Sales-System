@@ -439,6 +439,8 @@ export async function restoreBackup(platform: Platform, content: string) {
       }
     }
   });
+  // A backup from an older version gets the same upgrades as an updated device.
+  await ensureStandaloneUpgrades(platform);
 }
 
 export async function lastBackupAt(platform: Platform) {

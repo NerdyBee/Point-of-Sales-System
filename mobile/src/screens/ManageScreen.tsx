@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, FlatList, Image, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { readModel, type Customer, type Product, type Staff } from "../data/readModel";
 import { formatMoney } from "../pos/pricing";
@@ -86,7 +86,11 @@ function useRunner() {
   const { refresh } = useApp();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const running = useRef(false);
   const run = async (work: () => Promise<unknown>, after?: () => void) => {
+    // One save at a time: a second tap while saving must not record it twice.
+    if (running.current) return;
+    running.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -96,6 +100,7 @@ function useRunner() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
+      running.current = false;
       setBusy(false);
     }
   };

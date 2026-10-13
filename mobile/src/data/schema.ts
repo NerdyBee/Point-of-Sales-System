@@ -12,7 +12,7 @@ import type { Db } from "./db";
  * id_map     Tablet-local ids (local-...) -> server ids, learned from command results.
  * kv         Device settings and sync cursors.
  */
-const migrations: string[] = [
+const migrations: (string | ((db: Db) => Promise<void>))[] = [
   `CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS rows (
      tbl TEXT NOT NULL,
@@ -69,17 +69,29 @@ const migrations: string[] = [
    CREATE INDEX IF NOT EXISTS sales_created ON sales (createdAt);
    CREATE TABLE IF NOT EXISTS id_map (localId TEXT PRIMARY KEY, serverId TEXT NOT NULL);`,
   // v2: cash received for customer account payments, counted in the drawer.
-  `ALTER TABLE shifts ADD COLUMN cashIn INTEGER NOT NULL DEFAULT 0;`
+  async (db) => {
+    // Skip if an earlier, interrupted start already added the column.
+    const columns = await db.all<{ name: string }>("PRAGMA table_info(shifts)");
+    if (!columns.some((column) => column.name === "cashIn")) await db.exec("ALTER TABLE shifts ADD COLUMN cashIn INTEGER NOT NULL DEFAULT 0;");
+  }
 ];
 
+/**
+ * Brings the database up to date. Each step and its version number are saved together, so
+ * an app closed half-way through an update simply carries on from that step next time.
+ */
 export async function migrate(db: Db) {
   await db.exec("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)");
+  if (!(await db.first("SELECT version FROM schema_version"))) await db.run("INSERT INTO schema_version (version) VALUES (0)");
   const current = (await db.first<{ version: number }>("SELECT version FROM schema_version"))?.version ?? 0;
   for (let index = current; index < migrations.length; index += 1) {
-    await db.exec(migrations[index]);
+    const step = migrations[index];
+    await db.transaction(async () => {
+      if (typeof step === "string") await db.exec(step);
+      else await step(db);
+      await db.run("UPDATE schema_version SET version = ?", [index + 1]);
+    });
   }
-  if (current === 0) await db.run("INSERT INTO schema_version (version) VALUES (?)", [migrations.length]);
-  else if (current < migrations.length) await db.run("UPDATE schema_version SET version = ?", [migrations.length]);
 }
 
 /** Wipes everything (used by "Reset device"). */

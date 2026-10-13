@@ -15,24 +15,38 @@ export interface LicenseState {
   check: LicenseCheck | null;
 }
 
+/**
+ * Android's secure storage can become unreadable (e.g. after an OS update or a restore from
+ * another phone's backup). Treat that as "nothing stored" so the app asks for the activation
+ * code again instead of failing to start.
+ */
+async function readSecret(platform: Platform, key: string) {
+  try {
+    return await platform.secrets.get(key);
+  } catch {
+    await platform.secrets.remove(key).catch(() => undefined);
+    return null;
+  }
+}
+
 export async function deviceCode(platform: Platform) {
   return deviceCodeFor(await platform.deviceId(), platform.sha256Hex);
 }
 
 export async function loadLicense(platform: Platform, publicKeyHex = LICENSE_PUBLIC_KEY): Promise<LicenseState> {
   const code = await deviceCode(platform);
-  const stored = await platform.secrets.get(codeKey);
+  const stored = await readSecret(platform, codeKey);
   if (!stored) return { deviceCode: code, check: null };
-  const lastSeen = Number((await platform.secrets.get(lastSeenKey)) ?? 0) || null;
+  const lastSeen = Number((await readSecret(platform, lastSeenKey)) ?? 0) || null;
   const check = verifyLicense(stored, { publicKeyHex, deviceCode: code, lastSeen });
-  if (check.ok && (!lastSeen || Date.now() > lastSeen)) await platform.secrets.set(lastSeenKey, String(Date.now()));
+  if (check.ok && (!lastSeen || Date.now() > lastSeen)) await platform.secrets.set(lastSeenKey, String(Date.now())).catch(() => undefined);
   return { deviceCode: code, check };
 }
 
 /** Checks a pasted activation code and stores it only if it is valid for this device. */
 export async function activateLicense(platform: Platform, activationCode: string, publicKeyHex = LICENSE_PUBLIC_KEY) {
   const code = await deviceCode(platform);
-  const lastSeen = Number((await platform.secrets.get(lastSeenKey)) ?? 0) || null;
+  const lastSeen = Number((await readSecret(platform, lastSeenKey)) ?? 0) || null;
   const check = verifyLicense(activationCode, { publicKeyHex, deviceCode: code, lastSeen });
   if (check.ok) {
     await platform.secrets.set(codeKey, activationCode.trim());

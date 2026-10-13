@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, View } from "react-native";
 import { ActivationScreen } from "../screens/ActivationScreen";
 import { BackupScreen, backupAgeDays, backupReminderDays } from "../screens/BackupScreen";
 import { LockScreen } from "../screens/LockScreen";
@@ -14,6 +14,7 @@ import { lastBackupAt } from "../standalone/business";
 import { isStandalone } from "../sync/settings";
 import { Icon, IconButton, type IconName } from "../ui/appKit";
 import { Button } from "../ui/components";
+import { ErrorBoundary } from "../ui/ErrorBoundary";
 import { useKeyboardVisible } from "../ui/keyboard";
 import { useLayout } from "../ui/layout";
 import { colors, font, radius, spacing } from "../ui/theme";
@@ -33,7 +34,7 @@ const tabIcons: Record<Tab, [IconName, IconName]> = {
 };
 
 export function Shell() {
-  const { platform, settings, tenant, staff, signOut, syncStatus, touch, permissions, dataVersion, license, licensed, reloadLicense, skipLicense } = useApp();
+  const { platform, settings, ready, loadError, refresh, tenant, staff, signOut, syncStatus, touch, permissions, dataVersion, license, licensed, reloadLicense, skipLicense } = useApp();
   const [tab, setTab] = useState<Tab>("sell");
   const [repairing, setRepairing] = useState(false);
   const [lockedView, setLockedView] = useState<"lock" | "sync">("lock");
@@ -43,8 +44,18 @@ export function Shell() {
   const typing = useKeyboardVisible();
 
   useEffect(() => {
-    if (standalone) void lastBackupAt(platform).then(setLastBackup);
+    if (standalone) void lastBackupAt(platform).then(setLastBackup, () => undefined);
   }, [platform, standalone, dataVersion]);
+
+  // Android back button: from another tab, go back to Sell instead of leaving the app.
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (!staff || tab === "sell") return false;
+      setTab("sell");
+      return true;
+    });
+    return () => subscription.remove();
+  }, [staff, tab]);
 
   if (!license) {
     return (
@@ -64,6 +75,22 @@ export function Shell() {
         }}
         onSkip={skipLicense}
       />
+    );
+  }
+
+  if (!ready) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl, gap: spacing.lg }}>
+        {loadError ? (
+          <>
+            <Text style={{ color: colors.danger, fontSize: font.md, textAlign: "center" }}>The shop's records could not be read. Your data is still on this phone.</Text>
+            <Button label="Try again" onPress={() => void refresh()} />
+            <Text style={{ color: colors.textMuted, fontSize: font.sm, textAlign: "center" }}>Details: {loadError}</Text>
+          </>
+        ) : (
+          <ActivityIndicator size="large" color={colors.primary} />
+        )}
+      </View>
     );
   }
 
@@ -128,6 +155,7 @@ export function Shell() {
   );
 
   const content = (
+    <ErrorBoundary key={tab} onReset={() => setTab("sell")}>
     <View style={{ flex: 1 }}>
       {tab === "sell" ? <SellScreen onOpenRegister={() => setTab("register")} onOpenManage={canManage ? () => setTab("manage") : undefined} /> : null}
       {tab === "sales" ? <SalesScreen /> : null}
@@ -137,6 +165,7 @@ export function Shell() {
       {tab === "sync" ? <SyncScreen onRepair={() => setRepairing(true)} /> : null}
       {tab === "backup" ? <BackupScreen /> : null}
     </View>
+    </ErrorBoundary>
   );
 
   if (compact) {

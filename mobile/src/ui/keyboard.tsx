@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
+import { markActivity } from "./activity";
 import {
   Keyboard,
   KeyboardAvoidingView,
@@ -40,7 +41,7 @@ export function useKeyboardVisible() {
 /** Shrinks its content to the area above the keyboard. Use at the root of the app and of each Modal. */
 export function KeyboardSafe(props: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   return (
-    <KeyboardAvoidingView behavior="padding" style={[{ flex: 1 }, props.style]}>
+    <KeyboardAvoidingView behavior="padding" style={[{ flex: 1 }, props.style]} onTouchStart={markActivity}>
       {props.children}
     </KeyboardAvoidingView>
   );
