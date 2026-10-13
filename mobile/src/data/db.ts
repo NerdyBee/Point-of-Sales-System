@@ -26,6 +26,8 @@ export interface Platform {
   secrets: SecretStore;
   sha256Hex(value: string): Promise<string>;
   uuid(): string;
+  /** Cryptographically secure random bytes (keys, nonces, salts). */
+  randomBytes(length: number): Uint8Array;
   fetch: typeof fetch;
   appVersion: string;
   /** Stable per-install device id (Android ID / iOS vendor id), used for licensing. */

@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import type { Db, Platform, SqlValue } from "../src/data/db";
 import { migrate } from "../src/data/schema";
@@ -47,6 +47,7 @@ export async function nodePlatform(deviceId = "test-device-1"): Promise<Platform
     },
     sha256Hex: async (value) => createHash("sha256").update(value).digest("hex"),
     uuid: () => randomUUID(),
+    randomBytes: (length) => new Uint8Array(randomBytes(length)),
     fetch: (input, init) => fetch(input, init),
     appVersion: "test",
     deviceId: async () => deviceId

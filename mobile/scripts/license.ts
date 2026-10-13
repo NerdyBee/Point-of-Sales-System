@@ -5,6 +5,7 @@
  *   npm run license -- issue --device ABCD-EFGH-JKLM --name "Mama Nkechi Stores" [--days 365 | --expires 2027-12-31]
  *   npm run license -- verify --device ABCD-EFGH-JKLM --code <activation code>
  *   npm run license -- reset-pin --request ABCD-EFGH-JKLM-WXYZ-2345   one-time code for a forgotten owner PIN
+ *   npm run license -- open-backup --file <backup.json> --password <new>   unlock a backup whose password was lost
  *
  * The private key lives in mobile/.license/private-key.json (git-ignored). Back it up: without
  * it you cannot issue codes for apps already built with its public key.
@@ -13,6 +14,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { lockBackup, newPasswordKey, unlockWithVendorKey, type LockedPayload } from "../src/standalone/backupCrypto";
 import { issueLicense, issuePinReset, normalizeDeviceCode, parsePinResetRequest, pinResetRequestCode, publicKeyFor, verifyLicense, type LicensePayload } from "../src/license/license";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -121,6 +123,35 @@ if (command === "keygen") {
       "Only send this code if you are sure the request comes from that shop's owner.\n\n" +
       `Reset ${id}. Send this reset code (copy it exactly). It works once, on that phone only:\n\n${code}\n`
   );
+} else if (command === "open-backup") {
+  const file = option("file");
+  const password = option("password");
+  if (!file) {
+    throw new Error(
+      "Missing --file (the backup file the shop sent you).\n\n" +
+        'Example:\n  npm run license -- open-backup --file "C:\\Users\\DELL\\Downloads\\ajokepos-mama-nkechi-2026-10-13.json" --password "NewPass123"\n\n' +
+        "  --password  re-locks the backup with a new password for the owner (recommended).\n" +
+        "  --unlocked  instead writes an unlocked copy (contains customer details and PIN hashes: handle with care)."
+    );
+  }
+  if (!password && !process.argv.includes("--unlocked")) throw new Error("Add --password <new password for the owner> (or --unlocked for an unprotected copy).");
+  if (password && password.length < 6) throw new Error("The new password needs at least 6 characters.");
+  const backup = JSON.parse(readFileSync(file, "utf8")) as { format?: string; version?: number; locked?: LockedPayload } & Record<string, unknown>;
+  if (backup.format !== "naijapos-tablet-backup") throw new Error("That file is not an Ajoke POS backup.");
+  if (backup.version !== 2 || !backup.locked) throw new Error("That backup is not locked; the shop can restore it as it is.");
+  const contents = unlockWithVendorKey(backup.locked, loadSecret());
+  const random = (length: number) => new Uint8Array(randomBytes(length));
+  const outFile = file.replace(/\.json$/i, "") + (password ? "-new-password.json" : "-UNLOCKED.json");
+  if (password) {
+    void newPasswordKey(password, random).then((passwordKey) => {
+      const locked = lockBackup(contents, { passwordKey, vendorPublicKeyHex: publicKeyFor(loadSecret()), random });
+      writeFileSync(outFile, JSON.stringify({ ...backup, locked }));
+      console.log(`Backup re-locked with the new password.\n\nSend this file to the shop:\n  ${outFile}\n\nThey restore it with the password "${password}" (Backup → Restore from backup file). Ask them to change it afterwards under Backup → Change backup password.\n`);
+    });
+  } else {
+    writeFileSync(outFile, JSON.stringify({ format: backup.format, version: 1, exportedAt: backup.exportedAt, tenantId: backup.tenantId, businessName: backup.businessName, ...JSON.parse(contents) }));
+    console.log(`Unlocked copy written to:\n  ${outFile}\n\nIt is NOT protected: it holds customer details and staff PIN hashes. Delete it once the shop has restored it.\n`);
+  }
 } else {
-  console.log("Commands: keygen | issue --device <code> --name <shop> [--days N | --expires YYYY-MM-DD] | verify --device <code> --code <code> | reset-pin --request <request code>");
+  console.log("Commands: keygen | issue --device <code> --name <shop> [--days N | --expires YYYY-MM-DD] | verify --device <code> --code <code> | reset-pin --request <request code> | open-backup --file <backup> --password <new>");
 }

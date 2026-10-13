@@ -65,7 +65,7 @@ Install the APK on your own phone, issue yourself a licence (section 3), set up 
 5. **Customers with credit (optional)**: open the customer and set a credit limit.
 6. **Receipt printer (optional)**: *Backup* tab → **Receipt printer**. Pair a Bluetooth printer in the phone's settings first, then pick it here and print a test page.
 7. **Register → Open register** with the starting float, then **Sell**.
-8. **Backup → Back up now** and save the file to Google Drive or WhatsApp. Remind them to do this regularly; the app warns after 7 days.
+8. **Backup → Back up now**. The first time, they set a **backup password** (at least 6 characters; tell them to write it down). Save the file to Google Drive or WhatsApp. Remind them to do this regularly; the app warns after 7 days.
 
 ---
 
@@ -125,6 +125,24 @@ Staff PINs are reset by an owner in *Manage → Staff*. If the **only** owner fo
 
 A reset code works **once**, only on that phone, and only for the request shown at that moment, within 7 days. Each reset is logged in `mobile/.license/pin-resets.csv`, and the owner's record in *Manage → Staff* shows when the PIN was last reset with a code. Advise every shop to add a trusted second owner so they rarely need this.
 
+### 5.2 Unlocking a backup whose password was lost
+
+Backup files are locked: the shop's records are encrypted, and the key is stored in the file twice, once locked with the owner's **backup password** and once locked to **your licence key** (the same private key in `mobile/.license/private-key.json`). Without one of those, nobody can read the file. If an owner forgets the backup password:
+
+1. They send you the backup file (WhatsApp, email).
+2. **Check who is asking**, as for PIN resets: the file contains all their customers and sales.
+3. Run, choosing a new password for them:
+
+   ```powershell
+   npm run license -- open-backup --file "C:\Users\DELL\Downloads\ajokepos-mama-nkechi-2026-10-13.json" --password "NewPass123"
+   ```
+
+4. Send back the file it writes (`...-new-password.json`) and tell them the new password. They restore it (*Backup → Restore from backup file*, or *Restore from a backup file instead* on a new phone), then set their own password under *Backup → Change backup password*.
+
+`--unlocked` instead of `--password` writes an unprotected copy; avoid sending that over chat apps. Backups made before this version are not locked and still restore as they are.
+
+Shops should know that you can unlock their backups for recovery. A sentence in your terms is enough: "Backups are encrypted; Ajoke Code Sphere can unlock a backup only to help you recover it."
+
 ---
 
 ## 6. Troubleshooting
@@ -134,6 +152,7 @@ A reset code works **once**, only on that phone, and only for the request shown 
 | *App not installed* / blocked | Allow installing unknown apps for the app used to open the APK. If an older Ajoke POS is installed, the new APK needs a higher `versionCode` and the same signing key. |
 | *This code is for device …, not this device* | The code was issued for another phone's device code. Ask for the code shown on **this** phone and issue a new one. |
 | *Not genuine or was changed* | The code was cut off or altered when copied. Send it again in one piece. |
+| *That backup password is not right* | The backup was made with a different password (maybe an older one, if it was changed). Try the old password, or unlock it for them with **5.2**. |
 | Reset code: *for an older request* | They tapped *Back* and chose a different owner, or the request is over 7 days old, so the phone now shows a new request code. Ask for the code shown now and run `reset-pin` again. |
 | Printing not available | Bluetooth printing works only in the installed APK, not in Expo Go. On Android 12+, allow the *Nearby devices* permission when asked. |
 | Printer not in the list | Pair it in the phone's **Bluetooth settings** first (PIN is often `0000` or `1234`), or use *Bluetooth LE (scan)*. |

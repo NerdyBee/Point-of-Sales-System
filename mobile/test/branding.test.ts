@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getBusinessLogo, loadReceiptBranding, setBusinessLogo } from "../src/print/branding";
 import { loadSettings, saveSettings } from "../src/sync/settings";
-import { createStandaloneBusiness, exportBackup, restoreBackup, updateBusinessSettings } from "../src/standalone/business";
+import { createStandaloneBusiness, exportBackup, restoreBackup, setBackupPassword, updateBusinessSettings } from "../src/standalone/business";
 import { nodePlatform } from "./nodePlatform";
 
 const settingsInput = {
@@ -46,9 +46,10 @@ describe("receipt branding", () => {
   it("keeps the logo in backups", async () => {
     const { platform } = await shop();
     await setBusinessLogo(platform, "bG9nbw==");
+    await setBackupPassword(platform, "logo-pass");
     const backup = await exportBackup(platform);
     const fresh = await nodePlatform();
-    await restoreBackup(fresh, backup.content);
+    await restoreBackup(fresh, backup.content, "logo-pass");
     expect(await getBusinessLogo(fresh)).toBe("bG9nbw==");
   });
 });

@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import { resetLocalData } from "../data/schema";
 import { useApp } from "../shell/AppContext";
-import { exportBackup, lastBackupAt, restoreBackup } from "../standalone/business";
+import { exportBackup, hasBackupPassword, inspectBackup, lastBackupAt, restoreBackup, setBackupPassword } from "../standalone/business";
+import { BackupPasswordSheet, type BackupPasswordMode } from "./BackupPassword";
 import { pickBackupFile, shareBackupFile } from "../standalone/files";
 import { Banner, Button, Card, Muted, Title } from "../ui/components";
 import { PrinterCard } from "./PrinterSheet";
@@ -21,17 +22,33 @@ export function BackupScreen() {
   const [lastAt, setLastAt] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: "info" | "danger"; text: string } | null>(null);
+  const [hasPassword, setHasPassword] = useState<boolean | null>(null);
+  const [sheet, setSheet] = useState<{ mode: BackupPasswordMode; description?: string; onSubmit(password: string): Promise<void> } | null>(null);
   const canManage = !staff || permissions.has("settings.manage");
 
   useEffect(() => {
-    void lastBackupAt(platform).then(setLastAt);
+    void lastBackupAt(platform).then(setLastAt, () => undefined);
+    void hasBackupPassword(platform).then(setHasPassword, () => setHasPassword(false));
   }, [platform, dataVersion]);
 
   const age = backupAgeDays(lastAt);
 
   const backUp = async () => {
-    setBusy(true);
     setMessage(null);
+    if (!(await hasBackupPassword(platform))) {
+      // First backup on this phone: choose the password, then carry on with the backup.
+      setSheet({
+        mode: "set",
+        onSubmit: async (password) => {
+          await setBackupPassword(platform, password);
+          setHasPassword(true);
+          setSheet(null);
+          await backUp();
+        }
+      });
+      return;
+    }
+    setBusy(true);
     try {
       const backup = await exportBackup(platform);
       await shareBackupFile(backup.fileName, backup.content);
@@ -55,10 +72,20 @@ export function BackupScreen() {
             try {
               const content = await pickBackupFile();
               if (!content) return;
-              await restoreBackup(platform, content);
-              signOut();
-              await refresh();
-              setMessage({ tone: "info", text: "Backup restored." });
+              const finish = async (password?: string) => {
+                await restoreBackup(platform, content, password);
+                setSheet(null);
+                signOut();
+                await refresh();
+                setMessage({ tone: "info", text: "Backup restored." });
+              };
+              const info = inspectBackup(content);
+              if (info.locked) {
+                const made = info.exportedAt ? ` made on ${new Date(info.exportedAt).toLocaleString()}` : "";
+                setSheet({ mode: "unlock", description: `${info.businessName ?? "Backup"}${made}.`, onSubmit: finish });
+              } else {
+                await finish();
+              }
             } catch (cause) {
               setMessage({ tone: "danger", text: cause instanceof Error ? cause.message : String(cause) });
             }
@@ -99,6 +126,28 @@ export function BackupScreen() {
           <Text style={styles.heading}>Make a backup</Text>
           <Muted>Last backup: {lastAt ? new Date(lastAt).toLocaleString() : "never"}</Muted>
           <Button label="Back up now" busy={busy} onPress={() => void backUp()} large />
+          <Muted>
+            {hasPassword
+              ? "Backups are locked with your backup password. You need it to restore on a new phone."
+              : "Your first backup asks you to set a backup password, so the file stays private."}
+          </Muted>
+          {hasPassword && canManage ? (
+            <Button
+              label="Change backup password"
+              variant="ghost"
+              onPress={() =>
+                setSheet({
+                  mode: "change",
+                  description: "New backups will use the new password. Backups made before keep their old password.",
+                  onSubmit: async (password) => {
+                    await setBackupPassword(platform, password);
+                    setSheet(null);
+                    setMessage({ tone: "info", text: "Backup password changed. Make a new backup now so it uses the new password." });
+                  }
+                })
+              }
+            />
+          ) : null}
         </Card>
 
         {canManage ? (
@@ -111,6 +160,7 @@ export function BackupScreen() {
         ) : null}
         <AboutLine />
       </View>
+      {sheet ? <BackupPasswordSheet mode={sheet.mode} description={sheet.description} onSubmit={sheet.onSubmit} onClose={() => setSheet(null)} /> : null}
     </ScrollView>
   );
 }

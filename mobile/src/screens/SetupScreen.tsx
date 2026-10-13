@@ -3,7 +3,8 @@ import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-nat
 import { KeyboardAwareScrollView } from "../ui/keyboard";
 import type { TenantSettings } from "../data/readModel";
 import { useApp } from "../shell/AppContext";
-import { createStandaloneBusiness, restoreBackup } from "../standalone/business";
+import { createStandaloneBusiness, inspectBackup, restoreBackup } from "../standalone/business";
+import { BackupPasswordSheet } from "./BackupPassword";
 import { pickBackupFile } from "../standalone/files";
 import { pairServer, probeServer } from "../sync/engine";
 import type { ServerKey, SyncMode } from "../sync/types";
@@ -170,11 +171,18 @@ function StandaloneSetup() {
     }
   };
 
+  const [unlocking, setUnlocking] = useState<{ content: string; description: string } | null>(null);
+
   const restore = async () => {
     setError(null);
     try {
       const content = await pickBackupFile();
       if (!content) return;
+      const info = inspectBackup(content);
+      if (info.locked) {
+        setUnlocking({ content, description: `${info.businessName ?? "Backup"}${info.exportedAt ? ` made on ${new Date(info.exportedAt).toLocaleString()}` : ""}.` });
+        return;
+      }
       setBusy(true);
       await restoreBackup(platform, content);
       await refresh();
@@ -186,6 +194,18 @@ function StandaloneSetup() {
 
   return (
     <>
+      {unlocking ? (
+        <BackupPasswordSheet
+          mode="unlock"
+          description={unlocking.description}
+          onClose={() => setUnlocking(null)}
+          onSubmit={async (password) => {
+            await restoreBackup(platform, unlocking.content, password);
+            setUnlocking(null);
+            await refresh();
+          }}
+        />
+      ) : null}
       <Card>
         <Text style={styles.cardTitle}>Your business</Text>
         <Field label="Business name" value={businessName} onChangeText={setBusinessName} placeholder="e.g. Mama Nkechi Provisions" />

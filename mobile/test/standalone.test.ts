@@ -9,6 +9,7 @@ import {
   adjustStock,
   createStandaloneBusiness,
   exportBackup,
+  setBackupPassword,
   listStaff,
   restoreBackup,
   saveProduct,
@@ -136,12 +137,13 @@ describe("standalone tablet (no server)", () => {
     const cart = [{ product, quantity: 1, discount: 0 }];
     await recordSale(platform, { settings, tenantSettings: tenant.settings, staff: owner, cart, payments: [{ method: "cash", amount: calculateSale(cart, tenant.settings).total }] });
 
+    await setBackupPassword(platform, "shop-secret-1");
     const backup = await exportBackup(platform);
     expect(backup.fileName).toMatch(/^ajokepos-mama-nkechi-provisions-\d{4}-\d{2}-\d{2}\.json$/);
 
     const replacement = await nodePlatform();
     await expect(restoreBackup(replacement, "{}")).rejects.toThrow("not an Ajoke POS backup");
-    await restoreBackup(replacement, backup.content);
+    await restoreBackup(replacement, backup.content, "shop-secret-1");
     expect((await loadSettings(replacement))?.tenantId).toBe(settings.tenantId);
     expect((await readModel.products(replacement.db, settings.branchId))[0].stock).toBe(3);
     expect(await recentSales(replacement)).toHaveLength(1);

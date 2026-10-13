@@ -1,5 +1,7 @@
 import type { Db, Platform } from "../data/db";
 import type { Customer, Product, Staff, TenantSettings } from "../data/readModel";
+import { LICENSE_PUBLIC_KEY } from "../license/publicKey";
+import { lockBackup, newPasswordKey, unlockWithPassword, type LockedPayload, type PasswordKey } from "./backupCrypto";
 import { reverseAccountCharge } from "./credit";
 import { context, getRow, putRow } from "./store";
 
@@ -399,29 +401,100 @@ export async function updateBusinessSettings(platform: Platform, input: Business
 
 const backupFormat = "naijapos-tablet-backup";
 const backupTables = ["kv", "rows", "shifts", "sales"] as const;
+/** The owner's backup password, kept as a derived key in secure storage (never the password). */
+const passwordKeySecret = "naijapos.backup.passwordKey";
+export const MIN_BACKUP_PASSWORD = 6;
 
-export async function exportBackup(platform: Platform) {
+/** Thrown by exportBackup until the owner has set a backup password on this device. */
+export class BackupPasswordNeeded extends Error {
+  constructor() {
+    super("Set a backup password first");
+  }
+}
+
+async function loadPasswordKey(platform: Platform): Promise<PasswordKey | null> {
+  try {
+    const raw = await platform.secrets.get(passwordKeySecret);
+    return raw ? (JSON.parse(raw) as PasswordKey) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function hasBackupPassword(platform: Platform) {
+  return Boolean(await loadPasswordKey(platform));
+}
+
+/** Sets (or changes) the password that locks future backups on this device. */
+export async function setBackupPassword(platform: Platform, password: string) {
+  if (password.length < MIN_BACKUP_PASSWORD) throw new Error(`Use at least ${MIN_BACKUP_PASSWORD} characters`);
+  const key = await newPasswordKey(password, platform.randomBytes);
+  await platform.secrets.set(passwordKeySecret, JSON.stringify(key));
+}
+
+/** Makes a locked backup file. Needs a backup password (see setBackupPassword). */
+export async function exportBackup(platform: Platform, options: { vendorPublicKeyHex?: string } = {}) {
   const settings = await context(platform);
+  const passwordKey = await loadPasswordKey(platform);
+  if (!passwordKey) throw new BackupPasswordNeeded();
   const tables: Record<string, unknown[]> = {};
   for (const table of backupTables) tables[table] = await platform.db.all(`SELECT * FROM ${table}`);
   const exportedAt = now();
+  const locked = lockBackup(JSON.stringify({ tables }), {
+    passwordKey,
+    vendorPublicKeyHex: options.vendorPublicKeyHex ?? LICENSE_PUBLIC_KEY,
+    random: platform.randomBytes
+  });
   await platform.db.run("INSERT INTO kv (key, value) VALUES ('backup.lastAt', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [exportedAt]);
   return {
     fileName: `ajokepos-${settings.tenantName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "backup"}-${exportedAt.slice(0, 10)}.json`,
-    content: JSON.stringify({ format: backupFormat, version: 1, exportedAt, tenantId: settings.tenantId, tables })
+    content: JSON.stringify({ format: backupFormat, version: 2, exportedAt, tenantId: settings.tenantId, businessName: settings.tenantName, locked })
   };
 }
 
-/** Replaces everything on this tablet with the backup's contents. */
-export async function restoreBackup(platform: Platform, content: string) {
-  let backup: { format?: string; version?: number; tables?: Record<string, Record<string, unknown>[]> };
+type BackupFile = {
+  format?: string;
+  version?: number;
+  exportedAt?: string;
+  businessName?: string;
+  tables?: Record<string, Record<string, unknown>[]>;
+  locked?: LockedPayload;
+};
+
+function parseBackup(content: string): BackupFile {
+  let backup: BackupFile;
   try {
     backup = JSON.parse(content);
   } catch {
     throw new Error("This file is not an Ajoke POS backup");
   }
-  if (backup.format !== backupFormat || backup.version !== 1 || !backup.tables) throw new Error("This file is not an Ajoke POS backup");
-  const settingsRow = backup.tables.kv?.find((row) => row.key === "device.settings");
+  const valid = backup.format === backupFormat && ((backup.version === 1 && backup.tables) || (backup.version === 2 && backup.locked));
+  if (!valid) throw new Error("This file is not an Ajoke POS backup (or it is from a newer version of the app)");
+  return backup;
+}
+
+/** What a chosen file is, before asking for a password. */
+export function inspectBackup(content: string) {
+  const backup = parseBackup(content);
+  return { locked: backup.version === 2, exportedAt: backup.exportedAt ?? null, businessName: backup.businessName ?? null };
+}
+
+/**
+ * Replaces everything on this device with the backup's contents. Locked backups need the
+ * backup password; the device then remembers it for its own future backups.
+ */
+export async function restoreBackup(platform: Platform, content: string, password?: string) {
+  const backup = parseBackup(content);
+  let tables = backup.tables;
+  let passwordKey: PasswordKey | null = null;
+  if (backup.version === 2) {
+    if (!password) throw new BackupPasswordNeeded();
+    const opened = await unlockWithPassword(backup.locked!, password);
+    tables = (JSON.parse(opened.contents) as { tables: Record<string, Record<string, unknown>[]> }).tables;
+    passwordKey = opened.passwordKey;
+  }
+  if (!tables) throw new Error("This file is not an Ajoke POS backup");
+  const settingsRow = tables.kv?.find((row) => row.key === "device.settings");
   if (!settingsRow || (JSON.parse(String(settingsRow.value)) as DeviceSettings).mode !== "standalone") {
     throw new Error("This backup is not from a standalone tablet");
   }
@@ -429,7 +502,7 @@ export async function restoreBackup(platform: Platform, content: string) {
   await platform.db.transaction(async () => {
     for (const table of [...backupTables, "outbox", "id_map"]) await platform.db.run(`DELETE FROM ${table}`);
     for (const table of backupTables) {
-      for (const row of backup.tables![table] ?? []) {
+      for (const row of tables![table] ?? []) {
         const columns = Object.keys(row).filter((column) => /^[A-Za-z_]+$/.test(column));
         if (!columns.length) continue;
         await platform.db.run(
@@ -439,6 +512,7 @@ export async function restoreBackup(platform: Platform, content: string) {
       }
     }
   });
+  if (passwordKey) await platform.secrets.set(passwordKeySecret, JSON.stringify(passwordKey));
   // A backup from an older version gets the same upgrades as an updated device.
   await ensureStandaloneUpgrades(platform);
 }

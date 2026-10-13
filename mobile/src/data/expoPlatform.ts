@@ -57,6 +57,7 @@ export async function createExpoPlatform(appVersion: string): Promise<Platform> 
     },
     sha256Hex: (value) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, value, { encoding: Crypto.CryptoEncoding.HEX }),
     uuid: () => Crypto.randomUUID(),
+    randomBytes: (length) => Crypto.getRandomBytes(length),
     fetch: (input, init) => fetch(input, init),
     appVersion,
     deviceId: async () => {
