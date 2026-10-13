@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { Alert, FlatList, Image, Pressable, StyleSheet, Text, View } from "react-native";
-import { daySummary, recentSales, type LocalSale, type SaleRecord } from "../pos/actions";
+import RNDateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, FlatList, Image, Platform as RNPlatform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { daySummary, listSales, type LocalSale, type SaleRecord } from "../pos/actions";
 import { formatMoney } from "../pos/pricing";
 import { useApp } from "../shell/AppContext";
 import { voidSale } from "../standalone/business";
@@ -32,26 +33,99 @@ function statusBadge(status: LocalSale["status"]) {
   }
 }
 
+const PAGE_SIZE = 100;
+
+type Filter = "today" | "yesterday" | "day" | "all" | "voided";
+
+const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+const sameDay = (left: Date, right: Date) => startOfDay(left).getTime() === startOfDay(right).getTime();
+
+function parseRecord(sale: LocalSale) {
+  try {
+    return { ...sale, record: JSON.parse(sale.data) } as SaleWithRecord;
+  } catch {
+    // A damaged record must not take the whole list down.
+    return { ...sale, record: { summary: { lines: [], subtotal: 0, discount: 0, vat: 0, serviceCharge: 0, total: sale.total }, payments: [], staffName: "?" } } as unknown as SaleWithRecord;
+  }
+}
+
 export function SalesScreen() {
   const { platform, tenant, dataVersion } = useApp();
   const [sales, setSales] = useState<LocalSale[]>([]);
-  const [today, setToday] = useState<Awaited<ReturnType<typeof daySummary>> | null>(null);
-  const [filter, setFilter] = useState<"all" | "today" | "voided">("all");
+  const [summary, setSummary] = useState<Awaited<ReturnType<typeof daySummary>> | null>(null);
+  const [filter, setFilter] = useState<Filter>("today");
+  const [day, setDay] = useState(() => startOfDay(new Date()));
+  const [search, setSearch] = useState("");
+  const [more, setMore] = useState(false);
+  const [pickingDay, setPickingDay] = useState(false);
   const [open, setOpen] = useState<SaleWithRecord | null>(null);
+  const loadingMore = useRef(false);
   const currency = tenant?.settings.currency ?? "NGN";
 
-  useEffect(() => {
-    void recentSales(platform, 200).then(setSales);
-    void daySummary(platform).then(setToday);
-  }, [platform, dataVersion]);
+  const query = useMemo(
+    () => ({ day: filter === "all" || filter === "voided" ? null : day, voidedOnly: filter === "voided", search }),
+    [filter, day, search]
+  );
 
-  const rows = useMemo(() => {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    return sales
-      .filter((sale) => (filter === "voided" ? sale.status === "voided" : filter === "today" ? Date.parse(sale.createdAt) >= startOfDay.getTime() : true))
-      .map((sale) => ({ ...sale, record: JSON.parse(sale.data) }) as SaleWithRecord);
-  }, [sales, filter]);
+  // First page whenever the filter changes or data is saved.
+  useEffect(() => {
+    let current = true;
+    void listSales(platform, { ...query, limit: PAGE_SIZE }).then((page) => {
+      if (!current) return;
+      setSales(page);
+      setMore(page.length === PAGE_SIZE);
+    }, () => undefined);
+    if (query.day) void daySummary(platform, query.day).then((value) => current && setSummary(value), () => undefined);
+    else setSummary(null);
+    return () => {
+      current = false;
+    };
+  }, [platform, dataVersion, query]);
+
+  const loadMore = useCallback(async () => {
+    if (!more || loadingMore.current) return;
+    loadingMore.current = true;
+    try {
+      const page = await listSales(platform, { ...query, limit: PAGE_SIZE, offset: sales.length });
+      setSales((current) => [...current, ...page]);
+      setMore(page.length === PAGE_SIZE);
+    } finally {
+      loadingMore.current = false;
+    }
+  }, [more, platform, query, sales.length]);
+
+  const rows = useMemo(() => sales.map(parseRecord), [sales]);
+
+  const chooseDay = (date: Date) => {
+    const picked = startOfDay(date);
+    setDay(picked);
+    const today = new Date();
+    const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+    setFilter(sameDay(picked, today) ? "today" : sameDay(picked, yesterday) ? "yesterday" : "day");
+  };
+
+  const choose = (item: Filter) => {
+    if (item === "today") chooseDay(new Date());
+    else if (item === "yesterday") {
+      const today = new Date();
+      chooseDay(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1));
+    } else if (item === "day") {
+      if (RNPlatform.OS === "android") {
+        DateTimePickerAndroid.open({ value: day, mode: "date", maximumDate: new Date(), onValueChange: (_event, date) => chooseDay(date) });
+      } else {
+        setPickingDay(true);
+      }
+    } else setFilter(item);
+  };
+
+  const dayLabel = filter === "today" ? "Today" : filter === "yesterday" ? "Yesterday" : day.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+  const filterLabels: Record<Filter, string> = {
+    today: "Today",
+    yesterday: "Yesterday",
+    day: filter === "day" ? dayLabel : "Pick a day…",
+    all: "All",
+    voided: "Voided"
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -61,26 +135,43 @@ export function SalesScreen() {
         keyExtractor={(item) => item.id}
         ListHeaderComponent={
           <View style={{ gap: spacing.md }}>
-            {today ? (
+            {summary && query.day ? (
               <View style={styles.summary}>
-                <Summary label="Today" value={formatMoney(today.total, currency)} strong />
-                <Summary label="Sales" value={String(today.count)} />
-                <Summary label="Items" value={String(today.items)} />
-                {Object.entries(today.byMethod).map(([method, amount]) => (
+                <Summary label={dayLabel} value={formatMoney(summary.total, currency)} strong />
+                <Summary label="Sales" value={String(summary.count)} />
+                <Summary label="Items" value={String(summary.items)} />
+                {Object.entries(summary.byMethod).map(([method, amount]) => (
                   <Summary key={method} label={methodNames[method] ?? method} value={formatMoney(amount, currency)} />
                 ))}
               </View>
             ) : null}
             <View style={styles.filters}>
-              {(["all", "today", "voided"] as const).map((item) => (
-                <Pressable key={item} onPress={() => setFilter(item)} style={[styles.filter, filter === item && styles.filterActive]}>
-                  <Text style={[styles.filterLabel, filter === item && { color: colors.primaryText }]}>{item === "all" ? "All" : item === "today" ? "Today" : "Voided"}</Text>
+              {(["today", "yesterday", "day", "all", "voided"] as const).map((item) => (
+                <Pressable key={item} onPress={() => choose(item)} style={[styles.filter, filter === item && styles.filterActive]}>
+                  <Text style={[styles.filterLabel, filter === item && { color: colors.primaryText }]}>{filterLabels[item]}</Text>
                 </Pressable>
               ))}
             </View>
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search receipt no. or customer"
+              placeholderTextColor={colors.textMuted}
+              autoCorrect={false}
+              style={styles.search}
+            />
           </View>
         }
-        ListEmptyComponent={<EmptyState icon="receipt-outline" title={filter === "voided" ? "No voided sales" : "No sales yet"} message={filter === "all" ? "Sales you complete on this device appear here." : undefined} />}
+        onEndReached={() => void loadMore()}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={more ? <Muted>Loading more sales…</Muted> : null}
+        ListEmptyComponent={
+          <EmptyState
+            icon="receipt-outline"
+            title={search.trim() ? "No matching sales" : filter === "voided" ? "No voided sales" : query.day ? `No sales ${filter === "today" ? "today" : filter === "yesterday" ? "yesterday" : `on ${dayLabel}`}` : "No sales yet"}
+            message={filter === "all" && !search.trim() ? "Sales you complete on this device appear here." : undefined}
+          />
+        }
         renderItem={({ item }) => (
           <Pressable onPress={() => setOpen(item)} style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.surfaceMuted }]} accessibilityRole="button">
             <View style={{ flex: 1, gap: 2 }}>
@@ -98,6 +189,11 @@ export function SalesScreen() {
         )}
       />
       {open ? <SaleSheet sale={open} currency={currency} onClose={() => setOpen(null)} /> : null}
+      {pickingDay ? (
+        <Sheet title="Show sales for" onClose={() => setPickingDay(false)} footer={<Button label="Done" onPress={() => setPickingDay(false)} style={{ flex: 1 }} />}>
+          <RNDateTimePicker value={day} mode="date" display="inline" maximumDate={new Date()} onValueChange={(_event, date) => chooseDay(date)} />
+        </Sheet>
+      ) : null}
     </View>
   );
 }
@@ -239,11 +335,12 @@ function Row(props: { label: string; value: string; strong?: boolean }) {
 }
 
 const styles = StyleSheet.create({
+  search: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, fontSize: font.md, color: colors.text },
   list: { padding: spacing.lg, gap: spacing.sm },
   summary: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   summaryItem: { flexGrow: 1, minWidth: 100, gap: 2, backgroundColor: colors.surface, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
   summaryStrong: { backgroundColor: colors.primary, borderColor: colors.primary, minWidth: 160 },
-  filters: { flexDirection: "row", gap: spacing.sm },
+  filters: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   filter: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
   filterActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   filterLabel: { fontSize: font.sm, fontWeight: "600", color: colors.text },

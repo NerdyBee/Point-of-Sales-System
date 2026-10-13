@@ -297,6 +297,37 @@ export async function shiftHistory(platform: Platform, limit = 30) {
   );
 }
 
+/**
+ * One page of sales for the Sales tab, newest first: optionally one day (device local time),
+ * only voided ones, and/or a search on receipt number or customer name/phone.
+ */
+export async function listSales(
+  platform: Platform,
+  query: { day?: Date | null; voidedOnly?: boolean; search?: string; limit?: number; offset?: number } = {}
+) {
+  const where: string[] = [];
+  const params: (string | number)[] = [];
+  if (query.day) {
+    const start = new Date(query.day.getFullYear(), query.day.getMonth(), query.day.getDate());
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+    where.push("createdAt >= ? AND createdAt < ?");
+    params.push(start.toISOString(), end.toISOString());
+  }
+  if (query.voidedOnly) where.push("status = 'voided'");
+  const term = query.search?.trim().toLowerCase();
+  if (term) {
+    where.push(
+      "(lower(number) LIKE ? OR lower(COALESCE(serverId, '')) LIKE ? OR lower(COALESCE(json_extract(data, '$.customer.name'), '')) LIKE ? OR COALESCE(json_extract(data, '$.customer.phone'), '') LIKE ?)"
+    );
+    params.push(`%${term}%`, `%${term}%`, `%${term}%`, `%${term}%`);
+  }
+  params.push(query.limit ?? 100, query.offset ?? 0);
+  return platform.db.all<LocalSale>(
+    `SELECT * FROM sales ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY createdAt DESC, rowid DESC LIMIT ? OFFSET ?`,
+    params
+  );
+}
+
 export async function recentSales(platform: Platform, limit = 100) {
   return platform.db.all<LocalSale>("SELECT * FROM sales ORDER BY createdAt DESC, rowid DESC LIMIT ?", [limit]);
 }
