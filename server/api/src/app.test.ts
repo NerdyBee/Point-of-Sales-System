@@ -3521,6 +3521,44 @@ describe("api foundation", () => {
     expect(floorResponse.body.openOrders.some((order: { id: string }) => order.id === "table-order-1")).toBe(false);
   });
 
+  it("lets staff with Give discounts discount on their own, and cashiers only with an approval", async () => {
+    const post = (role: string, userId: string, key: string, amount: number) =>
+      request(app)
+        .post("/api/v1/sales")
+        .set("x-tenant-id", "tenant-lagos-foods")
+        .set("x-branch-id", "branch-lagos-main")
+        .set("x-role", role)
+        .set("x-user-id", userId)
+        .send({
+          branchId: "branch-lagos-main",
+          terminalId: "terminal-web-1",
+          idempotencyKey: key,
+          lines: [{ productId: "p1", quantity: 1, discount: 100 }],
+          payments: [{ method: "cash", amount }]
+        });
+
+    // Learn the discounted total from the payment check (it runs before the discount rules).
+    const priced = await post("manager", "manager-1", "discount-rule-price", 1);
+    expect(priced.status).toBe(409);
+    const total = priced.body.total as number;
+
+    const cashier = await post("cashier", "cashier-1", "discount-rule-cashier", total);
+    expect(cashier.status).toBe(409);
+    expect(cashier.body.error).toBe("Applied discount approval is required");
+
+    const manager = await post("manager", "manager-1", "discount-rule-manager", total);
+    expect(manager.status).toBe(201);
+    expect(manager.body.summary.discount).toBe(100);
+  });
+
+  it("lists Give discounts as a permission for owners and managers but not cashiers", async () => {
+    const { permissionsByRole, permissionCatalog } = await import("./shared/security/accessControl");
+    expect(permissionCatalog.some((permission) => permission.action === "sale.discount")).toBe(true);
+    expect(permissionsByRole.owner).toContain("sale.discount");
+    expect(permissionsByRole.manager).toContain("sale.discount");
+    expect(permissionsByRole.cashier).not.toContain("sale.discount");
+  });
+
   it("blocks sales that would exceed available stock", async () => {
     const response = await request(app)
       .post("/api/v1/sales")

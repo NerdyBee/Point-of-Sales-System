@@ -4,6 +4,7 @@ export const permissionCatalog: Array<{ action: PermissionAction; label: string;
   { action: "sale.create", label: "Create sales", group: "Sales", description: "Create POS sales and receipt actions" },
   { action: "sale.refund", label: "Refund sales", group: "Sales", description: "Refund completed sales" },
   { action: "sale.void", label: "Void sales", group: "Sales", description: "Void completed sales" },
+  { action: "sale.discount", label: "Give discounts", group: "Sales", description: "Lower an item's price at the till (large discounts still need a manager's approval)" },
   { action: "catalog.manage", label: "Manage catalog", group: "Catalog", description: "Create and update products and categories" },
   { action: "inventory.adjust", label: "Adjust inventory", group: "Inventory", description: "Receive, count, and adjust stock" },
   { action: "restaurant.manage", label: "Manage restaurant", group: "Restaurant", description: "Manage tables, orders, and reservations" },
@@ -25,8 +26,8 @@ export const permissionCatalog: Array<{ action: PermissionAction; label: string;
 
 export const permissionsByRole: Record<string, PermissionAction[]> = {
   owner: permissionCatalog.map((permission) => permission.action),
-  state_manager: ["sale.create", "sale.refund", "sale.void", "catalog.manage", "inventory.adjust", "restaurant.manage", "kitchen.manage", "customer.manage", "staff.manage", "branch.manage", "register.manage", "register.close", "expense.manage", "sync.manage", "approval.manage", "audit.view", "reports.profit.view"],
-  manager: ["sale.create", "sale.refund", "sale.void", "catalog.manage", "inventory.adjust", "restaurant.manage", "kitchen.manage", "customer.manage", "staff.manage", "branch.manage", "register.manage", "register.close", "expense.manage", "sync.manage", "approval.manage", "audit.view", "reports.profit.view"],
+  state_manager: ["sale.create", "sale.refund", "sale.void", "sale.discount", "catalog.manage", "inventory.adjust", "restaurant.manage", "kitchen.manage", "customer.manage", "staff.manage", "branch.manage", "register.manage", "register.close", "expense.manage", "sync.manage", "approval.manage", "audit.view", "reports.profit.view"],
+  manager: ["sale.create", "sale.refund", "sale.void", "sale.discount", "catalog.manage", "inventory.adjust", "restaurant.manage", "kitchen.manage", "customer.manage", "staff.manage", "branch.manage", "register.manage", "register.close", "expense.manage", "sync.manage", "approval.manage", "audit.view", "reports.profit.view"],
   waiter: ["sale.create", "restaurant.manage"],
   kitchen: ["kitchen.manage"],
   bar: ["kitchen.manage"],

@@ -124,7 +124,7 @@ const statusMessages: Record<string, string> = {
   credit_requires_customer: "Credit payments need a customer",
   customer_not_found: "Customer not found on the server",
   stock_not_found: "A product in this sale no longer exists at this branch",
-  approval_required: "Discount needs a manager approval",
+  approval_required: "This staff member is not allowed to give discounts (Give discounts permission)",
   branch_not_active: "Branch is paused",
   terminal_not_found: "Terminal no longer exists",
   terminal_branch_mismatch: "Terminal was moved to another branch",
@@ -235,7 +235,7 @@ export async function executeDeviceCommand(context: CommandContext, command: Dev
           lines: sale.lines.map((line) => ({ productId: line.productId, quantity: line.quantity, discount: line.discount, note: line.note })),
           payments: sale.payments
         },
-        { replay: true, unitPriceOverrides }
+        { replay: true, unitPriceOverrides, canDiscount: permissions.includes("sale.discount") }
       );
 
       if (result.status !== "created" && result.status !== "replayed") return rejection(command.id, result.status);

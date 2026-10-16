@@ -151,6 +151,12 @@ export async function recordSale(
   for (const payment of payments) {
     if (referenceRequired.includes(payment.method) && !payment.reference?.trim()) throw new PosError("Enter the payment reference");
   }
+  for (const line of input.cart) {
+    if (!Number.isInteger(line.discount) || line.discount < 0 || line.discount > line.product.price) throw new PosError(`The price of ${line.product.name} is not valid`);
+  }
+  if (input.cart.some((line) => line.discount > 0) && !(await readModel.permissionsForRole(platform.db, input.staff.role)).has("sale.discount")) {
+    throw new PosError(`${input.staff.name} is not allowed to give discounts. Ask an owner or manager.`);
+  }
   const onAccount = payments.filter((payment) => payment.method === "customer_credit").reduce((sum, payment) => sum + payment.amount, 0);
   if (onAccount) {
     if (!isStandalone(input.settings)) throw new PosError("Credit sales are recorded in the web app when this device is connected to a server.");

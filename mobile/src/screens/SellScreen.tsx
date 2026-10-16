@@ -93,6 +93,8 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [customerOpen, setCustomerOpen] = useState(false);
+  const [pricing, setPricing] = useState<CartLine | null>(null);
+  const canDiscount = permissions.has("sale.discount");
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
   // Set when checkout sent the cashier to pick a customer (for a credit sale); checkout reopens after.
@@ -145,6 +147,11 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
     if (!Number.isInteger(quantity) || quantity <= 0) return;
     setCart((current) => current.map((line) => (line.product.id === productId ? { ...line, quantity: Math.min(MAX_QUANTITY, quantity) } : line)));
   };
+  /** Per-unit discount for a line (from editing its price). */
+  const setDiscount = (productId: string, discount: number) => {
+    touch();
+    setCart((current) => current.map((line) => (line.product.id === productId ? { ...line, discount } : line)));
+  };
   /** Units on hand for a cart line (stock not yet including this cart). */
   const onHand = (product: Product) => product.stock - (deductions.get(product.id) ?? 0);
 
@@ -188,7 +195,26 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
             <View key={line.product.id} style={styles.line}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.lineName}>{line.product.name}</Text>
-                <Text style={styles.lineMeta}>{formatMoney(line.product.price, currency)} each</Text>
+                <Pressable
+                  disabled={!canDiscount}
+                  onPress={() => setPricing(line)}
+                  accessibilityRole={canDiscount ? "button" : undefined}
+                  accessibilityLabel={canDiscount ? `Change price of ${line.product.name}` : undefined}
+                  hitSlop={8}
+                >
+                  {line.discount > 0 ? (
+                    <Text style={styles.lineMeta}>
+                      <Text style={styles.linePriceEdited}>{formatMoney(line.product.price - line.discount, currency)} each</Text>
+                      {"  "}
+                      <Text style={styles.lineWas}>{formatMoney(line.product.price, currency)}</Text>
+                      {canDiscount ? "  ✎" : ""}
+                    </Text>
+                  ) : (
+                    <Text style={[styles.lineMeta, canDiscount && styles.lineMetaEditable]}>
+                      {formatMoney(line.product.price, currency)} each{canDiscount ? "  ✎" : ""}
+                    </Text>
+                  )}
+                </Pressable>
                 {short ? <Text style={styles.lineWarning}>Only {Math.max(0, stock)} in stock</Text> : null}
               </View>
               <View style={styles.stepper}>
@@ -196,7 +222,7 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
                 <QuantityInput value={line.quantity} onChange={(quantity) => setQuantity(line.product.id, quantity)} label={`Quantity of ${line.product.name}`} />
                 <Pressable accessibilityLabel="Add one" onPress={() => changeQuantity(line.product.id, 1)} style={styles.stepButton}><Text style={styles.stepLabel}>+</Text></Pressable>
               </View>
-              <Text style={[styles.lineTotal, compact && { width: 80 }]}>{formatMoney(line.product.price * line.quantity, currency)}</Text>
+              <Text style={[styles.lineTotal, compact && { width: 80 }]}>{formatMoney((line.product.price - line.discount) * line.quantity, currency)}</Text>
             </View>
           );
         })}
@@ -333,6 +359,18 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
             setCheckoutOpen(false);
             await refresh().catch(() => undefined);
             void engine.syncNow().then(refresh).catch(() => undefined);
+          }}
+        />
+      ) : null}
+
+      {pricing ? (
+        <PriceModal
+          line={pricing}
+          currency={currency}
+          onClose={() => setPricing(null)}
+          onSave={(discount) => {
+            setDiscount(pricing.product.id, discount);
+            setPricing(null);
           }}
         />
       ) : null}
@@ -527,6 +565,50 @@ function CheckoutModal(props: {
   );
 }
 
+/**
+ * Change the price of one cart line (a discount). It starts at the set price; the difference
+ * is recorded as a discount, shown on the receipt and in reports.
+ */
+function PriceModal(props: { line: CartLine; currency: string; onSave(discountPerUnit: number): void; onClose(): void }) {
+  const setPrice = props.line.product.price;
+  const [price, setPriceText] = useState(String(setPrice - props.line.discount));
+  const [error, setError] = useState<string | null>(null);
+  const money = (amount: number) => formatMoney(amount, props.currency);
+  const value = Number(price || "0");
+  const discount = setPrice - value;
+
+  const save = () => {
+    if (!price.trim()) return setError("Enter the price.");
+    if (value > setPrice) return setError(`The price can't be above the set price of ${money(setPrice)}. To change the set price, edit the product in Manage → Products.`);
+    props.onSave(Math.max(0, discount));
+  };
+
+  return (
+    <Modal transparent animationType="fade" onRequestClose={props.onClose}>
+      <KeyboardSafe style={styles.backdrop}>
+        <KeyboardAwareScrollView style={{ width: "100%", maxWidth: 560 }} contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}>
+          <View style={styles.modal}>
+            <Title>{props.line.product.name}</Title>
+            <Muted>Set price {money(setPrice)} each</Muted>
+            <NumberField label="Price each" value={price} onChangeText={(text) => { setPriceText(text); setError(null); }} autoFocus selectTextOnFocus />
+            {value <= setPrice && discount > 0 ? (
+              <Banner
+                tone="info"
+                message={`Discount ${money(discount)} each (${Math.round((discount / setPrice) * 100)}%) · ${money(discount * props.line.quantity)} on ${props.line.quantity} item${props.line.quantity === 1 ? "" : "s"}`}
+              />
+            ) : null}
+            {error ? <Banner tone="danger" message={error} /> : null}
+            <View style={{ flexDirection: "row", gap: spacing.sm }}>
+              {props.line.discount > 0 ? <Button label="Set price" variant="secondary" onPress={() => props.onSave(0)} /> : <Button label="Cancel" variant="secondary" onPress={props.onClose} />}
+              <Button label="Save price" onPress={save} style={{ flex: 1 }} />
+            </View>
+          </View>
+        </KeyboardAwareScrollView>
+      </KeyboardSafe>
+    </Modal>
+  );
+}
+
 function CustomerModal(props: { canCreate: boolean; onClose(): void; onPick(customer: Customer): void; onCreate(input: { name: string; phone: string }): Promise<void> }) {
   const { platform, tenant } = useApp();
   const currency = tenant?.settings.currency ?? "NGN";
@@ -687,6 +769,9 @@ const styles = StyleSheet.create({
   stepButton: { width: 40, height: 40, borderRadius: radius.sm, backgroundColor: colors.surfaceMuted, alignItems: "center", justifyContent: "center" },
   stepLabel: { fontSize: font.xl, color: colors.text },
   quantity: { minWidth: 48, height: 40, paddingHorizontal: spacing.xs, paddingVertical: 0, textAlign: "center", fontSize: font.md, fontWeight: "700", color: colors.text, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, backgroundColor: colors.surface },
+  lineMetaEditable: { color: colors.primary },
+  linePriceEdited: { color: colors.primary, fontWeight: "700" },
+  lineWas: { textDecorationLine: "line-through", color: colors.textMuted },
   lineWarning: { fontSize: font.sm, color: colors.warning, fontWeight: "600" },
   totals: { gap: spacing.xs, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md },
   totalLabel: { fontSize: font.md, color: colors.textMuted },

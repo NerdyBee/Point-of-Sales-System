@@ -19,14 +19,18 @@ import { loadSettings, saveSettings, type DeviceSettings } from "../sync/setting
 export type StandaloneRole = "owner" | "manager" | "cashier";
 
 const allActions = [
-  "sale.create", "sale.refund", "sale.void", "catalog.manage", "inventory.adjust", "customer.manage", "customer.credit", "staff.manage",
+  "sale.create", "sale.refund", "sale.void", "sale.discount", "catalog.manage", "inventory.adjust", "customer.manage", "customer.credit", "staff.manage",
   "register.manage", "register.close", "reports.profit.view", "settings.manage", "sync.manage"
 ];
 
-/** customer.credit = set or change customers' credit limits (selling on account needs only sale.create). */
+/**
+ * customer.credit = set or change customers' credit limits (selling on account needs only sale.create).
+ * sale.discount = change an item's price at the till; cashiers get it only if the owner allows it
+ * (setCashierDiscounts), so it is not in their default list.
+ */
 const roleActions: Record<StandaloneRole, string[]> = {
   owner: allActions,
-  manager: ["sale.create", "sale.refund", "sale.void", "catalog.manage", "inventory.adjust", "customer.manage", "customer.credit", "register.manage", "register.close", "reports.profit.view"],
+  manager: ["sale.create", "sale.refund", "sale.void", "sale.discount", "catalog.manage", "inventory.adjust", "customer.manage", "customer.credit", "register.manage", "register.close", "reports.profit.view"],
   cashier: ["sale.create", "customer.manage", "register.manage"]
 };
 
@@ -163,6 +167,28 @@ export async function ensureStandaloneUpgrades(platform: Platform) {
       const linkId = `${roleId}|${permissionId}`;
       if (!(await getRow(db, "access_role_permissions", linkId))) await putRow(db, "access_role_permissions", linkId, { roleId, permissionId });
     }
+  }
+}
+
+// ----- discounts ----------------------------------------------------------------
+
+const cashierDiscountLink = (tenantId: string) => `role-${tenantId}-cashier|perm-${tenantId}-sale.discount`;
+
+/** Whether cashiers may give discounts (owners and managers always can). */
+export async function cashierCanDiscount(platform: Platform) {
+  const settings = await loadSettings(platform);
+  if (!settings) return false;
+  return Boolean(await getRow(platform.db, "access_role_permissions", cashierDiscountLink(settings.tenantId)));
+}
+
+/** Lets cashiers give discounts, or takes it away again. */
+export async function setCashierDiscounts(platform: Platform, allowed: boolean) {
+  const settings = await context(platform);
+  const link = cashierDiscountLink(settings.tenantId);
+  if (allowed) {
+    await putRow(platform.db, "access_role_permissions", link, { roleId: `role-${settings.tenantId}-cashier`, permissionId: `perm-${settings.tenantId}-sale.discount` });
+  } else {
+    await platform.db.run("DELETE FROM rows WHERE tbl = 'access_role_permissions' AND id = ?", [link]);
   }
 }
 

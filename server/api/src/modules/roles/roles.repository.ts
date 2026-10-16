@@ -137,6 +137,16 @@ export async function ensureTenantAccessControl(tenantId: string) {
   }
 }
 
+/**
+ * Adds permissions introduced by an update (e.g. sale.discount) to every tenant's system
+ * roles at startup, so managers have them without anyone opening the Roles page first.
+ */
+export async function ensureAllTenantsAccessControl() {
+  if (useDemoStore) return;
+  const tenants = await prisma.tenant.findMany({ select: { id: true } });
+  for (const tenant of tenants) await ensureTenantAccessControl(tenant.id);
+}
+
 export async function listRoles(tenantId: string) {
   if (useDemoStore) return demoTenantRoles(tenantId);
 

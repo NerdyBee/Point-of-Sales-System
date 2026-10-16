@@ -72,10 +72,15 @@ salesRouter.post("/", requireTenant, requirePermission("sale.create"), async (re
   }
 
   try {
-    const result = await createSale(req.tenantContext!.tenantId, req.tenantContext!.userId, {
-      ...parsed.data,
-      branchId: scope.branchId ?? parsed.data.branchId
-    });
+    const result = await createSale(
+      req.tenantContext!.tenantId,
+      req.tenantContext!.userId,
+      {
+        ...parsed.data,
+        branchId: scope.branchId ?? parsed.data.branchId
+      },
+      { canDiscount: req.tenantContext!.permissions.includes("sale.discount") }
+    );
 
     if (result.status === "no_open_shift") {
       res.status(409).json({ error: "No open register shift for this terminal" });

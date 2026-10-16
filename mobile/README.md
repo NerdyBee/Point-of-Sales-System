@@ -14,7 +14,7 @@ This app is deliberately **outside** the npm workspaces (`apps/*`, `packages/*`,
 - **Setup:** choose *Office server only*, *Cloud only* or *Office server + cloud*, then enter the server address and a pairing code for each. Or choose *This device only (no server)* (see below).
 - **Sign in:** staff tap their name and enter their 6-digit PIN. This is checked on the tablet, so it works offline. The till locks after 10 minutes of inactivity.
 - **Register:** open with a float. Closing sends the cash count to a manager for approval in the web app.
-- **Sell:** product grid with search and categories, stock left (minus sales not yet synced), customer lookup or quick add, payment by cash / card / transfer / mobile money (with reference), and an on-screen receipt.
+- **Sell:** product grid with search and categories, stock left (minus sales not yet synced), customer lookup or quick add, payment by cash / card / transfer / mobile money (with reference), and an on-screen receipt. Tap a cart line's price to sell below the set price (a discount, shown on the receipt); owners and managers always can, cashiers only when *Manage → Business → Allow cashiers to give discounts* is on (permission `sale.discount`, also on the server: toggle it per role in the web admin).
 - **Sales:** sales made on this tablet, with their sync state.
 - **Sync:** server reachability, items waiting, items needing review, a log of recent commands, pairing with another server, and reset.
 

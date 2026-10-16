@@ -5,6 +5,7 @@ import { formatMoney } from "../pos/pricing";
 import { useApp } from "../shell/AppContext";
 import {
   adjustStock,
+  cashierCanDiscount,
   customerGroups,
   customerSales,
   deleteCustomer,
@@ -15,6 +16,7 @@ import {
   saveCustomer,
   saveProduct,
   saveStaff,
+  setCashierDiscounts,
   setProductArchived,
   setStaffActive,
   stockHistory,
@@ -788,11 +790,17 @@ function BusinessSection() {
     mobileMoney: Boolean(current?.paymentMethods?.mobileMoney)
   });
   const [saved, setSaved] = useState(false);
+  const [cashierDiscounts, setCashierDiscountsState] = useState(false);
   const labels: Record<keyof typeof methods, string> = { cash: "Cash", card: "Card (POS terminal)", bankTransfer: "Bank transfer", mobileMoney: "Mobile money" };
 
   useEffect(() => {
     void getBusinessLogo(platform).then(setLogo);
   }, [platform, dataVersion]);
+
+  // Read once: later refreshes must not undo a change that has not been saved yet.
+  useEffect(() => {
+    void cashierCanDiscount(platform).then(setCashierDiscountsState, () => undefined);
+  }, [platform]);
 
   const chooseLogo = async () => {
     setLogoBusy(true);
@@ -868,6 +876,12 @@ function BusinessSection() {
             <Switch value={methods[key]} onValueChange={(value) => { setSaved(false); setMethods((currentMethods) => ({ ...currentMethods, [key]: value })); }} />
           </View>
         ))}
+        <Text style={styles.fieldLabel}>Discounts</Text>
+        <View style={styles.switchRow}>
+          <Text style={styles.toggleLabel}>Allow cashiers to give discounts</Text>
+          <Switch value={cashierDiscounts} onValueChange={(value) => { setSaved(false); setCashierDiscountsState(value); }} />
+        </View>
+        <Muted>Owners and managers can always change an item's price at the till. Discounts show on the receipt and in reports.</Muted>
         {error ? <Banner tone="danger" message={error} /> : null}
         {saved ? <Banner tone="info" message="Saved. Changes apply from the next receipt." /> : null}
         <Button
@@ -885,7 +899,7 @@ function BusinessSection() {
                   serviceChargePercent: Number(serviceCharge) || 0,
                   receiptFooter: footer,
                   paymentMethods: methods
-                }),
+                }).then(() => setCashierDiscounts(platform, cashierDiscounts)),
               () => setSaved(true)
             )
           }

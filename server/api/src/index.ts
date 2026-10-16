@@ -1,4 +1,5 @@
 import { createApp } from "./app";
+import { ensureAllTenantsAccessControl } from "./modules/roles/roles.repository";
 import { startSyncAgent } from "./modules/sync/sync.agent";
 import { getNodeIdentity } from "./modules/sync/sync.identity";
 import { ensureSyncTriggers } from "./modules/sync/sync.triggers";
@@ -35,10 +36,20 @@ async function prepareReplication() {
   }
 }
 
+async function prepareAccessControl() {
+  try {
+    await ensureAllTenantsAccessControl();
+  } catch (error) {
+    console.error(`roles: could not apply new default permissions - ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 if (process.env.NODE_ENV !== "test") {
-  void prepareReplication().finally(() => {
-    createApp().listen(port, host, () => {
-      console.log(`NaijaPOS API listening on http://${host === "0.0.0.0" ? "127.0.0.1" : host}:${port}`);
+  void prepareAccessControl()
+    .then(prepareReplication)
+    .finally(() => {
+      createApp().listen(port, host, () => {
+        console.log(`NaijaPOS API listening on http://${host === "0.0.0.0" ? "127.0.0.1" : host}:${port}`);
+      });
     });
-  });
 }

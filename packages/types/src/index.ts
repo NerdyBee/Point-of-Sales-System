@@ -7,6 +7,7 @@ export type PermissionAction =
   | "sale.create"
   | "sale.refund"
   | "sale.void"
+  | "sale.discount"
   | "catalog.manage"
   | "inventory.adjust"
   | "restaurant.manage"

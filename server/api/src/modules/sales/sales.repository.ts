@@ -60,8 +60,16 @@ function branchWhere(scope: BranchScopeFilter) {
   return undefined;
 }
 
-async function validateDiscountApprovalForSale(tenantId: string, input: SaleInput, discountTotal: number) {
-  if (discountTotal < discountApprovalThreshold) return { status: "valid" as const };
+/**
+ * Discount rules: staff with sale.discount may give discounts below the approval threshold
+ * on their own; larger discounts, and any discount by staff without sale.discount, need an
+ * applied manager approval. A replayed offline sale has already happened at the counter, so
+ * only the permission is checked.
+ */
+async function validateDiscountApprovalForSale(tenantId: string, input: SaleInput, discountTotal: number, options: SaleReplayOptions) {
+  if (discountTotal <= 0) return { status: "valid" as const };
+  const canDiscount = options.canDiscount ?? true;
+  if (canDiscount && (options.replay || discountTotal < discountApprovalThreshold)) return { status: "valid" as const };
 
   return validateAppliedApproval(tenantId, input.discountApprovalId, {
     branchId: input.branchId,
@@ -92,6 +100,8 @@ export type SaleReplayOptions = {
   replay?: boolean;
   /** Unit prices the device actually charged, keyed by product id. */
   unitPriceOverrides?: Record<string, number>;
+  /** Whether the person making the sale holds sale.discount (default true for internal callers). */
+  canDiscount?: boolean;
 };
 
 async function nextSaleId(tx: Prisma.TransactionClient) {
@@ -569,7 +579,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
 
     if (disabledPayment) return { status: "payment_disabled" as const, method: disabledPayment.method };
     if (summary.paid !== summary.total) return { status: "payment_total_mismatch" as const, total: summary.total, paid: summary.paid };
-    const discountApprovalValidation = await validateDiscountApprovalForSale(tenantId, input, summary.discount);
+    const discountApprovalValidation = await validateDiscountApprovalForSale(tenantId, input, summary.discount, options);
     if (discountApprovalValidation.status !== "valid") return discountApprovalValidation;
 
     const customer = input.customerId ? customers.find((item) => item.tenantId === tenantId && item.id === input.customerId) : undefined;
@@ -793,7 +803,7 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
 
   if (disabledPayment) return { status: "payment_disabled" as const, method: disabledPayment.method };
   if (summary.paid !== summary.total) return { status: "payment_total_mismatch" as const, total: summary.total, paid: summary.paid };
-  const discountApprovalValidation = await validateDiscountApprovalForSale(tenantId, input, summary.discount);
+  const discountApprovalValidation = await validateDiscountApprovalForSale(tenantId, input, summary.discount, options);
   if (discountApprovalValidation.status !== "valid") return discountApprovalValidation;
 
   const customer = input.customerId ? await prisma.customer.findFirst({ where: { tenantId, id: input.customerId } }) : null;

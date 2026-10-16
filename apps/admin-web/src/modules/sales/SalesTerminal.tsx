@@ -358,6 +358,9 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
     [cart, discountProductId]
   );
   const proposedDiscountTotal = selectedDiscountItem ? discountAmount * selectedDiscountItem.quantity : 0;
+  // Staff without "Give discounts" need a manager's approval for any discount; others only for large ones.
+  const canDiscount = storedAuth?.staff.permissions.includes("sale.discount") ?? false;
+  const discountNeedsApproval = proposedDiscountTotal > 0 && (!canDiscount || applyManagerApproval("discount", proposedDiscountTotal));
   const splitItems = useMemo(
     () => cart
       .map((item) => ({ ...item, quantity: Math.min(splitQuantities[item.product.id] ?? 0, item.quantity) }))
@@ -678,7 +681,7 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
       return;
     }
 
-    if (applyManagerApproval("discount", proposedDiscountTotal) && !discountApprovalId.trim()) {
+    if (discountNeedsApproval && !discountApprovalId.trim()) {
       setSyncState({ status: "loading", message: "Requesting manager approval..." });
 
       try {
@@ -698,7 +701,7 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
       return;
     }
 
-    if (applyManagerApproval("discount", proposedDiscountTotal)) {
+    if (discountNeedsApproval) {
       setSyncState({ status: "loading", message: "Applying approved discount..." });
 
       try {
@@ -1343,21 +1346,21 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
                 Reason
                 <input value={discountReason} onChange={(event) => setDiscountReason(event.target.value)} placeholder="Customer recovery, promo, manager exception" required />
               </label>
-              {applyManagerApproval("discount", proposedDiscountTotal) ? (
+              {discountNeedsApproval ? (
                 <label className="wide-field">
                   Approved request ID
                   <input value={discountApprovalId} onChange={(event) => setDiscountApprovalId(event.target.value)} placeholder="Leave blank to request manager approval" />
                 </label>
               ) : null}
-              <div className={applyManagerApproval("discount", proposedDiscountTotal) ? "approval-warning" : "discount-preview"}>
+              <div className={discountNeedsApproval ? "approval-warning" : "discount-preview"}>
                 <span>{selectedDiscountItem ? `${selectedDiscountItem.quantity} x ${selectedDiscountItem.product.name}` : "No item selected"}</span>
                 <strong>{displayMoney(proposedDiscountTotal)}</strong>
-                <small>{applyManagerApproval("discount", proposedDiscountTotal) ? "Manager approval required or approved ID needed" : "Applies immediately"}</small>
+                <small>{discountNeedsApproval ? "Manager approval required or approved ID needed" : "Applies immediately"}</small>
               </div>
               <div className="form-summary">
                 <span>{statusLabel(syncState)}</span>
                 <span>{summary.discount > 0 ? `${displayMoney(summary.discount)} already applied` : "No active discount"}</span>
-                <button className="primary-button" type="submit"><Check size={18} /> {applyManagerApproval("discount", proposedDiscountTotal) && discountApprovalId.trim() ? "Apply approved" : applyManagerApproval("discount", proposedDiscountTotal) ? "Request approval" : "Apply"}</button>
+                <button className="primary-button" type="submit"><Check size={18} /> {discountNeedsApproval && discountApprovalId.trim() ? "Apply approved" : discountNeedsApproval ? "Request approval" : "Apply"}</button>
               </div>
             </form>
           </section>
