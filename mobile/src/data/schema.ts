@@ -73,6 +73,11 @@ const migrations: (string | ((db: Db) => Promise<void>))[] = [
     // Skip if an earlier, interrupted start already added the column.
     const columns = await db.all<{ name: string }>("PRAGMA table_info(shifts)");
     if (!columns.some((column) => column.name === "cashIn")) await db.exec("ALTER TABLE shifts ADD COLUMN cashIn INTEGER NOT NULL DEFAULT 0;");
+  },
+  // v3: cash paid out of the drawer for expenses.
+  async (db) => {
+    const columns = await db.all<{ name: string }>("PRAGMA table_info(shifts)");
+    if (!columns.some((column) => column.name === "cashOut")) await db.exec("ALTER TABLE shifts ADD COLUMN cashOut INTEGER NOT NULL DEFAULT 0;");
   }
 ];
 

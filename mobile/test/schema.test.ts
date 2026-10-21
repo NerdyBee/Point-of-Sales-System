@@ -7,7 +7,7 @@ describe("database updates", () => {
     const db = nodeDb();
     await migrate(db);
     await migrate(db);
-    expect((await db.first<{ version: number }>("SELECT version FROM schema_version"))?.version).toBe(2);
+    expect((await db.first<{ version: number }>("SELECT version FROM schema_version"))?.version).toBe(3);
     expect(await db.all("SELECT * FROM schema_version")).toHaveLength(1);
     const columns = await db.all<{ name: string }>("PRAGMA table_info(shifts)");
     expect(columns.map((column) => column.name)).toContain("cashIn");
@@ -19,7 +19,7 @@ describe("database updates", () => {
     // What an older app left behind when it was closed half-way through the v2 update.
     await db.run("UPDATE schema_version SET version = 1");
     await migrate(db);
-    expect((await db.first<{ version: number }>("SELECT version FROM schema_version"))?.version).toBe(2);
+    expect((await db.first<{ version: number }>("SELECT version FROM schema_version"))?.version).toBe(3);
   });
 
   it("upgrades a device still on the first version", async () => {

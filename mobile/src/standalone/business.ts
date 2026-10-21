@@ -20,7 +20,7 @@ export type StandaloneRole = "owner" | "manager" | "cashier";
 
 const allActions = [
   "sale.create", "sale.refund", "sale.void", "sale.discount", "catalog.manage", "inventory.adjust", "customer.manage", "customer.credit", "staff.manage",
-  "register.manage", "register.close", "reports.profit.view", "settings.manage", "sync.manage"
+  "register.manage", "register.close", "reports.profit.view", "settings.manage", "sync.manage", "expense.manage"
 ];
 
 /**
@@ -30,7 +30,7 @@ const allActions = [
  */
 const roleActions: Record<StandaloneRole, string[]> = {
   owner: allActions,
-  manager: ["sale.create", "sale.refund", "sale.void", "sale.discount", "catalog.manage", "inventory.adjust", "customer.manage", "customer.credit", "register.manage", "register.close", "reports.profit.view"],
+  manager: ["sale.create", "sale.refund", "sale.void", "sale.discount", "catalog.manage", "inventory.adjust", "customer.manage", "customer.credit", "register.manage", "register.close", "reports.profit.view", "expense.manage"],
   cashier: ["sale.create", "customer.manage", "register.manage"]
 };
 

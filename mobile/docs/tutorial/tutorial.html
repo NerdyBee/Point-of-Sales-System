@@ -114,7 +114,7 @@
     <li><span class="num">11</span>Selling on credit</li>
     <li><span class="num">12</span>Customers, payments and statements</li>
     <li><span class="num">13</span>Sales history and voiding a sale</li>
-    <li><span class="num">14</span>Recording new stock (Inflow)</li>
+    <li><span class="num">14</span>New stock (Inflow) and expenses</li>
     <li><span class="num">15</span>Stock report</li>
     <li><span class="num">16</span>Setting up a receipt printer</li>
     <li><span class="num">17</span>Business details and logo</li>
@@ -429,7 +429,7 @@
 
 <!-- ================= 14 ================= -->
 <div class="section">
-  <h2>14. Recording new stock (Inflow)</h2>
+  <h2>14. New stock (Inflow) and expenses</h2>
   <p>When goods arrive from a supplier, record them so your quantities stay correct.</p>
   <ol class="steps">
     <li>Go to <span class="tab">Manage</span> → <strong>Inflow</strong> and tap <span class="ui">Record inflow</span>.</li>
@@ -439,6 +439,16 @@
     <li>Tap <span class="ui">Record inflow</span>. Each delivery gets a number such as INF-00012 and the quantities go up at once.</li>
   </ol>
   <p>Entered something twice? Open the inflow, tap <span class="ui">Cancel inflow</span> and give a reason. The quantities are taken back out and the inflow stays on record as <strong>Cancelled</strong>.</p>
+
+  <h3>Recording expenses</h3>
+  <p>Record money the shop spends (fuel, transport, repairs, nylon bags, rent…) under <span class="tab">Manage</span> → <strong>Expenses</strong> (owners and managers).</p>
+  <ol class="steps">
+    <li>Tap <span class="ui">+ Expense</span>. Enter the <strong>Amount</strong>, choose a <strong>Category</strong> and say <strong>What was it for?</strong> Add <strong>Paid to</strong> if useful.</li>
+    <li>Under <strong>How was it paid?</strong> choose <span class="ui">Cash</span>, <span class="ui">Transfer</span>, <span class="ui">Card</span> or <span class="ui">Mobile money</span>. For anything but cash you can add the <strong>Payment reference</strong>.</li>
+    <li>For cash, leave <strong>Paid from the till drawer</strong> on if the money came out of the register: it is taken off the expected cash, so the drawer still balances at closing. Turn it off if the cash came from elsewhere (e.g. the owner's pocket).</li>
+    <li>Tap <span class="ui">Save</span>. Each expense gets a number such as EXP-00007.</li>
+  </ol>
+  <p>The Expenses screen shows what was spent <strong>Today</strong>, <strong>This week</strong> or <strong>This month</strong>, split by payment method and category; <span class="ui">Share</span> sends the list. Tap an expense to see it, or <span class="ui">Void</span> it with a reason if it was entered by mistake.</p>
 
   <h2 style="margin-top:8mm">15. Stock report</h2>
   <p>Tap <span class="tab">Reports</span>. Choose a period (<strong>Today</strong>, <strong>Yesterday</strong>, <strong>This week</strong>, <strong>This month</strong>) or pick your own <strong>From</strong> and <strong>To</strong> dates.</p>
@@ -505,7 +515,7 @@
   <h2>18. Close the register</h2>
   <p>At the end of the day (or end of each shift), count the cash and close the register.</p>
   <ol class="steps">
-    <li>Tap <span class="tab">Register</span>. The screen shows the <strong>Opening float</strong>, <strong>Cash sales on this device</strong>, <strong>Customer payments (cash)</strong> and the <strong>Expected cash in drawer</strong>.</li>
+    <li>Tap <span class="tab">Register</span>. The screen shows the <strong>Opening float</strong>, <strong>Cash sales on this device</strong>, <strong>Customer payments (cash)</strong>, <strong>Expenses paid from drawer</strong> and the <strong>Expected cash in drawer</strong>.</li>
     <li>Count the cash in the drawer and enter it under <strong>Counted cash</strong>.</li>
     <li>The app shows <strong>Balanced</strong>, <strong>Over</strong> or <strong>Short</strong> and by how much. Add a <strong>Note (optional)</strong> to explain any difference.</li>
     <li>Tap <span class="ui">Close register</span>.</li>

@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { KeyboardAwareScrollView } from "../ui/keyboard";
 import { useApp } from "../shell/AppContext";
 import { readModel, type ServerShift } from "../data/readModel";
-import { currentShift, openShift, requestCloseShift, shiftHistory, type LocalShift, type ShiftHistoryRow } from "../pos/actions";
+import { currentShift, expectedCash, openShift, requestCloseShift, shiftHistory, type LocalShift, type ShiftHistoryRow } from "../pos/actions";
 import { formatMoney } from "../pos/pricing";
 import { isStandalone } from "../sync/settings";
 import { Badge, Banner, Button, Card, Field, Muted, NumberField, Title } from "../ui/components";
@@ -71,7 +71,8 @@ export function RegisterScreen(props: { onOpened: () => void }) {
 
   // The server's expected cash includes every sale it has processed; until then use the local tally.
   const cashIn = Number(shift.cashIn ?? 0);
-  const expected = serverShift ? Number(serverShift.expectedCash) : shift.openingBalance + shift.cashSales + cashIn;
+  const cashOut = Number(shift.cashOut ?? 0);
+  const expected = serverShift ? Number(serverShift.expectedCash) : expectedCash(shift);
 
   return (
     <KeyboardAwareScrollView contentContainerStyle={styles.page}>
@@ -84,6 +85,7 @@ export function RegisterScreen(props: { onOpened: () => void }) {
         <Line label="Opening float" value={formatMoney(shift.openingBalance, currency)} />
         <Line label="Cash sales on this device" value={formatMoney(shift.cashSales, currency)} />
         {cashIn ? <Line label="Customer payments (cash)" value={formatMoney(cashIn, currency)} /> : null}
+        {cashOut ? <Line label="Expenses paid from drawer" value={`−${formatMoney(cashOut, currency)}`} /> : null}
         <Line label="Expected cash in drawer" value={formatMoney(expected, currency)} strong />
 
         {shift.status === "closing" ? (
@@ -132,7 +134,7 @@ function ShiftHistory(props: { currency: string; excludeId?: string }) {
     <View style={styles.history}>
       <Text style={styles.historyTitle}>Past shifts</Text>
       {shifts.map((row) => {
-        const expected = row.openingBalance + row.cashSales + Number(row.cashIn ?? 0);
+        const expected = expectedCash(row);
         const difference = row.countedCash === null ? null : row.countedCash - expected;
         return (
           <View key={row.id} style={styles.historyRow}>

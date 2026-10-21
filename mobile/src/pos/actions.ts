@@ -30,6 +30,8 @@ export interface LocalShift {
   cashSales: number;
   /** Cash taken for customer account payments during this shift. */
   cashIn: number;
+  /** Cash paid out of the drawer for expenses during this shift. */
+  cashOut: number;
   status: "open" | "closing" | "closed";
   countedCash: number | null;
   openedAt: string;
@@ -63,6 +65,11 @@ export interface SaleRecord {
 }
 
 export class PosError extends Error {}
+
+/** Cash that should be in the drawer: float + cash sales + cash customer payments − cash expenses. */
+export function expectedCash(shift: Pick<LocalShift, "openingBalance" | "cashSales"> & { cashIn?: number | null; cashOut?: number | null }) {
+  return shift.openingBalance + shift.cashSales + Number(shift.cashIn ?? 0) - Number(shift.cashOut ?? 0);
+}
 
 const localId = (platform: Platform, kind: string) => `local-${kind}-${platform.uuid()}`;
 
@@ -105,7 +112,7 @@ export async function requestCloseShift(platform: Platform, staff: Staff, counte
   if (!Number.isInteger(countedCash) || countedCash < 0) throw new PosError("Enter the counted cash");
   if (isStandalone(await loadSettings(platform))) {
     await platform.db.run("UPDATE shifts SET status = 'closed', countedCash = ?, closedAt = ? WHERE id = ?", [countedCash, new Date().toISOString(), shift.id]);
-    return { closed: true as const, expected: shift.openingBalance + shift.cashSales + Number(shift.cashIn ?? 0) };
+    return { closed: true as const, expected: expectedCash(shift) };
   }
   await platform.db.transaction(async () => {
     await platform.db.run("UPDATE shifts SET status = 'closing', countedCash = ? WHERE id = ?", [countedCash, shift.id]);
@@ -116,7 +123,7 @@ export async function requestCloseShift(platform: Platform, staff: Staff, counte
       payload: { shiftId: shift.serverId ?? shift.id, countedCash, note: note?.trim() || undefined }
     });
   });
-  return { closed: false as const, expected: shift.openingBalance + shift.cashSales + Number(shift.cashIn ?? 0) };
+  return { closed: false as const, expected: expectedCash(shift) };
 }
 
 /** Units of each product sold on this tablet that the server stock does not reflect yet. */
@@ -285,6 +292,7 @@ export interface ShiftHistoryRow {
   openingBalance: number;
   cashSales: number;
   cashIn: number;
+  cashOut: number;
   countedCash: number | null;
   status: string;
   openedAt: string;

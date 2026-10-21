@@ -44,11 +44,12 @@ import {
   type PaymentChannel
 } from "../standalone/credit";
 import { InflowSection } from "./InventoryScreens";
+import { ExpensesSection } from "./ExpensesScreen";
 import { KeyboardAwareScrollView } from "../ui/keyboard";
 import { Badge, Banner, Button, Card, Field, Muted, NumberField } from "../ui/components";
 import { colors, font, radius, spacing } from "../ui/theme";
 
-type Section = "products" | "inflow" | "customers" | "staff" | "business";
+type Section = "products" | "inflow" | "expenses" | "customers" | "staff" | "business";
 
 /** Back office for a standalone device: products & stock, customers, staff, settings. */
 export function ManageScreen() {
@@ -56,6 +57,7 @@ export function ManageScreen() {
   const sections = ([
     ["products", "Products", "catalog.manage"],
     ["inflow", "Inflow", "inventory.adjust"],
+    ["expenses", "Expenses", "expense.manage"],
     ["customers", "Customers", "customer.manage"],
     ["staff", "Staff", "staff.manage"],
     ["business", "Business", "settings.manage"]
@@ -77,6 +79,7 @@ export function ManageScreen() {
       </ScrollView>
       {section === "products" ? <ProductsSection /> : null}
       {section === "inflow" ? <InflowSection /> : null}
+      {section === "expenses" ? <ExpensesSection /> : null}
       {section === "customers" ? <CustomersSection /> : null}
       {section === "staff" ? <StaffSection /> : null}
       {section === "business" ? <BusinessSection /> : null}
