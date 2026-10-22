@@ -44,9 +44,9 @@ export const ReceiptCard = forwardRef<View, { receipt: ReceiptData }>(function R
       {receipt.customer ? <Row label="Customer" value={receipt.customer.name} /> : null}
       <View style={styles.divider} />
 
-      {receipt.summary.lines.map((line) => (
-        <View key={line.productId} style={styles.item}>
-          <Text style={[styles.text, styles.itemName]}>{line.name}</Text>
+      {receipt.summary.lines.map((line, index) => (
+        <View key={`${line.productId}-${index}`} style={styles.item}>
+          <Text style={[styles.text, styles.itemName]}>{line.name}{line.clearance ? " (clearance)" : ""}</Text>
           <Row label={`${line.quantity} × ${money(line.unitPrice)}`} value={money(line.subtotal)} muted />
           {line.discount ? <Row label="Discount" value={`−${money(line.discount)}`} muted /> : null}
         </View>

@@ -93,8 +93,8 @@ describe("sync merge rules", () => {
       change(2, "U", "2026-01-01T00:01:00Z", { fields: [], deltas: { stock: -2 } }),
       change(3, "U", "2026-01-01T00:02:00Z", { fields: ["price"], deltas: { stock: -3 } })
     ];
-    expect(counterDeltas(products, changes, false)).toEqual({ stock: 35 });
-    expect(counterDeltas(products, changes, true)).toEqual({ stock: -5 });
+    expect(counterDeltas(products, changes, false)).toEqual({ stock: 35, clearanceRemaining: 0 });
+    expect(counterDeltas(products, changes, true)).toEqual({ stock: -5, clearanceRemaining: 0 });
   });
 
   it("keeps a local column when the local write is newer (field-level last writer wins)", () => {

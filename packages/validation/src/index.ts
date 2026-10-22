@@ -9,7 +9,9 @@ export const saleLineSchema = z.object({
   productId: z.string().min(1),
   quantity: z.number().int().positive(),
   note: z.string().max(280).optional(),
-  discount: z.number().min(0).default(0)
+  discount: z.number().min(0).default(0),
+  /** Units sold at the product's clearance price (set by an owner/manager). */
+  clearance: z.boolean().optional()
 });
 
 export const productCategorySchema = z.string().trim().min(2).max(60).transform((value) => value.replace(/\s+/g, " "));
@@ -72,7 +74,9 @@ export const stockAdjustmentSchema = z.object({
   type: stockMovementTypeSchema,
   quantityDelta: z.number().int().refine((value) => value !== 0, "Quantity delta cannot be zero"),
   reason: z.string().min(3).max(160),
-  reference: z.string().max(80).optional()
+  reference: z.string().max(80).optional(),
+  /** Expiry date of stock received (positive adjustments only). */
+  expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").optional().or(z.literal("")),
 });
 
 export const stockCountSchema = z.object({
@@ -103,7 +107,15 @@ export const supplierReceiptSchema = z.object({
   quantity: z.number().int().positive(),
   reference: z.string().min(2).max(80),
   note: z.string().min(3).max(160),
-  purchaseOrderId: z.string().max(80).optional().or(z.literal(""))
+  purchaseOrderId: z.string().max(80).optional().or(z.literal("")),
+  expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").optional().or(z.literal("")),
+});
+
+export const productClearanceSchema = z.object({
+  clearancePrice: z.number().int().nonnegative(),
+  units: z.number().int().positive(),
+  endsAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").optional().or(z.literal("")),
+  expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").optional().or(z.literal(""))
 });
 
 export const purchaseOrderInputSchema = z.object({

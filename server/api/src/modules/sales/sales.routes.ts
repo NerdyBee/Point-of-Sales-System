@@ -127,6 +127,11 @@ salesRouter.post("/", requireTenant, requirePermission("sale.create"), async (re
       return;
     }
 
+    if (result.status === "clearance_not_available") {
+      res.status(409).json({ error: `The clearance on ${result.productName} has ended or has no units left. Refresh the products and charge again.` });
+      return;
+    }
+
     if (result.status === "approval_required") {
       res.status(409).json({ error: "Applied discount approval is required" });
       return;

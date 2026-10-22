@@ -1,7 +1,8 @@
 import { Router, raw, type Request } from "express";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { productInputSchema } from "@pos/validation";
+import { productClearanceSchema, productInputSchema } from "@pos/validation";
+import { endProductClearance, setProductClearance } from "../inventory/expiry.repository";
 import { canAccessAllBranches, canAccessScopedBranches, resolveBranchScope, requireAnyPermission, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import {
   appendCatalogAudit,
@@ -176,6 +177,60 @@ catalogRouter.post("/products", requireTenant, requirePermission("catalog.manage
   });
 
   res.status(201).json({ product });
+});
+
+function clearanceScope(req: Request) {
+  const scope = resolveBranchScope(req.tenantContext!, undefined);
+  if (scope.forbidden) return null;
+  if (canAccessAllBranches(req.tenantContext!)) return {};
+  if (scope.branchScopeIds?.length) return { branchIds: scope.branchScopeIds };
+  return { branchId: req.tenantContext!.branchId ?? undefined };
+}
+
+/** Put units of a product on clearance (near expiry) at a lower price. */
+catalogRouter.post("/products/:productId/clearance", requireTenant, requirePermission("catalog.manage"), async (req, res) => {
+  const parsed = productClearanceSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid clearance", issues: parsed.error.flatten() });
+    return;
+  }
+  const scope = clearanceScope(req);
+  if (!scope) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+  const result = await setProductClearance(req.tenantContext!.tenantId, scope, req.tenantContext!.userId, req.params.productId.toString(), parsed.data);
+  if (result.status === "product_not_found") {
+    res.status(404).json({ error: "Product not found" });
+    return;
+  }
+  if (result.status === "price_not_lower") {
+    res.status(409).json({ error: `The clearance price must be below the normal price (${result.price})` });
+    return;
+  }
+  if (result.status === "not_enough_stock") {
+    res.status(409).json({ error: `Only ${result.stock} in stock` });
+    return;
+  }
+  if (result.status === "invalid_date" || result.status === "ends_in_past") {
+    res.status(400).json({ error: result.status === "ends_in_past" ? "The end date has already passed" : "Dates must be real dates in the form YYYY-MM-DD" });
+    return;
+  }
+  res.json({ product: result.product });
+});
+
+catalogRouter.delete("/products/:productId/clearance", requireTenant, requirePermission("catalog.manage"), async (req, res) => {
+  const scope = clearanceScope(req);
+  if (!scope) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+  const result = await endProductClearance(req.tenantContext!.tenantId, scope, req.tenantContext!.userId, req.params.productId.toString());
+  if (result.status === "product_not_found") {
+    res.status(404).json({ error: "Product not found" });
+    return;
+  }
+  res.json({ ended: true });
 });
 
 catalogRouter.patch("/products/:productId", requireTenant, requirePermission("catalog.manage"), async (req, res) => {

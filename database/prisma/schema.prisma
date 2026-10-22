@@ -28,6 +28,7 @@ model Tenant {
   supplierReturns       SupplierReturn[]
   inventoryTransfers    InventoryTransfer[]
   stockMovements        StockMovement[]
+  stockLots             StockLot[]
   registerShifts        RegisterShift[]
   paymentRecords        PaymentRecord[]
   cashMovements         CashMovement[]
@@ -69,6 +70,7 @@ model Branch {
   outgoingInventoryTransfers InventoryTransfer[] @relation("InventoryTransferSourceBranch")
   incomingInventoryTransfers InventoryTransfer[] @relation("InventoryTransferDestinationBranch")
   stockMovements StockMovement[]
+  stockLots      StockLot[]
   staffMembers   StaffMember[]
   registerShifts RegisterShift[]
   paymentRecords PaymentRecord[]
@@ -285,6 +287,14 @@ model Product {
   reorderPoint Int
   station      String   @db.VarChar(40)
   modifiers    Json
+  /// Clearance (near expiry): units still to sell at clearancePrice, until clearanceEndsAt (YYYY-MM-DD, inclusive).
+  clearancePrice     Int?
+  clearancePercent   Int?
+  clearanceRemaining Int       @default(0)
+  clearanceEndsAt    String?   @db.VarChar(10)
+  clearanceExpiry    String?   @db.VarChar(10)
+  clearanceSetBy     String?   @db.VarChar(80)
+  clearanceSetAt     DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -293,6 +303,7 @@ model Product {
 
   supplierProducts SupplierProduct[]
   stockMovements   StockMovement[]
+  stockLots        StockLot[]
   supplierReturns  SupplierReturn[]
   sourceInventoryTransfers InventoryTransfer[] @relation("InventoryTransferSourceProduct")
   destinationInventoryTransfers InventoryTransfer[] @relation("InventoryTransferDestinationProduct")
@@ -460,6 +471,30 @@ model StockMovement {
   @@index([tenantId, branchId, createdAt])
   @@index([productId])
   @@map("stock_movements")
+}
+
+/// A batch of stock as received (delivery / adjustment), with the expiry date printed on it.
+/// What is left of each batch is derived from the product's stock (oldest sold first).
+model StockLot {
+  id          String   @id @db.VarChar(64)
+  tenantId    String   @db.VarChar(64)
+  branchId    String   @db.VarChar(64)
+  productId   String   @db.VarChar(64)
+  productName String   @db.VarChar(160)
+  quantity    Int
+  expiryDate  String?  @db.VarChar(10)
+  source      String   @db.VarChar(40)
+  reference   String?  @db.VarChar(100)
+  createdBy   String   @db.VarChar(80)
+  createdAt   DateTime @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch  Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, branchId, expiryDate])
+  @@index([productId])
+  @@map("stock_lots")
 }
 
 model InventoryTransfer {

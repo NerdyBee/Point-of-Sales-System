@@ -12,10 +12,12 @@ export interface CartLine {
   /** Per-unit discount. */
   discount: number;
   note?: string;
+  /** Units sold at an owner-set clearance price (see clearance.ts expandCart). */
+  clearance?: boolean;
 }
 
 export interface SaleSummary {
-  lines: { productId: string; name: string; quantity: number; unitPrice: number; subtotal: number; discount: number; vat: number; total: number }[];
+  lines: { productId: string; name: string; quantity: number; unitPrice: number; subtotal: number; discount: number; vat: number; total: number; clearance?: boolean }[];
   subtotal: number;
   discount: number;
   serviceCharge: number;
@@ -41,7 +43,8 @@ export function calculateSale(lines: CartLine[], settings: Pick<TenantSettings, 
       subtotal,
       discount,
       vat,
-      total: taxableBase + vat
+      total: taxableBase + vat,
+      ...(line.clearance ? { clearance: true } : {})
     };
   });
 

@@ -16,6 +16,7 @@ import {
   type PaymentMethod
 } from "../pos/actions";
 import { calculateSale, formatMoney, type CartLine, type SaleSummary } from "../pos/pricing";
+import { activeClearance, clearanceUnits, expandCart } from "../pos/clearance";
 import { Badge, Banner, Button, Field, Muted, NumberField, Title } from "../ui/components";
 import { useLayout } from "../ui/layout";
 import { EmptyState, Icon } from "../ui/appKit";
@@ -121,7 +122,8 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
       .sort((left, right) => left.name.localeCompare(right.name));
   }, [products, search, category]);
 
-  const summary = useMemo(() => (tenant ? calculateSale(cart, tenant.settings) : null), [cart, tenant]);
+  // Clearance units are priced first at the clearance price (same rule as when the sale is saved).
+  const summary = useMemo(() => (tenant ? calculateSale(expandCart(cart), tenant.settings) : null), [cart, tenant]);
   const available = (product: Product) => product.stock - (deductions.get(product.id) ?? 0) - (cart.find((line) => line.product.id === product.id)?.quantity ?? 0);
   const tracksStock = (product: Product) => product.category.trim().toLowerCase() !== "services";
 
@@ -215,6 +217,12 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
                     </Text>
                   )}
                 </Pressable>
+                {clearanceUnits(line) ? (
+                  <Text style={styles.lineClearance}>
+                    {clearanceUnits(line)} at clearance {formatMoney(activeClearance(line.product)!.price, currency)}
+                    {line.quantity > clearanceUnits(line) ? ` · ${line.quantity - clearanceUnits(line)} at ${formatMoney(line.product.price - line.discount, currency)}` : ""}
+                  </Text>
+                ) : null}
                 {short ? <Text style={styles.lineWarning}>Only {Math.max(0, stock)} in stock</Text> : null}
               </View>
               <View style={styles.stepper}>
@@ -222,7 +230,9 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
                 <QuantityInput value={line.quantity} onChange={(quantity) => setQuantity(line.product.id, quantity)} label={`Quantity of ${line.product.name}`} />
                 <Pressable accessibilityLabel="Add one" onPress={() => changeQuantity(line.product.id, 1)} style={styles.stepButton}><Text style={styles.stepLabel}>+</Text></Pressable>
               </View>
-              <Text style={[styles.lineTotal, compact && { width: 80 }]}>{formatMoney((line.product.price - line.discount) * line.quantity, currency)}</Text>
+              <Text style={[styles.lineTotal, compact && { width: 80 }]}>
+                {formatMoney(expandCart([line]).reduce((sum, part) => sum + (part.product.price - part.discount) * part.quantity, 0), currency)}
+              </Text>
             </View>
           );
         })}
@@ -303,6 +313,7 @@ export function SellScreen(props: { onOpenRegister: () => void; onOpenManage?: (
                 <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
                 <Text style={styles.productPrice}>{formatMoney(item.price, currency)}</Text>
                 {tracksStock(item) ? <Badge label={out ? "Out of stock" : `${left} left`} tone={out ? "danger" : left <= 5 ? "warning" : "neutral"} /> : null}
+                {activeClearance(item) ? <Badge label={`Clearance −${activeClearance(item)!.percent}% · ${formatMoney(activeClearance(item)!.price, currency)}`} tone="warning" /> : null}
               </Pressable>
             );
           }}
@@ -708,9 +719,9 @@ function ReceiptModal(props: { receipt: Receipt; businessName: string; footer?: 
           {receipt.data.phone ? <Text style={[styles.lineMeta, { textAlign: "center" }]}>Tel: {receipt.data.phone}</Text> : null}
           <Text style={[styles.lineMeta, { textAlign: "center" }]}>Receipt {receipt.number} · {new Date(receipt.createdAt).toLocaleString()}</Text>
           {receipt.customer ? <Text style={styles.lineMeta}>Customer: {receipt.customer}</Text> : null}
-          {receipt.summary.lines.map((line) => (
-            <View key={line.productId} style={{ flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={styles.lineMeta}>{line.quantity} × {line.name}</Text>
+          {receipt.summary.lines.map((line, index) => (
+            <View key={`${line.productId}-${index}`} style={{ flexDirection: "row", justifyContent: "space-between" }}>
+              <Text style={styles.lineMeta}>{line.quantity} × {line.name}{line.clearance ? " (clearance)" : ""}</Text>
               <Text style={styles.lineMeta}>{formatMoney(line.subtotal, props.currency)}</Text>
             </View>
           ))}
@@ -772,6 +783,7 @@ const styles = StyleSheet.create({
   lineMetaEditable: { color: colors.primary },
   linePriceEdited: { color: colors.primary, fontWeight: "700" },
   lineWas: { textDecorationLine: "line-through", color: colors.textMuted },
+  lineClearance: { fontSize: font.sm, color: colors.warning, fontWeight: "700" },
   lineWarning: { fontSize: font.sm, color: colors.warning, fontWeight: "600" },
   totals: { gap: spacing.xs, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md },
   totalLabel: { fontSize: font.md, color: colors.textMuted },

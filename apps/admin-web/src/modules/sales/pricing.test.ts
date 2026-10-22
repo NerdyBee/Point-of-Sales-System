@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateSale, applyManagerApproval } from "./pricing";
+import { activeClearance, calculateSale, applyManagerApproval, expandCart, manualDiscount } from "./pricing";
 import type { CartItem } from "./types";
 
 const item: CartItem = {
@@ -53,5 +53,33 @@ describe("sales pricing", () => {
     expect(applyManagerApproval("void", 1000)).toBe(true);
     expect(applyManagerApproval("discount", 51000)).toBe(true);
     expect(applyManagerApproval("discount", 3000)).toBe(false);
+  });
+});
+
+describe("clearance pricing", () => {
+  const nextWeek = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
+  const onClearance: CartItem = {
+    ...item,
+    quantity: 5,
+    discount: 0,
+    product: { ...item.product, price: 1000, clearancePrice: 700, clearanceRemaining: 3, clearanceEndsAt: nextWeek }
+  };
+
+  it("sells the clearance units first at the clearance price, then the normal price", () => {
+    const lines = expandCart([onClearance]);
+    expect(lines.map((line) => [line.quantity, line.discount, line.clearance ?? false])).toEqual([
+      [3, 300, true],
+      [2, 0, false]
+    ]);
+    expect(calculateSale(lines, { vatRate: 0, serviceChargeEnabled: false }).total).toBe(3 * 700 + 2 * 1000);
+    expect(manualDiscount([onClearance])).toBe(0);
+    expect(manualDiscount([{ ...onClearance, discount: 100 }])).toBe(200);
+  });
+
+  it("stops after the end date or when no units are left", () => {
+    expect(activeClearance(onClearance.product)).toMatchObject({ price: 700, remaining: 3, percent: 30 });
+    expect(activeClearance(onClearance.product, new Date(Date.now() + 9 * 86_400_000))).toBeNull();
+    expect(activeClearance({ ...onClearance.product, clearanceRemaining: 0 })).toBeNull();
+    expect(expandCart([{ ...onClearance, product: { ...onClearance.product, clearanceRemaining: 0 } }])).toHaveLength(1);
   });
 });

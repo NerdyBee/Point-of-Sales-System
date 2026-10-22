@@ -1,4 +1,5 @@
 import type { InventoryTransfer as DbInventoryTransfer, Prisma, Product as DbProduct, PurchaseOrder as DbPurchaseOrder, StockMovement as DbStockMovement, Supplier as DbSupplier, SupplierInvoice as DbSupplierInvoice, SupplierReturn as DbSupplierReturn } from "@prisma/client";
+import { clearanceFieldsOf } from "../../shared/inventory/expiry";
 import {
   appendAudit,
   appendStockMovement,
@@ -22,6 +23,7 @@ import {
   type Supplier
 } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
+import { invalidExpiryDate, recordStockLot } from "./expiry.repository";
 
 const useDemoStore = process.env.NODE_ENV === "test";
 
@@ -33,6 +35,7 @@ type StockAdjustmentInput = {
   quantityDelta: number;
   reason: string;
   reference?: string;
+  expiryDate?: string;
 };
 type StockCountInput = {
   branchId: string;
@@ -134,7 +137,8 @@ function toApiProduct(product: DbProduct): DemoProduct {
     stock: product.stock,
     reorderPoint: product.reorderPoint,
     station: product.station as DemoProduct["station"],
-    modifiers: Array.isArray(product.modifiers) ? product.modifiers.map(String) : []
+    modifiers: Array.isArray(product.modifiers) ? product.modifiers.map(String) : [],
+    ...clearanceFieldsOf(product)
   };
 }
 
@@ -1041,11 +1045,12 @@ export async function createSupplierReturn(tenantId: string, userId: string, inp
 export async function receiveSupplierPurchase(
   tenantId: string,
   userId: string,
-  input: { supplierId: string; branchId: string; productId: string; quantity: number; reference: string; note: string; purchaseOrderId?: string }
+  input: { supplierId: string; branchId: string; productId: string; quantity: number; reference: string; note: string; purchaseOrderId?: string; expiryDate?: string }
 ) {
   if (!(await branchBelongsToTenant(tenantId, input.branchId))) {
     return { status: "branch_not_found" as const };
   }
+  if (invalidExpiryDate(input.expiryDate)) return { status: "invalid_expiry_date" as const };
 
   if (useDemoStore) {
     const supplier = suppliers.find(
@@ -1085,6 +1090,7 @@ export async function receiveSupplierPurchase(
       reference: input.reference,
       createdBy: userId
     });
+    await recordStockLot({ tenantId, branchId: input.branchId, productId: product.id, productName: product.name, quantity: input.quantity, expiryDate: input.expiryDate, source: "purchase_receipt", reference: input.reference, createdBy: userId });
     if (purchaseOrder && purchaseOrderLine) {
       purchaseOrderLine.receivedQuantity += input.quantity;
       const fullyReceived = purchaseOrder.lines.every((line) => line.receivedQuantity >= line.quantity);
@@ -1143,6 +1149,7 @@ export async function receiveSupplierPurchase(
         createdBy: userId
       }
     });
+    await recordStockLot({ tenantId, branchId: input.branchId, productId: product.id, productName: product.name, quantity: input.quantity, expiryDate: input.expiryDate, source: "purchase_receipt", reference: input.reference, createdBy: userId }, tx);
     let updatedPurchaseOrder: PurchaseOrder | undefined;
     if (purchaseOrder && purchaseOrderLine) {
       const nextLines = purchaseOrderLines.map((line) => line.productId === input.productId ? { ...line, receivedQuantity: line.receivedQuantity + input.quantity } : line);
@@ -1313,6 +1320,7 @@ export async function applyInventoryAdjustment(tenantId: string, userId: string,
   if (!(await branchBelongsToTenant(tenantId, input.branchId))) {
     return { status: "branch_not_found" as const };
   }
+  if (invalidExpiryDate(input.expiryDate)) return { status: "invalid_expiry_date" as const };
 
   if (useDemoStore) {
     const product = demoProducts.find((item) => item.tenantId === tenantId && item.branchId === input.branchId && item.id === input.productId);
@@ -1338,6 +1346,9 @@ export async function applyInventoryAdjustment(tenantId: string, userId: string,
       reference: input.reference,
       createdBy: userId
     });
+    if (input.quantityDelta > 0) {
+      await recordStockLot({ tenantId, branchId: input.branchId, productId: product.id, productName: product.name, quantity: input.quantityDelta, expiryDate: input.expiryDate, source: "adjustment", reference: input.reference ?? input.reason, createdBy: userId });
+    }
 
     return { status: "adjusted" as const, product, movement };
   }
@@ -1373,6 +1384,9 @@ export async function applyInventoryAdjustment(tenantId: string, userId: string,
         createdBy: userId
       }
     });
+    if (input.quantityDelta > 0) {
+      await recordStockLot({ tenantId, branchId: input.branchId, productId: product.id, productName: product.name, quantity: input.quantityDelta, expiryDate: input.expiryDate, source: "adjustment", reference: input.reference ?? input.reason, createdBy: userId }, tx);
+    }
 
     return { status: "adjusted" as const, product: toApiProduct(updatedProduct), movement: toApiMovement(movement) };
   });

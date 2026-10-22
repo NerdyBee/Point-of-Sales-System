@@ -139,7 +139,30 @@ export interface DemoProduct {
   reorderPoint: number;
   station: "Kitchen" | "Bar" | "Counter";
   modifiers: string[];
+  clearancePrice?: number | null;
+  clearancePercent?: number | null;
+  clearanceRemaining?: number;
+  clearanceEndsAt?: string | null;
+  clearanceExpiry?: string | null;
+  clearanceSetBy?: string | null;
+  clearanceSetAt?: string | null;
 }
+
+export interface StockLot {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  expiryDate: string | null;
+  source: string;
+  reference: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+export const stockLots: StockLot[] = [];
 
 export interface StockMovement {
   id: string;
@@ -593,6 +616,8 @@ export interface AuditEvent {
     | "catalog.view"
     | "product.created"
     | "product.updated"
+    | "product.clearance_set"
+    | "product.clearance_ended"
     | "supplier.created"
     | "purchase_order.created"
     | "purchase_order.status_changed"

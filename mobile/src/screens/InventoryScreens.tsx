@@ -6,6 +6,7 @@ import { useApp } from "../shell/AppContext";
 import { cancelInflow, listInflows, recordInflow, type Inflow } from "../standalone/inventory";
 import { EmptyState, Fab, Icon, IconButton, ListItem, Sheet } from "../ui/appKit";
 import { Badge, Banner, Button, Field, Muted, NumberField } from "../ui/components";
+import { DateField, formatIsoDate } from "../ui/DateField";
 import { colors, font, radius, spacing } from "../ui/theme";
 
 const digits = (value: string) => Number(value.replace(/[^0-9]/g, "")) || 0;
@@ -57,13 +58,14 @@ interface DraftLine {
   product: Product;
   quantity: string;
   unitCost: string;
+  expiryDate: string | null;
 }
 
 function InflowSheet(props: { onClose(): void; initialProduct?: Product }) {
   const { platform, settings, staff, tenant, refresh, permissions } = useApp();
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
-  const [lines, setLines] = useState<DraftLine[]>(props.initialProduct ? [{ product: props.initialProduct, quantity: "", unitCost: props.initialProduct.cost ? String(props.initialProduct.cost) : "" }] : []);
+  const [lines, setLines] = useState<DraftLine[]>(props.initialProduct ? [{ product: props.initialProduct, quantity: "", unitCost: props.initialProduct.cost ? String(props.initialProduct.cost) : "", expiryDate: null }] : []);
   const [supplier, setSupplier] = useState("");
   const [reference, setReference] = useState("");
   const [note, setNote] = useState("");
@@ -87,7 +89,7 @@ function InflowSheet(props: { onClose(): void; initialProduct?: Product }) {
   }, [products, search, lines]);
 
   const add = (product: Product) => {
-    setLines((current) => [...current, { product, quantity: "", unitCost: product.cost ? String(product.cost) : "" }]);
+    setLines((current) => [...current, { product, quantity: "", unitCost: product.cost ? String(product.cost) : "", expiryDate: null }]);
     setSearch("");
   };
   const update = (productId: string, patch: Partial<DraftLine>) => setLines((current) => current.map((line) => (line.product.id === productId ? { ...line, ...patch } : line)));
@@ -105,7 +107,7 @@ function InflowSheet(props: { onClose(): void; initialProduct?: Product }) {
         note,
         updateCost,
         staffId: staff!.id,
-        lines: lines.map((line) => ({ productId: line.product.id, quantity: digits(line.quantity), unitCost: line.unitCost.trim() ? digits(line.unitCost) : undefined }))
+        lines: lines.map((line) => ({ productId: line.product.id, quantity: digits(line.quantity), unitCost: line.unitCost.trim() ? digits(line.unitCost) : undefined, expiryDate: line.expiryDate }))
       });
       await refresh();
       props.onClose();
@@ -148,6 +150,7 @@ function InflowSheet(props: { onClose(): void; initialProduct?: Product }) {
             <View style={styles.column}><NumberField label="Quantity received" value={line.quantity} onChangeText={(value) => update(line.product.id, { quantity: value })} /></View>
             {showCosts ? <View style={styles.column}><NumberField label="Cost per unit" value={line.unitCost} onChangeText={(value) => update(line.product.id, { unitCost: value })} placeholder="Optional" /></View> : null}
           </View>
+          <DateField label="Expiry date" value={line.expiryDate} onChange={(value) => update(line.product.id, { expiryDate: value })} placeholder="No expiry date" minimumDate={new Date()} />
         </View>
       ))}
 
@@ -229,7 +232,10 @@ function InflowDetailSheet(props: { inflow: Inflow; onClose(): void }) {
       {inflow.note ? <Text style={styles.lineName}>{inflow.note}</Text> : null}
       {inflow.lines.map((line) => (
         <View key={line.productId} style={styles.detailRow}>
-          <Text style={[styles.lineName, { flex: 1 }]}>{line.productName}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.lineName}>{line.productName}</Text>
+            {line.expiryDate ? <Text style={styles.matchMeta}>Expires {formatIsoDate(line.expiryDate)}</Text> : null}
+          </View>
           <Text style={styles.detailQty}>+{line.quantity}</Text>
           {line.unitCost !== null ? <Text style={styles.matchMeta}>@ {formatMoney(line.unitCost, currency)}</Text> : null}
         </View>

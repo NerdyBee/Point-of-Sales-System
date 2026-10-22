@@ -1,5 +1,6 @@
 import { ArrowDownUp, Check, ClipboardCheck, Download, FileText, Plus, RefreshCcw, Search, Trash2, Upload, X } from "lucide-react";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ExpiringPanel } from "./ExpiringPanel";
 import {
   applyApproval,
   createApproval,
@@ -1098,6 +1099,12 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
               Reason
               <input value={adjustment.reason} onChange={(event) => updateAdjustment("reason", event.target.value)} required />
             </label>
+            {adjustment.quantityDelta > 0 ? (
+              <label>
+                Expiry date
+                <input type="date" value={adjustment.expiryDate ?? ""} onChange={(event) => updateAdjustment("expiryDate", event.target.value)} />
+              </label>
+            ) : null}
             <label className="wide-field">
               Approved request ID
               <input value={adjustmentApprovalId} onChange={(event) => setAdjustmentApprovalId(event.target.value)} placeholder="Leave blank to request manager approval" />
@@ -1149,6 +1156,10 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
               Note
               <input value={purchase.note} onChange={(event) => updatePurchase("note", event.target.value)} required />
             </label>
+            <label>
+              Expiry date
+              <input type="date" value={purchase.expiryDate ?? ""} onChange={(event) => updatePurchase("expiryDate", event.target.value)} />
+            </label>
             <div className="discount-preview wide-field">
               <span>{selectedSupplier?.name ?? "Supplier"}</span>
               <strong>{selectedPurchaseProduct ? displayMoney(selectedPurchaseProduct.cost * purchase.quantity) : displayMoney(0)}</strong>
@@ -1157,6 +1168,8 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
             <button className="primary-button wide-field" disabled={!selectedSupplier || !selectedPurchaseProduct} type="submit"><Check size={18} /> Receive purchase</button>
           </form>
         </section>
+
+        <ExpiringPanel branchId={branchId} canSetClearance={storedAuth?.staff.permissions.includes("catalog.manage") ?? false} onChanged={() => void loadInventory()} />
 
         <section className="panel">
           <div className="panel-header">

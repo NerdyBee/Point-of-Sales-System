@@ -3,6 +3,7 @@ import type { Customer, Product, Staff, TenantSettings } from "../data/readModel
 import { LICENSE_PUBLIC_KEY } from "../license/publicKey";
 import { lockBackup, newPasswordKey, unlockWithPassword, type LockedPayload, type PasswordKey } from "./backupCrypto";
 import { reverseAccountCharge } from "./credit";
+import { addLot, adjustClearanceRemaining, validExpiryDate } from "./expiry";
 import { context, getRow, putRow } from "./store";
 
 export { context, getRow, putRow };
@@ -204,6 +205,10 @@ export interface ProductInput {
   barcode?: string;
   /** Opening stock for a new product. Use adjustStock for existing ones. */
   stock?: number;
+  /** Expiry date (YYYY-MM-DD) of the opening stock, if it has one. */
+  expiryDate?: string | null;
+  /** Who is saving (recorded on the opening-stock batch). */
+  staffId?: string;
   reorderPoint?: number;
 }
 
@@ -241,7 +246,10 @@ export async function saveProduct(platform: Platform, input: ProductInput) {
 
   await platform.db.transaction(async () => {
     await putRow(platform.db, "products", id, product, settings.branchId);
-    if (!existing && product.stock > 0) await recordMovement(platform, settings, product, product.stock, "Opening stock", "count");
+    if (!existing && product.stock > 0) {
+      await recordMovement(platform, settings, product, product.stock, "Opening stock", "count");
+      await addLot(platform.db, settings, { id: `lot-${platform.uuid()}`, product, quantity: product.stock, expiryDate: input.expiryDate, source: "opening", createdBy: input.staffId ?? "" });
+    }
     await addCategory(platform, settings, category);
   });
   return product as unknown as Product;
@@ -287,9 +295,10 @@ export async function recordMovement(
 }
 
 /** Adds (receive) or removes (damage, count correction) stock and keeps a movement record. */
-export async function adjustStock(platform: Platform, productId: string, delta: number, reason: string) {
+export async function adjustStock(platform: Platform, productId: string, delta: number, reason: string, options: { expiryDate?: string | null; staffId?: string } = {}) {
   const settings = await context(platform);
   if (!Number.isInteger(delta) || delta === 0) throw new Error("Enter a whole number of units");
+  validExpiryDate(options.expiryDate);
   if (reason.trim().length < 3) throw new Error("Enter a reason");
   await platform.db.transaction(async () => {
     const product = await getRow<Product & Record<string, unknown>>(platform.db, "products", productId);
@@ -298,6 +307,7 @@ export async function adjustStock(platform: Platform, productId: string, delta: 
     if (stock < 0) throw new Error("Stock cannot go below zero");
     await putRow(platform.db, "products", productId, { ...product, stock, updatedAt: now() }, settings.branchId);
     await recordMovement(platform, settings, product, delta, reason.trim(), delta > 0 ? "receipt" : "adjustment", stock);
+    if (delta > 0) await addLot(platform.db, settings, { id: `lot-${platform.uuid()}`, product, quantity: delta, expiryDate: options.expiryDate, source: "received", reference: reason.trim(), createdBy: options.staffId ?? "" });
   });
 }
 
@@ -700,6 +710,10 @@ export async function voidSale(platform: Platform, saleId: string, staffId: stri
       const stock = Number(product.stock) + line.quantity;
       await putRow(platform.db, "products", product.id, { ...product, stock, updatedAt: now() }, settings.branchId);
       await recordMovement(platform, settings, product, line.quantity, `Void ${sale.number}`, "return", stock, { reference: sale.number });
+      // Clearance units sold go back on clearance while it is still running.
+      if ((line as { clearance?: boolean }).clearance && product.clearancePrice !== null && product.clearancePrice !== undefined) {
+        await adjustClearanceRemaining(platform.db, product.id, line.quantity);
+      }
     }
     if (sale.customerId) {
       await platform.db.run(

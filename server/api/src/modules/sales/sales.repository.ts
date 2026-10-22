@@ -23,6 +23,7 @@ import {
   type PaymentRecord
 } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
+import { checkClearanceLines } from "../../shared/inventory/expiry";
 import { validateAppliedApproval } from "../approvals/approvals.repository";
 import { documentNumberPrefix } from "../sync/sync.identity";
 import { createSaleSchema, previewSaleTotal } from "./sales.service";
@@ -579,7 +580,9 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
 
     if (disabledPayment) return { status: "payment_disabled" as const, method: disabledPayment.method };
     if (summary.paid !== summary.total) return { status: "payment_total_mismatch" as const, total: summary.total, paid: summary.paid };
-    const discountApprovalValidation = await validateDiscountApprovalForSale(tenantId, input, summary.discount, options);
+    const clearanceCheck = checkClearanceLines(input.lines, (productId) => demoProducts.find((item) => item.tenantId === tenantId && item.branchId === input.branchId && item.id === productId), { replay: options.replay });
+    if (clearanceCheck.status !== "valid") return clearanceCheck;
+    const discountApprovalValidation = await validateDiscountApprovalForSale(tenantId, input, clearanceCheck.manualDiscount, options);
     if (discountApprovalValidation.status !== "valid") return discountApprovalValidation;
 
     const customer = input.customerId ? customers.find((item) => item.tenantId === tenantId && item.id === input.customerId) : undefined;
@@ -616,6 +619,10 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
     if (insufficientStock) return { status: "insufficient_stock" as const, productName: insufficientStock.product!.name };
 
     const saleId = nextSaleIdFromCount(saleLedger.length);
+    for (const [productId, units] of Object.entries(clearanceCheck.used)) {
+      const product = demoProducts.find((item) => item.tenantId === tenantId && item.branchId === input.branchId && item.id === productId);
+      if (product) product.clearanceRemaining = Math.max(0, Number(product.clearanceRemaining ?? 0) - units);
+    }
     appendAudit({
       tenantId,
       branchId: input.branchId,
@@ -803,7 +810,9 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
 
   if (disabledPayment) return { status: "payment_disabled" as const, method: disabledPayment.method };
   if (summary.paid !== summary.total) return { status: "payment_total_mismatch" as const, total: summary.total, paid: summary.paid };
-  const discountApprovalValidation = await validateDiscountApprovalForSale(tenantId, input, summary.discount, options);
+  const clearanceCheck = checkClearanceLines(input.lines, (productId) => products.find((item) => item.id === productId), { replay: options.replay });
+  if (clearanceCheck.status !== "valid") return clearanceCheck;
+  const discountApprovalValidation = await validateDiscountApprovalForSale(tenantId, input, clearanceCheck.manualDiscount, options);
   if (discountApprovalValidation.status !== "valid") return discountApprovalValidation;
 
   const customer = input.customerId ? await prisma.customer.findFirst({ where: { tenantId, id: input.customerId } }) : null;
@@ -823,6 +832,10 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
     if (!shift) return { status: "no_open_shift" as const };
 
     const saleId = await nextSaleId(tx);
+    for (const [productId, units] of Object.entries(clearanceCheck.used)) {
+      const product = await tx.product.findFirst({ where: { tenantId, branchId: input.branchId, id: productId } });
+      if (product) await tx.product.update({ where: { id: product.id }, data: { clearanceRemaining: Math.max(0, product.clearanceRemaining - units) } });
+    }
     const stockIssues = [];
 
     for (const [productId, quantity] of Object.entries(aggregateSaleQuantities(input.lines))) {

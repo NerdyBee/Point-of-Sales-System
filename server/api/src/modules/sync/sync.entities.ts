@@ -84,7 +84,7 @@ export const syncEntities: SyncEntity[] = [
     pk: ["id"],
     rank: 2,
     scope: { tenant: row("tenantId"), branch: row("branchId") },
-    counters: ["stock"],
+    counters: ["stock", "clearanceRemaining"],
     direction: "both",
     device: true
   },
@@ -110,6 +110,7 @@ export const syncEntities: SyncEntity[] = [
   { model: "AuditEvent", table: "audit_events", delegate: "auditEvent", pk: ["id"], rank: 2, scope: { tenant: row("tenantId"), branch: row("branchId") }, direction: "up" },
   { model: "PurchaseOrder", table: "purchase_orders", delegate: "purchaseOrder", pk: ["id"], rank: 3, scope: { tenant: row("tenantId"), branch: row("branchId") }, direction: "both" },
   { model: "StockMovement", table: "stock_movements", delegate: "stockMovement", pk: ["id"], rank: 3, scope: { tenant: row("tenantId"), branch: row("branchId") }, direction: "both" },
+  { model: "StockLot", table: "stock_lots", delegate: "stockLot", pk: ["id"], rank: 3, scope: { tenant: row("tenantId"), branch: row("branchId") }, direction: "both" },
   {
     model: "InventoryTransfer",
     table: "inventory_transfers",

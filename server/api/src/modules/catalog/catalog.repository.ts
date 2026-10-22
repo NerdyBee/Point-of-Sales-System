@@ -1,4 +1,5 @@
 import type { Prisma, Product as DbProduct } from "@prisma/client";
+import { clearanceFieldsOf } from "../../shared/inventory/expiry";
 import { appendAudit, branches, demoProducts, demoTenants, type DemoProduct } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
 
@@ -51,7 +52,8 @@ function toApiProduct(product: DbProduct): DemoProduct {
     stock: product.stock,
     reorderPoint: product.reorderPoint,
     station: product.station as DemoProduct["station"],
-    modifiers: Array.isArray(product.modifiers) ? product.modifiers.map(String) : []
+    modifiers: Array.isArray(product.modifiers) ? product.modifiers.map(String) : [],
+    ...clearanceFieldsOf(product)
   };
 }
 

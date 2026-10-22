@@ -1,4 +1,5 @@
 import type { Platform } from "../data/db";
+import { addLot, validExpiryDate } from "./expiry";
 import type { Product } from "../data/readModel";
 import { getKv, setKv } from "../sync/settings";
 import { context, getRow, putRow, recordMovement } from "./business";
@@ -14,6 +15,8 @@ export interface InflowLineInput {
   quantity: number;
   /** Cost per unit for this delivery (optional). */
   unitCost?: number;
+  /** Expiry date printed on this delivery (YYYY-MM-DD, optional). */
+  expiryDate?: string | null;
 }
 
 export interface InflowInput {
@@ -31,6 +34,7 @@ export interface InflowLine {
   productName: string;
   quantity: number;
   unitCost: number | null;
+  expiryDate?: string | null;
 }
 
 export interface Inflow {
@@ -58,12 +62,14 @@ async function nextInflowNumber(platform: Platform) {
 /** Records goods received: raises each product's stock and logs a receipt movement. */
 export async function recordInflow(platform: Platform, input: InflowInput) {
   const settings = await context(platform);
-  const merged = new Map<string, { quantity: number; unitCost?: number }>();
+  const merged = new Map<string, { quantity: number; unitCost?: number; expiryDate?: string | null }>();
   for (const line of input.lines) {
     if (!Number.isInteger(line.quantity) || line.quantity <= 0) throw new Error("Each item needs a quantity of at least 1");
     if (line.unitCost !== undefined && (!Number.isFinite(line.unitCost) || line.unitCost < 0)) throw new Error("Unit cost cannot be negative");
+    validExpiryDate(line.expiryDate);
     const existing = merged.get(line.productId);
-    merged.set(line.productId, { quantity: (existing?.quantity ?? 0) + line.quantity, unitCost: line.unitCost ?? existing?.unitCost });
+    if (existing && (existing.expiryDate ?? null) !== (line.expiryDate ?? null)) throw new Error("The same product appears twice with different expiry dates. Record them as separate inflows.");
+    merged.set(line.productId, { quantity: (existing?.quantity ?? 0) + line.quantity, unitCost: line.unitCost ?? existing?.unitCost, expiryDate: line.expiryDate ?? null });
   }
   if (!merged.size) throw new Error("Add at least one item");
 
@@ -84,7 +90,8 @@ export async function recordInflow(platform: Platform, input: InflowInput) {
         reference: id,
         unitCost: line.unitCost
       });
-      lines.push({ productId, productName: product.name, quantity: line.quantity, unitCost: line.unitCost ?? null });
+      await addLot(platform.db, settings, { id: `lot-${platform.uuid()}`, product, quantity: line.quantity, expiryDate: line.expiryDate, source: "inflow", reference: number, createdBy: input.staffId });
+      lines.push({ productId, productName: product.name, quantity: line.quantity, unitCost: line.unitCost ?? null, expiryDate: line.expiryDate ?? null });
     }
     inflow = {
       id,

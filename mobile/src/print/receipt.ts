@@ -80,7 +80,7 @@ export function buildReceiptBytes(receipt: ReceiptData, options: { width: PaperW
   p.divider();
 
   for (const line of receipt.summary.lines) {
-    p.wrapped(line.name);
+    p.wrapped(`${line.name}${line.clearance ? " (clearance)" : ""}`);
     p.pair(`  ${line.quantity} x ${money(line.unitPrice)}`, money(line.subtotal));
     if (line.discount) p.pair("  Discount", `-${money(line.discount)}`);
   }
@@ -126,7 +126,7 @@ export function buildReceiptText(receipt: ReceiptData) {
     `Served by ${receipt.staffName}`,
     ...(receipt.customer ? [`Customer: ${receipt.customer.name}`] : []),
     "",
-    ...receipt.summary.lines.map((line) => `${line.quantity} x ${line.name} - ${money(line.subtotal)}`),
+    ...receipt.summary.lines.map((line) => `${line.quantity} x ${line.name}${line.clearance ? " (clearance)" : ""} - ${money(line.subtotal)}`),
     "",
     ...(receipt.summary.discount ? [`Discount: -${money(receipt.summary.discount)}`] : []),
     ...(receipt.summary.vat ? [`VAT: ${money(receipt.summary.vat)}`] : []),

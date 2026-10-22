@@ -45,11 +45,14 @@ import {
 } from "../standalone/credit";
 import { InflowSection } from "./InventoryScreens";
 import { ExpensesSection } from "./ExpensesScreen";
+import { ExpiringSection, ProductExpiryPanel } from "./ExpiryScreens";
+import { DateField } from "../ui/DateField";
+import { activeClearance } from "../pos/clearance";
 import { KeyboardAwareScrollView } from "../ui/keyboard";
 import { Badge, Banner, Button, Card, Field, Muted, NumberField } from "../ui/components";
 import { colors, font, radius, spacing } from "../ui/theme";
 
-type Section = "products" | "inflow" | "expenses" | "customers" | "staff" | "business";
+type Section = "products" | "inflow" | "expiring" | "expenses" | "customers" | "staff" | "business";
 
 /** Back office for a standalone device: products & stock, customers, staff, settings. */
 export function ManageScreen() {
@@ -57,6 +60,7 @@ export function ManageScreen() {
   const sections = ([
     ["products", "Products", "catalog.manage"],
     ["inflow", "Inflow", "inventory.adjust"],
+    ["expiring", "Expiring", "inventory.adjust"],
     ["expenses", "Expenses", "expense.manage"],
     ["customers", "Customers", "customer.manage"],
     ["staff", "Staff", "staff.manage"],
@@ -79,6 +83,7 @@ export function ManageScreen() {
       </ScrollView>
       {section === "products" ? <ProductsSection /> : null}
       {section === "inflow" ? <InflowSection /> : null}
+      {section === "expiring" ? <ExpiringSection /> : null}
       {section === "expenses" ? <ExpensesSection /> : null}
       {section === "customers" ? <CustomersSection /> : null}
       {section === "staff" ? <StaffSection /> : null}
@@ -205,10 +210,11 @@ function ProductsSection() {
 }
 
 function ProductSheet(props: { product: Product | null; categories: string[]; onClose(): void }) {
-  const { platform, permissions } = useApp();
+  const { platform, permissions, staff } = useApp();
   const { error, busy, run, setError } = useRunner();
   const existing = props.product;
-  const [mode, setMode] = useState<"details" | "stock">("details");
+  const [mode, setMode] = useState<"details" | "stock" | "expiry">("details");
+  const [openingExpiry, setOpeningExpiry] = useState<string | null>(null);
   const [name, setName] = useState(existing?.name ?? "");
   const [category, setCategory] = useState(existing?.category ?? props.categories[0] ?? "General");
   const [price, setPrice] = useState(existing ? String(existing.price) : "");
@@ -221,7 +227,19 @@ function ProductSheet(props: { product: Product | null; categories: string[]; on
 
   const save = () =>
     void run(
-      () => saveProduct(platform, { id: existing?.id, name, category, price: digitsOnly(price), cost: digitsOnly(cost), stock: digitsOnly(stock), reorderPoint: digitsOnly(reorder), barcode: barcode.trim() || undefined }),
+      () =>
+        saveProduct(platform, {
+          id: existing?.id,
+          name,
+          category,
+          price: digitsOnly(price),
+          cost: digitsOnly(cost),
+          stock: digitsOnly(stock),
+          reorderPoint: digitsOnly(reorder),
+          barcode: barcode.trim() || undefined,
+          expiryDate: existing ? undefined : openingExpiry,
+          staffId: staff?.id
+        }),
       props.onClose
     );
 
@@ -256,12 +274,16 @@ function ProductSheet(props: { product: Product | null; categories: string[]; on
         <View style={styles.tabsRow}>
           <Button label="Details" variant={mode === "details" ? "primary" : "secondary"} onPress={() => setMode("details")} style={{ flex: 1 }} />
           <Button label={`Stock (${existing.stock})`} variant={mode === "stock" ? "primary" : "secondary"} onPress={() => { setError(null); setMode("stock"); }} style={{ flex: 1 }} />
+          <Button label={activeClearance(existing) ? "Expiry ●" : "Expiry"} variant={mode === "expiry" ? "primary" : "secondary"} onPress={() => { setError(null); setMode("expiry"); }} style={{ flex: 1 }} />
         </View>
       ) : null}
 
       {mode === "stock" && existing ? (
         <StockPanel product={existing} onDone={props.onClose} />
+      ) : mode === "expiry" && existing ? (
+        <ProductExpiryPanel product={existing} />
       ) : (
+
         <>
           <Field label="Name" value={name} onChangeText={setName} />
           <Field label="Category" value={category} onChangeText={setCategory} hint='Use "Services" for things without stock (e.g. delivery).' />
@@ -282,6 +304,9 @@ function ProductSheet(props: { product: Product | null; categories: string[]; on
             {existing ? null : <View style={styles.column}><NumberField label="Quantity in stock" value={stock} onChangeText={setStock} /></View>}
             <View style={styles.column}><NumberField label="Low-stock warning at" value={reorder} onChangeText={setReorder} placeholder="0" /></View>
           </View>
+          {!existing && digitsOnly(stock) > 0 && category.trim().toLowerCase() !== "services" ? (
+            <DateField label="Expiry date of this stock" value={openingExpiry} onChange={setOpeningExpiry} placeholder="No expiry date" minimumDate={new Date()} />
+          ) : null}
           <Field label="Barcode" value={barcode} onChangeText={setBarcode} autoCapitalize="none" placeholder="Optional" />
           {existing && tracked ? <Muted>To change the quantity use the Stock tab, so every change is recorded.</Muted> : null}
           {error ? <Banner tone="danger" message={error} /> : null}
@@ -298,6 +323,7 @@ function StockPanel(props: { product: Product; onDone(): void }) {
   const [direction, setDirection] = useState<"in" | "out">("in");
   const [quantity, setQuantity] = useState("");
   const [reason, setReason] = useState("");
+  const [expiryDate, setExpiryDate] = useState<string | null>(null);
   const [history, setHistory] = useState<StockMovementRow[]>([]);
   const amount = digitsOnly(quantity);
 
@@ -316,6 +342,7 @@ function StockPanel(props: { product: Product; onDone(): void }) {
         {direction === "in" ? <View style={styles.column}><NumberField label="Cost per unit" value={unitCost} onChangeText={setUnitCost} placeholder="Optional" /></View> : null}
         <View style={[styles.column, { flex: 2 }]}><Field label={direction === "in" ? "Supplier / note" : "Reason"} value={reason} onChangeText={setReason} placeholder={direction === "in" ? "Optional" : "Damaged / expired / recount"} /></View>
       </View>
+      {direction === "in" ? <DateField label="Expiry date" value={expiryDate} onChange={setExpiryDate} placeholder="No expiry date" minimumDate={new Date()} /> : null}
       {amount ? <Muted>New quantity: {props.product.stock + (direction === "in" ? amount : -amount)}</Muted> : null}
       {error ? <Banner tone="danger" message={error} /> : null}
       <Button
@@ -325,7 +352,7 @@ function StockPanel(props: { product: Product; onDone(): void }) {
           void run(
             () =>
               direction === "in"
-                ? recordInflow(platform, { staffId: staff!.id, supplier: reason, lines: [{ productId: props.product.id, quantity: amount, unitCost: unitCost.trim() ? digitsOnly(unitCost) : undefined }] })
+                ? recordInflow(platform, { staffId: staff!.id, supplier: reason, lines: [{ productId: props.product.id, quantity: amount, unitCost: unitCost.trim() ? digitsOnly(unitCost) : undefined, expiryDate }] })
                 : adjustStock(platform, props.product.id, -amount, reason),
             props.onDone
           )

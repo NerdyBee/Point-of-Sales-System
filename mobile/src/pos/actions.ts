@@ -1,5 +1,7 @@
 import type { Platform } from "../data/db";
 import { readModel, type Customer, type Staff, type TenantSettings } from "../data/readModel";
+import { expandCart } from "./clearance";
+import { adjustClearanceRemaining } from "../standalone/expiry";
 import { enqueueCommand } from "../sync/engine";
 import { getKv, isStandalone, loadSettings, setKv, type DeviceSettings } from "../sync/settings";
 import { deductStockForSale } from "../standalone/business";
@@ -151,17 +153,38 @@ export async function recordSale(
   if (!shift || shift.status !== "open") throw new PosError("Open the register before selling");
   if (!input.cart.length) throw new PosError("The cart is empty");
 
-  const summary = calculateSale(input.cart, input.tenantSettings);
+  // Clearance units are sold first at the clearance price, using the latest product data.
+  const freshCart: CartLine[] = [];
+  for (const line of input.cart) {
+    const fresh = await readModel.product(platform.db, line.product.id);
+    freshCart.push(
+      fresh
+        ? {
+            ...line,
+            product: {
+              ...line.product,
+              clearancePrice: fresh.clearancePrice ?? null,
+              clearanceRemaining: fresh.clearanceRemaining ?? 0,
+              clearanceEndsAt: fresh.clearanceEndsAt ?? null,
+              clearanceExpiry: fresh.clearanceExpiry ?? null
+            }
+          }
+        : line
+    );
+  }
+  const lines = expandCart(freshCart);
+  const summary = calculateSale(lines, input.tenantSettings);
   const payments = input.payments.filter((payment) => payment.amount > 0);
   const paid = payments.reduce((sum, payment) => sum + payment.amount, 0);
-  if (paid !== summary.total) throw new PosError("Payments must equal the sale total");
+  if (paid !== summary.total) throw new PosError("The total has changed (a clearance or price was updated). Check the cart and charge again.");
   for (const payment of payments) {
     if (referenceRequired.includes(payment.method) && !payment.reference?.trim()) throw new PosError("Enter the payment reference");
   }
-  for (const line of input.cart) {
+  for (const line of lines) {
     if (!Number.isInteger(line.discount) || line.discount < 0 || line.discount > line.product.price) throw new PosError(`The price of ${line.product.name} is not valid`);
   }
-  if (input.cart.some((line) => line.discount > 0) && !(await readModel.permissionsForRole(platform.db, input.staff.role)).has("sale.discount")) {
+  // Clearance prices are set by an owner or manager, so only manual price changes need the permission.
+  if (lines.some((line) => !line.clearance && line.discount > 0) && !(await readModel.permissionsForRole(platform.db, input.staff.role)).has("sale.discount")) {
     throw new PosError(`${input.staff.name} is not allowed to give discounts. Ask an owner or manager.`);
   }
   const onAccount = payments.filter((payment) => payment.method === "customer_credit").reduce((sum, payment) => sum + payment.amount, 0);
@@ -201,6 +224,7 @@ export async function recordSale(
       [id, number, shift.id, idempotencyKey, input.staff.id, input.customer?.id ?? null, JSON.stringify(record), summary.total, standalone ? "saved" : "pending", standalone ? 1 : 0, createdAt]
     );
     if (cash) await platform.db.run("UPDATE shifts SET cashSales = cashSales + ? WHERE id = ?", [cash, shift.id]);
+    for (const line of lines) if (line.clearance) await adjustClearanceRemaining(platform.db, line.product.id, -line.quantity);
     if (standalone) {
       // No server will replay this sale, so apply its effects here as the server would.
       await deductStockForSale(platform, input.settings, summary.lines, number);
@@ -220,7 +244,14 @@ export async function recordSale(
         localSaleId: id,
         idempotencyKey,
         customerId: input.customer?.id,
-        lines: input.cart.map((line) => ({ productId: line.product.id, quantity: line.quantity, discount: line.discount, note: line.note, unitPrice: line.product.price })),
+        lines: lines.map((line) => ({
+          productId: line.product.id,
+          quantity: line.quantity,
+          discount: line.discount,
+          note: line.note,
+          unitPrice: line.product.price,
+          ...(line.clearance ? { clearance: true } : {})
+        })),
         payments: payments.map((payment) => ({ method: payment.method, amount: payment.amount, reference: payment.reference?.trim() || undefined }))
       }
     });

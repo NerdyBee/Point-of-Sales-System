@@ -280,9 +280,9 @@ function SaleSheet(props: { sale: SaleWithRecord; currency: string; onClose(): v
         <Text style={styles.receiptMeta}>{new Date(sale.createdAt).toLocaleString()} · {staffName}</Text>
         {customer ? <Text style={styles.receiptMeta}>Customer: {customer.name} ({customer.phone})</Text> : null}
         <View style={styles.divider} />
-        {summary.lines.map((line) => (
-          <View key={line.productId} style={styles.lineRow}>
-            <Text style={styles.lineText} numberOfLines={2}>{line.quantity} × {line.name}</Text>
+        {summary.lines.map((line, index) => (
+          <View key={`${line.productId}-${index}`} style={styles.lineRow}>
+            <Text style={styles.lineText} numberOfLines={2}>{line.quantity} × {line.name}{line.clearance ? " (clearance)" : ""}</Text>
             <Text style={styles.lineText}>{formatMoney(line.subtotal, currency)}</Text>
           </View>
         ))}

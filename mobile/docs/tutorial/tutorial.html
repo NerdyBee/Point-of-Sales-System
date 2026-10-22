@@ -114,7 +114,7 @@
     <li><span class="num">11</span>Selling on credit</li>
     <li><span class="num">12</span>Customers, payments and statements</li>
     <li><span class="num">13</span>Sales history and voiding a sale</li>
-    <li><span class="num">14</span>New stock (Inflow) and expenses</li>
+    <li><span class="num">14</span>New stock, expiry dates and expenses</li>
     <li><span class="num">15</span>Stock report</li>
     <li><span class="num">16</span>Setting up a receipt printer</li>
     <li><span class="num">17</span>Business details and logo</li>
@@ -429,7 +429,7 @@
 
 <!-- ================= 14 ================= -->
 <div class="section">
-  <h2>14. New stock (Inflow) and expenses</h2>
+  <h2>14. New stock, expiry dates and expenses</h2>
   <p>When goods arrive from a supplier, record them so your quantities stay correct.</p>
   <ol class="steps">
     <li>Go to <span class="tab">Manage</span> → <strong>Inflow</strong> and tap <span class="ui">Record inflow</span>.</li>
@@ -439,6 +439,15 @@
     <li>Tap <span class="ui">Record inflow</span>. Each delivery gets a number such as INF-00012 and the quantities go up at once.</li>
   </ol>
   <p>Entered something twice? Open the inflow, tap <span class="ui">Cancel inflow</span> and give a reason. The quantities are taken back out and the inflow stays on record as <strong>Cancelled</strong>.</p>
+
+  <h3>Expiry dates and clearance (near-expiry discount)</h3>
+  <p>When recording an inflow, set the <strong>Expiry date</strong> printed on each product's delivery (you can also set it for a new product's opening stock, or when receiving stock on a product). Each delivery is kept as a <strong>batch</strong>; the app works out how many units of each batch are left, assuming the oldest are sold first.</p>
+  <ol class="steps">
+    <li>Go to <span class="tab">Manage</span> → <strong>Expiring</strong>. It lists batches expiring within <strong>7</strong>, <strong>30</strong>, <strong>60</strong> or <strong>90</strong> days (or already expired), with the units left.</li>
+    <li>An owner or manager taps a batch to <strong>Put on clearance</strong>. Type the <strong>Percent off</strong> (e.g. 30) and the <strong>Clearance price</strong> updates, or type the price and see the percent.</li>
+    <li><strong>Units on clearance</strong> is filled in with what is left of that batch; <strong>Clearance ends on</strong> with its expiry date. Tap <span class="ui">Start clearance</span>.</li>
+  </ol>
+  <p>At the till, the product shows a <strong>Clearance</strong> badge. Those units are sold first at the clearance price (receipts mark them “clearance”); once they are gone, or after the end date, the normal price comes back by itself. Cashiers can sell clearance units even if they are not allowed to give discounts. To change or end it, use <span class="ui">Change</span> on the Expiring screen, or the product's <strong>Expiry</strong> tab.</p>
 
   <h3>Recording expenses</h3>
   <p>Record money the shop spends (fuel, transport, repairs, nylon bags, rent…) under <span class="tab">Manage</span> → <strong>Expenses</strong> (owners and managers).</p>

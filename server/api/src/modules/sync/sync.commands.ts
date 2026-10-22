@@ -89,6 +89,7 @@ const saleCreateSchema = z.object({
     productId: z.string().min(1),
     quantity: z.number().int().positive(),
     discount: z.number().min(0).default(0),
+    clearance: z.boolean().optional(),
     note: z.string().max(280).optional(),
     unitPrice: z.number().int().nonnegative().optional()
   })).min(1),
@@ -124,6 +125,7 @@ const statusMessages: Record<string, string> = {
   credit_requires_customer: "Credit payments need a customer",
   customer_not_found: "Customer not found on the server",
   stock_not_found: "A product in this sale no longer exists at this branch",
+  clearance_not_available: "The clearance on a product had ended or run out when this sale reached the server",
   approval_required: "This staff member is not allowed to give discounts (Give discounts permission)",
   branch_not_active: "Branch is paused",
   terminal_not_found: "Terminal no longer exists",
@@ -232,7 +234,7 @@ export async function executeDeviceCommand(context: CommandContext, command: Dev
           tableId: sale.tableId,
           tableOrderId: sale.tableOrderId,
           idempotencyKey: sale.idempotencyKey,
-          lines: sale.lines.map((line) => ({ productId: line.productId, quantity: line.quantity, discount: line.discount, note: line.note })),
+          lines: sale.lines.map((line) => ({ productId: line.productId, quantity: line.quantity, discount: line.discount, note: line.note, clearance: line.clearance })),
           payments: sale.payments
         },
         { replay: true, unitPriceOverrides, canDiscount: permissions.includes("sale.discount") }

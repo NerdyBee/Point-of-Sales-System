@@ -4,7 +4,7 @@ import { applyApproval, createApproval, createSale, fetchBranchOptions, fetchCat
 import type { ApprovalRequest, BranchOption, Customer, PaymentMethodCode, RegisterShift, TenantSettings, TerminalOption } from "../../shared/api/client";
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 import type { Product, ProductCategory } from "../catalog/types";
-import { applyManagerApproval, calculateSale } from "./pricing";
+import { activeClearance, applyManagerApproval, calculateSale, expandCart, manualDiscount } from "./pricing";
 import { printReceipt, type PrintableReceipt } from "./receiptPrint";
 import type { CartItem, SaleSyncState } from "./types";
 
@@ -344,7 +344,8 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
     return categoryMatch && queryMatch;
   });
 
-  const summary = useMemo(() => calculateSale(cart, chargeControls), [cart, chargeControls]);
+  // Clearance units are priced first at the clearance price, as the server does.
+  const summary = useMemo(() => calculateSale(expandCart(cart), chargeControls), [cart, chargeControls]);
   const hardware = settings?.hardware;
   const printerReady = Boolean(hardware?.printer.trim());
   const scannerReady = Boolean(hardware?.barcodeScanner);
@@ -367,7 +368,7 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
       .filter((item) => item.quantity > 0),
     [cart, splitQuantities]
   );
-  const splitSummary = useMemo(() => calculateSale(splitItems, chargeControls), [splitItems, chargeControls]);
+  const splitSummary = useMemo(() => calculateSale(expandCart(splitItems), chargeControls), [splitItems, chargeControls]);
   const orderTitle = tableContext ? tableContext.tableLabel : "Walk-in";
   const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId) ?? null;
   const creditAvailable = selectedCustomer ? Math.max(selectedCustomer.creditLimit - selectedCustomer.outstandingBalance, 0) : 0;
@@ -858,12 +859,14 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
         tableId: tableContext?.tableId,
         tableOrderId: tableContext?.tableOrderId,
         idempotencyKey: `${terminalId}-${Date.now()}`,
-        discountApprovalId: summary.discount >= 50000 ? saleDiscountApprovalId : undefined,
-        lines: cart.map((item) => ({
+        // Any approved manual discount travels with the sale (staff without "Give discounts" need one for any amount).
+        discountApprovalId: manualDiscount(cart) > 0 && saleDiscountApprovalId ? saleDiscountApprovalId : undefined,
+        lines: expandCart(cart).map((item) => ({
           productId: item.product.id,
           quantity: item.quantity,
           discount: item.discount,
-          note: item.note
+          note: item.note,
+          ...(item.clearance ? { clearance: true } : {})
         })),
         payments: salePayments
       });
@@ -970,12 +973,13 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
         customerId: selectedCustomerId || undefined,
         tableId: tableContext?.tableId,
         idempotencyKey: `${terminalId}-split-${Date.now()}`,
-        discountApprovalId: splitSummary.discount >= 50000 ? saleDiscountApprovalId : undefined,
-        lines: splitItems.map((item) => ({
+        discountApprovalId: manualDiscount(splitItems) > 0 && saleDiscountApprovalId ? saleDiscountApprovalId : undefined,
+        lines: expandCart(splitItems).map((item) => ({
           productId: item.product.id,
           quantity: item.quantity,
           discount: item.discount,
-          note: item.note ? `${item.note} | split payment` : "Split payment"
+          note: item.note ? `${item.note} | split payment` : "Split payment",
+          ...(item.clearance ? { clearance: true } : {})
         })),
         payments: [{ method: paymentMethod, amount: splitSummary.total, reference: paymentReference || undefined }]
       });
@@ -1100,6 +1104,11 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
               <div className="product-card-body">
                 <strong>{product.name}</strong>
                 <small>{product.station}</small>
+                {activeClearance(product) ? (
+                  <small className="clearance-pill">
+                    Clearance −{activeClearance(product)!.percent}% · {displayMoney(activeClearance(product)!.price)} · {activeClearance(product)!.remaining} left
+                  </small>
+                ) : null}
                 <footer>
                   <b>{displayMoney(product.price)}</b>
                   <em className={outOfStock ? "stock-empty-pill" : lowStock ? "stock-low-pill" : ""}>{isService ? "Service" : outOfStock ? "Out of stock" : `${product.stock} left`}</em>
@@ -1158,8 +1167,14 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
                 <div className="line-detail">
                   <strong>{item.product.name}</strong>
                   <span>{item.discount > 0 ? `${item.product.station} - discount ${displayMoney(item.discount)} each` : item.product.station}</span>
+                  {activeClearance(item.product) ? (
+                    <span className="clearance-note">
+                      {Math.min(item.quantity, activeClearance(item.product)!.remaining)} at clearance {displayMoney(activeClearance(item.product)!.price)}
+                      {item.quantity > activeClearance(item.product)!.remaining ? ` · ${item.quantity - activeClearance(item.product)!.remaining} at ${displayMoney(item.product.price - item.discount)}` : ""}
+                    </span>
+                  ) : null}
                 </div>
-                <b>{displayMoney(Math.max((item.product.price - item.discount) * item.quantity, 0))}</b>
+                <b>{displayMoney(expandCart([item]).reduce((sum, line) => sum + Math.max((line.product.price - line.discount) * line.quantity, 0), 0))}</b>
                 <button className="icon-danger" onClick={() => updateQuantity(item.product.id, -item.quantity)} aria-label={`Remove ${item.product.name}`}>
                   <Trash2 size={16} />
                 </button>

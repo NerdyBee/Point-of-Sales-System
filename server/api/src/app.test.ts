@@ -3521,6 +3521,51 @@ describe("api foundation", () => {
     expect(floorResponse.body.openOrders.some((order: { id: string }) => order.id === "table-order-1")).toBe(false);
   });
 
+  it("tracks expiry batches and sells clearance units at the clearance price", async () => {
+    const as = (role: string, userId: string) => (req: request.Test) =>
+      req.set("x-tenant-id", "tenant-lagos-foods").set("x-branch-id", "branch-lagos-main").set("x-role", role).set("x-user-id", userId);
+    const manager = as("manager", "manager-1");
+    const cashier = as("cashier", "cashier-1");
+    const inDays = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+
+    const bad = await manager(request(app).post("/api/v1/inventory/adjustments")).send({ productId: "p2", branchId: "branch-lagos-main", type: "receipt", quantityDelta: 6, reason: "Delivery", expiryDate: "2026-02-30" });
+    expect(bad.status).toBe(400);
+
+    const received = await manager(request(app).post("/api/v1/inventory/adjustments")).send({ productId: "p2", branchId: "branch-lagos-main", type: "receipt", quantityDelta: 6, reason: "Delivery", expiryDate: inDays(5) });
+    expect(received.status).toBe(201);
+    const expiring = await manager(request(app).get("/api/v1/inventory/expiring?days=30"));
+    expect(expiring.status).toBe(200);
+    const lot = expiring.body.lots.find((row: { product: { id: string } }) => row.product.id === "p2");
+    expect(lot.lot).toMatchObject({ quantity: 6, remaining: 6, daysLeft: 5, expiryDate: inDays(5) });
+
+    const price = lot.product.price as number;
+    const clearancePrice = Math.round(price * 0.7);
+    expect((await cashier(request(app).post("/api/v1/catalog/products/p2/clearance")).send({ clearancePrice, units: 3 })).status).toBe(403);
+    expect((await manager(request(app).post("/api/v1/catalog/products/p2/clearance")).send({ clearancePrice: price, units: 3 })).status).toBe(409);
+    const set = await manager(request(app).post("/api/v1/catalog/products/p2/clearance")).send({ clearancePrice, units: 3, endsAt: inDays(5), expiryDate: inDays(5) });
+    expect(set.status).toBe(200);
+    expect(set.body.product).toMatchObject({ clearancePrice, clearanceRemaining: 3, clearancePercent: 30 });
+
+    const sale = (key: string, lines: object[], amount: number) =>
+      cashier(request(app).post("/api/v1/sales")).send({ branchId: "branch-lagos-main", terminalId: "terminal-web-1", idempotencyKey: key, lines, payments: [{ method: "cash", amount }] });
+    const clearanceLine = { productId: "p2", quantity: 2, discount: price - clearancePrice, clearance: true };
+    const priced = await sale("clearance-price-check", [clearanceLine], 1);
+    expect(priced.status).toBe(409);
+    // A cashier (no Give discounts permission) can sell clearance units without an approval.
+    const sold = await sale("clearance-sale-1", [clearanceLine], priced.body.total);
+    expect(sold.status).toBe(201);
+    const products = await manager(request(app).get("/api/v1/catalog/products"));
+    expect(products.body.products.find((product: { id: string }) => product.id === "p2").clearanceRemaining).toBe(1);
+
+    // More clearance units than are left, or a bigger discount than the clearance, is refused.
+    expect((await sale("clearance-too-many", [{ ...clearanceLine, quantity: 2 }], priced.body.total)).status).toBe(409);
+    expect((await sale("clearance-too-cheap", [{ ...clearanceLine, quantity: 1, discount: price }], 0)).status).toBe(409);
+
+    expect((await manager(request(app).delete("/api/v1/catalog/products/p2/clearance"))).status).toBe(200);
+    const after = await manager(request(app).get("/api/v1/catalog/products"));
+    expect(after.body.products.find((product: { id: string }) => product.id === "p2")).toMatchObject({ clearancePrice: null, clearanceRemaining: 0 });
+  });
+
   it("lets staff with Give discounts discount on their own, and cashiers only with an approval", async () => {
     const post = (role: string, userId: string, key: string, amount: number) =>
       request(app)

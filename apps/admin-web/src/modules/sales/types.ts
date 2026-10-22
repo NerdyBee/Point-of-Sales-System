@@ -5,6 +5,8 @@ export interface CartItem {
   quantity: number;
   note?: string;
   discount: number;
+  /** Units sold at the product's clearance price (see pricing.ts expandCart). */
+  clearance?: boolean;
 }
 
 export interface PaymentMethod {

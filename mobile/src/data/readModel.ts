@@ -41,6 +41,12 @@ export interface Product {
   reorderPoint?: number;
   /** Standalone only: hidden from selling but kept for sales history. */
   archived?: boolean;
+  /** Clearance (near expiry): see pos/clearance.ts. */
+  clearancePrice?: number | null;
+  clearancePercent?: number | null;
+  clearanceRemaining?: number | null;
+  clearanceEndsAt?: string | null;
+  clearanceExpiry?: string | null;
 }
 
 export interface Staff {
@@ -99,6 +105,7 @@ export const readModel = {
   terminal: (db: Db, terminalId: string) => rowOf<Terminal>(db, "terminals", terminalId),
   staff: (db: Db, staffId: string) => rowOf<Staff>(db, "staff_members", staffId),
   customer: (db: Db, customerId: string) => rowOf<Customer>(db, "customers", customerId),
+  product: (db: Db, productId: string) => rowOf<Product>(db, "products", productId),
 
   /** Products on sale at a branch. Archived products (standalone mode) are hidden unless asked for. */
   async products(db: Db, branchId: string, options: { includeArchived?: boolean } = {}) {

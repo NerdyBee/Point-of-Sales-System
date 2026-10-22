@@ -412,6 +412,8 @@ export interface StockAdjustmentPayload {
   quantityDelta: number;
   reason: string;
   reference?: string;
+  /** Expiry date (YYYY-MM-DD) of stock received. */
+  expiryDate?: string;
 }
 
 export interface StockCountPayload {
@@ -453,6 +455,20 @@ export interface PurchaseReceiptPayload {
   reference: string;
   note: string;
   purchaseOrderId?: string;
+  /** Expiry date (YYYY-MM-DD) printed on this delivery. */
+  expiryDate?: string;
+}
+
+export interface ExpiringLot {
+  lot: { id: string; quantity: number; remaining: number; expiryDate: string; daysLeft: number; reference: string | null; source: string; createdAt: string };
+  product: Pick<Product, "id" | "branchId" | "name" | "category" | "price" | "stock" | "clearancePrice" | "clearancePercent" | "clearanceRemaining" | "clearanceEndsAt" | "clearanceExpiry">;
+}
+
+export interface ClearancePayload {
+  clearancePrice: number;
+  units: number;
+  endsAt?: string;
+  expiryDate?: string;
 }
 
 export type RestaurantTableState = "available" | "occupied" | "reserved" | "awaiting_payment" | "delayed" | "unavailable";
@@ -1700,6 +1716,27 @@ export async function receivePurchase(payload: PurchaseReceiptPayload, userId = 
     method: "POST",
     headers: { "x-branch-id": payload.branchId },
     body: JSON.stringify(payload)
+  });
+}
+
+export async function fetchExpiringLots(branchId = "", days = 30) {
+  return requestJson<{ days: number; lots: ExpiringLot[] }>(`/api/v1/inventory/expiring${queryString({ branchId, days: String(days) })}`, {
+    headers: branchHeaders(branchId)
+  });
+}
+
+export async function setProductClearance(productId: string, payload: ClearancePayload, branchId = "") {
+  return requestJson<{ product: Product }>(`/api/v1/catalog/products/${encodeURIComponent(productId)}/clearance`, {
+    method: "POST",
+    headers: branchHeaders(branchId),
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function endProductClearance(productId: string, branchId = "") {
+  return requestJson<{ ended: boolean }>(`/api/v1/catalog/products/${encodeURIComponent(productId)}/clearance`, {
+    method: "DELETE",
+    headers: branchHeaders(branchId)
   });
 }
 

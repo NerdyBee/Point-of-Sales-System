@@ -15,4 +15,10 @@ export interface Product {
   reorderPoint: number;
   station: "Kitchen" | "Bar" | "Counter";
   modifiers: string[];
+  /** Clearance (near expiry): units still to sell at clearancePrice until clearanceEndsAt (YYYY-MM-DD). */
+  clearancePrice?: number | null;
+  clearancePercent?: number | null;
+  clearanceRemaining?: number;
+  clearanceEndsAt?: string | null;
+  clearanceExpiry?: string | null;
 }

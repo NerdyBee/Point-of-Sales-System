@@ -1,5 +1,6 @@
 import { purchaseOrderInputSchema, purchaseOrderStatusSchema, stockAdjustmentSchema, stockCountSchema, stockTransferInputSchema, supplierInputSchema, supplierInvoiceInputSchema, supplierInvoicePaymentSchema, supplierReceiptSchema, supplierReturnInputSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
+import { listExpiringLots } from "./expiry.repository";
 import { canAccessAllBranches, canAccessScopedBranches, resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import {
   appendInventoryAudit,
@@ -68,6 +69,18 @@ inventoryRouter.get("/stock", requireTenant, requirePermission("inventory.adjust
   });
 
   res.json({ products, movements });
+});
+
+/** Batches still on the shelf that expire within ?days= (default 30), or already expired. */
+inventoryRouter.get("/expiring", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
+  const scope = effectiveBranchScope(req);
+  if (scope.forbidden) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+  const days = Math.min(365, Math.max(0, Number(req.query.days ?? 30) || 30));
+  const lots = await listExpiringLots(req.tenantContext!.tenantId, { branchId: scope.branchId, branchIds: scope.branchIds }, days);
+  res.json({ days, lots });
 });
 
 inventoryRouter.get("/transfers", requireTenant, requirePermission("inventory.adjust"), async (req, res) => {
@@ -429,6 +442,11 @@ inventoryRouter.post("/purchase-receipts", requireTenant, requirePermission("inv
   const scopedReceipt = { ...parsed.data, branchId: scope.branchId ?? parsed.data.branchId };
   const result = await receiveSupplierPurchase(req.tenantContext!.tenantId, req.tenantContext!.userId, scopedReceipt);
 
+  if (result.status === "invalid_expiry_date") {
+    res.status(400).json({ error: "Expiry date must be a real date in the form YYYY-MM-DD" });
+    return;
+  }
+
   if (result.status === "branch_not_found") {
     res.status(404).json({ error: "Inventory branch not found for this tenant" });
     return;
@@ -573,6 +591,11 @@ inventoryRouter.post("/adjustments", requireTenant, requirePermission("inventory
 
   const scopedAdjustment = { ...parsed.data, branchId: scope.branchId ?? parsed.data.branchId };
   const result = await applyInventoryAdjustment(req.tenantContext!.tenantId, req.tenantContext!.userId, scopedAdjustment);
+
+  if (result.status === "invalid_expiry_date") {
+    res.status(400).json({ error: "Expiry date must be a real date in the form YYYY-MM-DD" });
+    return;
+  }
 
   if (result.status === "branch_not_found") {
     res.status(404).json({ error: "Inventory branch not found for this tenant" });
