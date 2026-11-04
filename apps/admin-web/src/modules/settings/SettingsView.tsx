@@ -343,8 +343,28 @@ export function SettingsView() {
             <ReceiptText size={20} />
           </div>
           <div className="settings-form">
+            <label>
+              Receipt heading
+              <input value={settings.receiptTitle ?? ""} onChange={(event) => updateSetting("receiptTitle", event.target.value)} placeholder="SALES INVOICE" />
+            </label>
+            <label>
+              Phone numbers
+              <input value={settings.phone ?? ""} onChange={(event) => updateSetting("phone", event.target.value)} placeholder="e.g. 0810 761 5005, 0808 309 4888" />
+            </label>
             <label className="wide-field">
-              Receipt footer
+              Shop address
+              <input value={settings.address ?? ""} onChange={(event) => updateSetting("address", event.target.value)} placeholder="Printed at the top of receipts; the branch address is used if empty" />
+            </label>
+            <label>
+              Email
+              <input value={settings.email ?? ""} onChange={(event) => updateSetting("email", event.target.value)} placeholder="Optional" />
+            </label>
+            <label>
+              Website
+              <input value={settings.website ?? ""} onChange={(event) => updateSetting("website", event.target.value)} placeholder="Optional" />
+            </label>
+            <label className="wide-field">
+              Receipt footer (thank-you message or slogan)
               <input value={settings.receiptFooter} onChange={(event) => updateSetting("receiptFooter", event.target.value)} />
             </label>
             <label className="toggle-line">

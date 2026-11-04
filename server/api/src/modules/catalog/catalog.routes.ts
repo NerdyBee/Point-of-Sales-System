@@ -9,6 +9,7 @@ import {
   catalogBranchExists,
   catalogBarcodeExists,
   catalogSkuExists,
+  nextCatalogSku,
   createCatalogProductRecord,
   getCatalogProductRecord,
   getTenantSettings,
@@ -123,26 +124,30 @@ catalogRouter.post("/products", requireTenant, requirePermission("catalog.manage
     return;
   }
 
-  const duplicateSku = await catalogSkuExists(req.tenantContext!.tenantId, parsed.data.sku);
+  // No SKU typed: generate one from the category. No barcode: use the SKU, which is also unique.
+  const sku = parsed.data.sku || (await nextCatalogSku(req.tenantContext!.tenantId, parsed.data.category));
+  const input = { ...parsed.data, sku, barcode: parsed.data.barcode || sku };
+
+  const duplicateSku = await catalogSkuExists(req.tenantContext!.tenantId, input.sku);
 
   if (duplicateSku) {
     res.status(409).json({ error: "SKU already exists for this tenant" });
     return;
   }
 
-  const duplicateBarcode = await catalogBarcodeExists(req.tenantContext!.tenantId, parsed.data.barcode);
+  const duplicateBarcode = await catalogBarcodeExists(req.tenantContext!.tenantId, input.barcode);
 
   if (duplicateBarcode) {
     res.status(409).json({ error: "Barcode already exists for this tenant" });
     return;
   }
 
-  if (!(await catalogBranchExists(req.tenantContext!.tenantId, parsed.data.branchId))) {
+  if (!(await catalogBranchExists(req.tenantContext!.tenantId, input.branchId))) {
     res.status(404).json({ error: "Product branch not found for this tenant" });
     return;
   }
 
-  const scope = resolveBranchScope(req.tenantContext!, parsed.data.branchId);
+  const scope = resolveBranchScope(req.tenantContext!, input.branchId);
   if (scope.forbidden || (!canAccessAllBranches(req.tenantContext!) && !scope.branchId)) {
     res.status(403).json({ error: "Branch access denied" });
     return;
@@ -155,15 +160,15 @@ catalogRouter.post("/products", requireTenant, requirePermission("catalog.manage
     return;
   }
 
-  if (!settings.productCategories.includes(parsed.data.category)) {
+  if (!settings.productCategories.includes(input.category)) {
     res.status(409).json({ error: "Product category is not configured for this tenant" });
     return;
   }
 
   const product = await createCatalogProductRecord(req.tenantContext!.tenantId, {
-    ...parsed.data,
-    branchId: scope.branchId ?? parsed.data.branchId,
-    taxRate: parsed.data.taxRate ?? settings.defaultTaxRate
+    ...input,
+    branchId: scope.branchId ?? input.branchId,
+    taxRate: input.taxRate ?? settings.defaultTaxRate
   });
 
   await appendCatalogAudit({
@@ -264,6 +269,9 @@ catalogRouter.patch("/products/:productId", requireTenant, requirePermission("ca
     }
   }
 
+  // Clearing the SKU or barcode while editing keeps the current SKU / uses the SKU.
+  if (parsed.data.sku === "") delete parsed.data.sku;
+  if (parsed.data.barcode === "") parsed.data.barcode = parsed.data.sku ?? existingProduct.sku;
   if (parsed.data.barcode) {
     const duplicateBarcode = await catalogBarcodeExists(req.tenantContext!.tenantId, parsed.data.barcode, productId);
 

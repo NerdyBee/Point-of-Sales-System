@@ -15,12 +15,14 @@ import {
   registerShifts,
   restaurantTables,
   saleLedger,
+  staffMembers,
   terminals,
   tableOrders,
   type CompletedSale,
   type CompletedSaleSummary,
   type DemoProduct,
-  type PaymentRecord
+  type PaymentRecord,
+  type TenantSettings
 } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
 import { checkClearanceLines } from "../../shared/inventory/expiry";
@@ -553,6 +555,34 @@ function withPriceOverrides<T extends { id: string; price: number }>(products: T
   return products.map((product) => (overrides[product.id] === undefined ? product : { ...product, price: overrides[product.id] }));
 }
 
+/**
+ * What a receipt prints, saved with the sale so reprints match the original. Shop contact
+ * details come from Settings, falling back to the branch's address and phone.
+ */
+function receiptSnapshot(
+  settings: TenantSettings,
+  extras: { branch?: { name: string; address?: string | null; city?: string | null; phone?: string | null } | null; cashierName?: string; terminalName?: string }
+) {
+  const branchAddress = [extras.branch?.address, extras.branch?.city].filter((part) => part?.trim()).join(", ");
+  return {
+    businessName: settings.businessName,
+    taxId: settings.taxId,
+    currency: settings.currency,
+    footer: settings.receiptFooter,
+    whatsappEnabled: Boolean(settings.whatsappReceipts),
+    printerName: settings.hardware?.printer?.trim() || undefined,
+    printEnabled: Boolean(settings.hardware?.printer?.trim()),
+    title: settings.receiptTitle?.trim() || "SALES INVOICE",
+    address: settings.address?.trim() || branchAddress || undefined,
+    phone: settings.phone?.trim() || extras.branch?.phone?.trim() || undefined,
+    email: settings.email?.trim() || undefined,
+    website: settings.website?.trim() || undefined,
+    branchName: extras.branch?.name,
+    cashierName: extras.cashierName,
+    terminalName: extras.terminalName
+  };
+}
+
 export async function createSale(tenantId: string, userId: string, input: SaleInput, options: SaleReplayOptions = {}) {
   const terminalValidation = await validateSaleTerminal(tenantId, input.branchId, input.terminalId, !options.replay);
   if (terminalValidation.status !== "valid") return terminalValidation;
@@ -687,15 +717,12 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
       metadata: { methods: input.payments.map((payment) => payment.method), paid: summary.paid }
     });
 
-    const receipt = {
-      businessName: tenant.settings.businessName,
-      taxId: tenant.settings.taxId,
-      currency: tenant.settings.currency,
-      footer: tenant.settings.receiptFooter,
-      whatsappEnabled: tenant.settings.whatsappReceipts,
-      printerName: tenant.settings.hardware.printer.trim() || undefined,
-      printEnabled: Boolean(tenant.settings.hardware.printer.trim())
-    };
+    const demoBranch = branches.find((branch) => branch.id === input.branchId);
+    const receipt = receiptSnapshot(tenant.settings, {
+      branch: demoBranch,
+      cashierName: staffMembers.find((member) => member.id === userId)?.name,
+      terminalName: terminals.find((terminal) => terminal.id === input.terminalId)?.name
+    });
     const response = { saleId, summary, receipt };
     completedSales.set(idempotencyKey, response);
     appendCompletedSale({
@@ -894,15 +921,12 @@ export async function createSale(tenantId: string, userId: string, input: SaleIn
       });
     }
 
-    const receipt = {
-      businessName: settings.businessName,
-      taxId: settings.taxId,
-      currency: settings.currency,
-      footer: settings.receiptFooter,
-      whatsappEnabled: Boolean(settings.whatsappReceipts),
-      printerName: settings.hardware?.printer?.trim() || undefined,
-      printEnabled: Boolean(settings.hardware?.printer?.trim())
-    };
+    const [receiptBranch, receiptCashier, receiptTerminal] = await Promise.all([
+      tx.branch.findUnique({ where: { id: input.branchId }, select: { name: true, address: true, city: true, phone: true } }),
+      tx.staffMember.findUnique({ where: { id: userId }, select: { name: true } }),
+      tx.terminal.findUnique({ where: { id: input.terminalId }, select: { name: true } })
+    ]);
+    const receipt = receiptSnapshot(settings as TenantSettings, { branch: receiptBranch, cashierName: receiptCashier?.name, terminalName: receiptTerminal?.name });
 
     await tx.completedSale.create({
       data: {

@@ -9,6 +9,7 @@ and Windows (System.Speech) for the voice.
 import json
 import subprocess
 import wave
+from xml.sax.saxutils import escape
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -84,9 +85,18 @@ def title_frame(title, subtitle, footer=None):
     return frame
 
 
+def to_ssml(text):
+    """Narration as SSML, so names get the pronunciation set in story.json "pronounce"."""
+    spoken = escape(text)
+    for word, rule in story.get("pronounce", {}).items():
+        replacement = f'<phoneme alphabet="ipa" ph="{escape(rule["ipa"])}">{word}</phoneme>' if "ipa" in rule else escape(rule["say"])
+        spoken = spoken.replace(word, replacement)
+    return f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">{spoken}</speak>'
+
+
 def speak(scenes):
     """All narration in one PowerShell call (System.Speech) -> one WAV per scene."""
-    jobs = [{"text": scene["narration"], "path": str(work / f"{scene['id']}.wav")} for scene in scenes]
+    jobs = [{"ssml": to_ssml(scene["narration"]), "path": str(work / f"{scene['id']}.wav")} for scene in scenes]
     (work / "narration.json").write_text(json.dumps(jobs), encoding="utf-8")
     script = f"""
 Add-Type -AssemblyName System.Speech
@@ -96,7 +106,7 @@ $voice.Rate = -1
 $format = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo(44100, [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen, [System.Speech.AudioFormat.AudioChannel]::Mono)
 foreach ($job in (Get-Content -Raw -Encoding UTF8 '{work / 'narration.json'}' | ConvertFrom-Json)) {{
   $voice.SetOutputToWaveFile($job.path, $format)
-  $voice.Speak($job.text)
+  $voice.SpeakSsml($job.ssml)
 }}
 $voice.SetOutputToNull()
 """

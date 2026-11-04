@@ -1,33 +1,142 @@
 {
   "title": "Ajoke POS",
   "tagline": "Point of sale for modern shops. Works offline, syncs online.",
-  "vendor": { "name": "Ajoke Code Sphere", "phone": "+234 803 415 0437" },
+  "vendor": {
+    "name": "Ajoke Code Sphere",
+    "phone": "+234 803 415 0437"
+  },
   "voice": "Microsoft Zira Desktop",
+  "pronounce": {
+    "Ajoke": {
+      "ipa": "ˌɑ.ˌdʒɔ.ˈkɛ",
+      "note": "Yoruba Àjọkẹ́ (Ah-jó-ké): low a, open o, open e on a high tone. Use { \"say\": \"...\" } for a respelling instead."
+    }
+  },
   "scenes": [
-    { "id": "intro", "caption": "Ajoke POS - point of sale for modern shops", "narration": "Meet Ajoke POS. A complete point of sale system for shops, supermarkets, cafes and pharmacies. It runs on your own computer, works without internet, and can sync to the cloud when you are online." },
-    { "id": "activate", "caption": "Install on your shop computer, then activate it", "narration": "Install Ajoke POS on your shop computer. The first screen shows a code for that computer. Send it to your provider, and paste the activation code you receive." },
-    { "id": "setup", "caption": "Create your business in one page", "narration": "Next, create your business. Enter its name, choose your currency and sales tax, and set up the owner account with a password and a quick PIN." },
-    { "id": "setup-done", "caption": "Your staff ID signs you in", "narration": "Your business is ready. Write down your staff ID. You sign in with it and your password, or with your PIN." },
-    { "id": "dashboard", "caption": "Today's sales, profit and alerts at a glance", "narration": "The owner dashboard shows today's sales, tax, profit and average sale at a glance, with hourly trends and low stock alerts." },
-    { "id": "pos", "caption": "A fast POS terminal with product pictures", "narration": "The POS terminal is built for speed. Browse by category, search, or scan a barcode. Stock left is shown on every product." },
-    { "id": "pos-cart", "caption": "Tap to add items - totals and tax update instantly", "narration": "Tap products to add them to the sale. Quantities, discounts, tax and the total update instantly." },
-    { "id": "pos-paid", "caption": "Take cash, card or transfer - print or WhatsApp the receipt", "narration": "Take payment by cash, card, transfer, or customer credit, even split between methods. Print the receipt, or send it by WhatsApp." },
-    { "id": "sales", "caption": "Every sale, with its receipt", "narration": "Every sale is saved with its receipt. Search, reprint, and handle refunds and voids, with manager approval." },
-    { "id": "catalog", "caption": "Manage products, prices and categories", "narration": "In the catalog, manage your products, prices, costs and categories, with pictures and barcodes." },
-    { "id": "catalog-add", "caption": "Add a product in seconds", "narration": "Adding a product takes seconds." },
-    { "id": "inventory", "caption": "Stock, suppliers, deliveries and expiry dates", "narration": "Inventory tracks stock in every branch. Receive deliveries from suppliers, record expiry dates, count stock, and move it between branches." },
-    { "id": "customers", "caption": "Customers, loyalty points and credit accounts", "narration": "Keep customer records, loyalty points, and credit accounts with limits, so trusted customers can buy now and pay later." },
-    { "id": "register", "caption": "Open, count and close the cash drawer", "narration": "The cash register keeps every till honest. Open with a float, record cash in and out, and count the drawer when you close." },
-    { "id": "expenses", "caption": "Track business expenses", "narration": "Record business expenses, so your profit figures are always real." },
-    { "id": "reports", "caption": "Clear reports for any period", "narration": "Reports show sales, profit, tax, payments, best sellers and staff performance for any period. Export them to a spreadsheet, or print them." },
-    { "id": "staff", "caption": "Each staff member has their own login", "narration": "Every staff member gets their own sign in, so you always know who did what." },
-    { "id": "roles", "caption": "Decide exactly what each role can do", "narration": "Roles decide exactly what cashiers, managers and other staff are allowed to do." },
-    { "id": "approvals", "caption": "Big discounts and refunds need a manager", "narration": "Sensitive actions, like large discounts, refunds and cash withdrawals, wait for a manager's approval." },
-    { "id": "branches", "caption": "One business, many branches and tills", "narration": "Run several branches and tills from one system." },
-    { "id": "sync", "caption": "Works offline, syncs to the cloud, connects tablets", "narration": "Ajoke POS keeps working when the internet is down. When you are online, it syncs with your cloud server, and connects Android tablets on your shop Wi-Fi." },
-    { "id": "audit", "caption": "A full audit trail", "narration": "A full audit trail records every important action." },
-    { "id": "settings", "caption": "Your business, your currency, your receipt", "narration": "In settings, choose your currency from over forty, set your tax, payment methods and receipt message." },
-    { "id": "signin", "caption": "Quick sign-in with a staff ID and PIN", "narration": "Each day, staff sign in with their ID and a six digit PIN. Ajoke POS signs out by itself when left unattended." },
-    { "id": "outro", "caption": "Ajoke POS by Ajoke Code Sphere", "narration": "Ajoke POS, by Ajoke Code Sphere. Contact us on WhatsApp to get started." }
+    {
+      "id": "intro",
+      "caption": "Ajoke POS - point of sale for modern shops",
+      "narration": "Meet Ajoke POS. A complete point of sale system for shops, supermarkets, cafes and pharmacies. It runs on your own computer, works without internet, and can sync to the cloud when you are online."
+    },
+    {
+      "id": "activate",
+      "caption": "Install on your shop computer, then activate it",
+      "narration": "Install Ajoke POS on your shop computer. The first screen shows a code for that computer. Send it to your provider, and paste the activation code you receive."
+    },
+    {
+      "id": "setup",
+      "caption": "Create your business in one page",
+      "narration": "Next, create your business. Enter its name, choose your currency and sales tax, and set up the owner account with a password and a quick PIN."
+    },
+    {
+      "id": "setup-done",
+      "caption": "Your staff ID signs you in",
+      "narration": "Your business is ready. Write down your staff ID. You sign in with it and your password, or with your PIN."
+    },
+    {
+      "id": "dashboard",
+      "caption": "Today's sales, profit and alerts at a glance",
+      "narration": "The owner dashboard shows today's sales, tax, profit and average sale at a glance, with hourly trends and low stock alerts."
+    },
+    {
+      "id": "pos",
+      "caption": "A fast POS terminal with product pictures",
+      "narration": "The POS terminal is built for speed. Browse by category, search, or scan a barcode. Stock left is shown on every product."
+    },
+    {
+      "id": "pos-cart",
+      "caption": "Tap to add items - totals and tax update instantly",
+      "narration": "Tap products to add them to the sale. Quantities, discounts, tax and the total update instantly."
+    },
+    {
+      "id": "pos-paid",
+      "caption": "Take cash, card or transfer - print or WhatsApp the receipt",
+      "narration": "Take payment by cash, card, transfer, or customer credit, even split between methods. Print the receipt, or send it by WhatsApp."
+    },
+    {
+      "id": "sales",
+      "caption": "Every sale, with its receipt",
+      "narration": "Every sale is saved with its receipt. Search, reprint, and handle refunds and voids, with manager approval."
+    },
+    {
+      "id": "catalog",
+      "caption": "Manage products, prices and categories",
+      "narration": "In the catalog, manage your products, prices, costs and categories, with pictures and barcodes."
+    },
+    {
+      "id": "catalog-add",
+      "caption": "Add a product in seconds",
+      "narration": "Adding a product takes seconds."
+    },
+    {
+      "id": "inventory",
+      "caption": "Stock, suppliers, deliveries and expiry dates",
+      "narration": "Inventory tracks stock in every branch. Receive deliveries from suppliers, record expiry dates, count stock, and move it between branches."
+    },
+    {
+      "id": "customers",
+      "caption": "Customers, loyalty points and credit accounts",
+      "narration": "Keep customer records, loyalty points, and credit accounts with limits, so trusted customers can buy now and pay later."
+    },
+    {
+      "id": "register",
+      "caption": "Open, count and close the cash drawer",
+      "narration": "The cash register keeps every till honest. Open with a float, record cash in and out, and count the drawer when you close."
+    },
+    {
+      "id": "expenses",
+      "caption": "Track business expenses",
+      "narration": "Record business expenses, so your profit figures are always real."
+    },
+    {
+      "id": "reports",
+      "caption": "Clear reports for any period",
+      "narration": "Reports show sales, profit, tax, payments, best sellers and staff performance for any period. Export them to a spreadsheet, or print them."
+    },
+    {
+      "id": "staff",
+      "caption": "Each staff member has their own login",
+      "narration": "Every staff member gets their own sign in, so you always know who did what."
+    },
+    {
+      "id": "roles",
+      "caption": "Decide exactly what each role can do",
+      "narration": "Roles decide exactly what cashiers, managers and other staff are allowed to do."
+    },
+    {
+      "id": "approvals",
+      "caption": "Big discounts and refunds need a manager",
+      "narration": "Sensitive actions, like large discounts, refunds and cash withdrawals, wait for a manager's approval."
+    },
+    {
+      "id": "branches",
+      "caption": "One business, many branches and tills",
+      "narration": "Run several branches and tills from one system."
+    },
+    {
+      "id": "sync",
+      "caption": "Works offline, syncs to the cloud, connects tablets",
+      "narration": "Ajoke POS keeps working when the internet is down. When you are online, it syncs with your cloud server, and connects Android tablets on your shop Wi-Fi."
+    },
+    {
+      "id": "audit",
+      "caption": "A full audit trail",
+      "narration": "A full audit trail records every important action."
+    },
+    {
+      "id": "settings",
+      "caption": "Your business, your currency, your receipt",
+      "narration": "In settings, choose your currency from over forty, set your tax, payment methods and receipt message."
+    },
+    {
+      "id": "signin",
+      "caption": "Quick sign-in with a staff ID and PIN",
+      "narration": "Each day, staff sign in with their ID and a six digit PIN. Ajoke POS signs out by itself when left unattended."
+    },
+    {
+      "id": "outro",
+      "caption": "Ajoke POS by Ajoke Code Sphere",
+      "narration": "Ajoke POS, by Ajoke Code Sphere. Contact us on WhatsApp to get started."
+    }
   ]
 }

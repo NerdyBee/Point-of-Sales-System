@@ -339,11 +339,11 @@ export function CatalogView() {
               </label>
               <label>
                 SKU
-                <input value={form.sku} onChange={(event) => updateForm("sku", event.target.value.toUpperCase())} required />
+                <input value={form.sku} onChange={(event) => updateForm("sku", event.target.value.toUpperCase())} placeholder="Leave blank to create one" />
               </label>
               <label>
                 Barcode
-                <input value={form.barcode} onChange={(event) => updateForm("barcode", event.target.value)} required />
+                <input value={form.barcode} onChange={(event) => updateForm("barcode", event.target.value)} placeholder="Optional - scan or type" />
               </label>
               <label>
                 Category
@@ -398,7 +398,7 @@ export function CatalogView() {
                     onChange={(event) => void handleImageUpload(event.target.files?.[0])}
                     type="file"
                   />
-                  <small>{form.image ? "Saved locally for offline use" : "PNG, JPG, WEBP or GIF"}</small>
+                  <small>{form.image ? "Picture uploaded" : "PNG, JPG, WEBP or GIF"}</small>
                 </div>
               </label>
               <label className="wide-field">

@@ -109,6 +109,13 @@ export interface TenantSettings {
   currency: string;
   /** Decimal places of stored amounts; set once at creation (missing = 0). See @pos/types currencies. */
   moneyDecimals?: number;
+  /** Printed at the top of receipts (branch address/phone are used when these are empty). */
+  address?: string;
+  phone?: string;
+  email?: string;
+  website?: string;
+  /** Receipt heading, e.g. "SALES INVOICE" (the default) or "RECEIPT". */
+  receiptTitle?: string;
   productCategories: string[];
   receiptFooter: string;
   whatsappReceipts: boolean;
@@ -548,6 +555,14 @@ export interface CompletedSale {
     whatsappEnabled: boolean;
     printerName?: string;
     printEnabled: boolean;
+    title?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+    website?: string;
+    branchName?: string;
+    cashierName?: string;
+    terminalName?: string;
   };
   voidReason?: string;
   refundReason?: string;

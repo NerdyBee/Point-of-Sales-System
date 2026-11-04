@@ -51,10 +51,12 @@ export const profileSecurityUpdateSchema = z.object({
 });
 
 export const productInputSchema = z.object({
-  branchId: z.string().min(1),
-  name: z.string().min(2).max(120),
-  sku: z.string().min(2).max(40),
-  barcode: z.string().min(4).max(40),
+  branchId: z.string().min(1, "Choose a branch"),
+  name: z.string().trim().min(2, "Enter a product name (at least 2 characters)").max(120),
+  /** Optional: generated from the category when blank (e.g. GEN-0001). */
+  sku: z.string().trim().max(40).optional().or(z.literal("")),
+  /** Optional: when blank the product's SKU is used, since barcodes must be unique. */
+  barcode: z.string().trim().max(40).optional().or(z.literal("")),
   category: productCategorySchema,
   price: z.number().int().nonnegative(),
   cost: z.number().int().nonnegative(),
@@ -497,6 +499,11 @@ export const tenantSettingsSchema = z.object({
   currency: z.string().regex(/^[A-Z]{3}$/, "Use a 3-letter currency code"),
   productCategories: z.array(productCategorySchema).min(1),
   receiptFooter: z.string().max(180),
+  receiptTitle: z.string().trim().max(40).optional(),
+  address: z.string().trim().max(200).optional(),
+  phone: z.string().trim().max(80).optional(),
+  email: z.string().trim().max(120).optional(),
+  website: z.string().trim().max(120).optional(),
   whatsappReceipts: z.boolean(),
   paymentMethods: z.object({
     cash: z.boolean(),

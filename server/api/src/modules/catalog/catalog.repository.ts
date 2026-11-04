@@ -207,6 +207,18 @@ export async function updateCatalogProductRecord(tenantId: string, productId: st
   return toApiProduct(product);
 }
 
+/** Next free SKU for a category: its first three letters and a number, e.g. GEN-0001. */
+export async function nextCatalogSku(tenantId: string, category: string) {
+  const prefix = (category.normalize("NFKD").replace(/[^A-Za-z0-9]/g, "").slice(0, 3) || "ITM").toUpperCase().padEnd(3, "X");
+  const taken = useDemoStore
+    ? demoProducts.filter((product) => product.tenantId === tenantId).map((product) => product.sku)
+    : (await prisma.product.findMany({ where: { tenantId, sku: { startsWith: `${prefix}-` } }, select: { sku: true } })).map((product) => product.sku);
+  const used = new Set(taken);
+  let number = taken.reduce((highest, sku) => Math.max(highest, Number(sku.slice(prefix.length + 1)) || 0), 0) + 1;
+  while (used.has(`${prefix}-${String(number).padStart(4, "0")}`)) number += 1;
+  return `${prefix}-${String(number).padStart(4, "0")}`;
+}
+
 export async function catalogSkuExists(tenantId: string, sku: string, exceptProductId?: string) {
   if (useDemoStore) {
     return demoProducts.some((product) => product.tenantId === tenantId && product.sku === sku && product.id !== exceptProductId);

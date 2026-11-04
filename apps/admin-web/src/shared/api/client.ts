@@ -92,6 +92,15 @@ export interface SaleReceiptSnapshot {
   whatsappEnabled: boolean;
   printerName?: string;
   printEnabled: boolean;
+  /** Saved with each sale since this layout was added; older sales lack them. */
+  title?: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  website?: string;
+  branchName?: string;
+  cashierName?: string;
+  terminalName?: string;
 }
 
 export interface RegisterShift {
@@ -948,6 +957,13 @@ export interface TenantSettings {
   currency: string;
   /** Decimal places of stored amounts, fixed when the business was created (missing = 0). */
   moneyDecimals?: number;
+  /** Printed at the top of receipts. */
+  address?: string;
+  phone?: string;
+  email?: string;
+  website?: string;
+  /** Receipt heading; "SALES INVOICE" when empty. */
+  receiptTitle?: string;
   productCategories: string[];
   receiptFooter: string;
   whatsappReceipts: boolean;
@@ -1252,10 +1268,22 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     noticeLicenseRequired(response.status, body);
-    throw new Error(body.error ?? `API request failed with ${response.status}`);
+    throw new Error(describeApiError(body, response.status));
   }
 
   return response.json() as Promise<T>;
+}
+
+/**
+ * "Invalid product payload" alone does not say what to fix: add the fields the server
+ * rejected, e.g. "Please check: Barcode - String must contain at least 4 character(s)".
+ */
+function describeApiError(body: { error?: string; issues?: { fieldErrors?: Record<string, string[] | undefined>; formErrors?: string[] } }, status: number) {
+  const fieldErrors = Object.entries(body.issues?.fieldErrors ?? {}).filter(([, messages]) => messages?.length);
+  if (!fieldErrors.length && !body.issues?.formErrors?.length) return body.error ?? `API request failed with ${status}`;
+  const label = (field: string) => field.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (first) => first.toUpperCase());
+  const details = [...fieldErrors.map(([field, messages]) => `${label(field)}: ${messages![0]}`), ...(body.issues?.formErrors ?? [])];
+  return `Please check - ${details.join("; ")}`;
 }
 
 export const licenseRequiredEvent = "ajokepos-license-required";
