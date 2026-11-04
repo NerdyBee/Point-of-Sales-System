@@ -47,7 +47,7 @@ import { LicenseView } from "../modules/license/LicenseView";
 import { LICENSE_VENDOR } from "../shared/vendor";
 import { SyncMonitorView } from "../modules/sync/SyncMonitorView";
 import { SettingsView } from "../modules/settings/SettingsView";
-import { clearStoredAuth, fetchBranchOptions, fetchLicenseStatus, fetchSetupStatus, licenseRequiredEvent, type LicenseStatus, type SetupStatus, logoutAuthSession, readStoredAuth, refreshAuth, storeAuth, type ApprovalRequest, type AuthResponse, type BranchOption } from "../shared/api/client";
+import { clearStoredAuth, fetchBranchOptions, fetchCurrentTenant, fetchLicenseStatus, fetchSetupStatus, licenseRequiredEvent, type LicenseStatus, type SetupStatus, logoutAuthSession, readStoredAuth, refreshAuth, storeAuth, type ApprovalRequest, type AuthResponse, type BranchOption } from "../shared/api/client";
 
 type ModuleKey = "dashboard" | "sales" | "salesHistory" | "reports" | "catalog" | "inventory" | "expenses" | "branches" | "registers" | "floor" | "kitchen" | "customers" | "staff" | "roles" | "profile" | "security" | "sync" | "approvals" | "audit" | "settings";
 
@@ -73,6 +73,8 @@ const navItems = [
   { key: "settings", label: "Settings", icon: Settings, permission: "settings.manage" }
 ] satisfies Array<{ key: ModuleKey; label: string; icon: typeof LayoutDashboard; permission: string }>;
 
+const idleSignOutMs = 10 * 60_000;
+
 const modulePermissions = Object.fromEntries(navItems.map((item) => [item.key, item.permission])) as Partial<Record<ModuleKey, string>>;
 
 function firstModuleForPermissions(permissions: string[]) {
@@ -88,6 +90,7 @@ export function App() {
   const [auth, setAuth] = useState<AuthResponse | null>(() => readStoredAuth());
   // A fresh offline install has no business yet: show the setup page instead of sign-in.
   const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
+  const [businessName, setBusinessName] = useState("");
   // Installed copies must be activated; until then only the activation page is shown.
   const [license, setLicense] = useState<LicenseStatus | null>(null);
   const [branches, setBranches] = useState<BranchOption[]>([]);
@@ -173,6 +176,13 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (!auth) return;
+    fetchCurrentTenant()
+      .then(({ tenant }) => setBusinessName(tenant.settings.businessName || tenant.name))
+      .catch(() => undefined);
+  }, [auth?.staff.tenantId]);
+
+  useEffect(() => {
     const loadLicense = () => fetchLicenseStatus().then(setLicense).catch(() => undefined);
     void loadLicense();
     window.addEventListener(licenseRequiredEvent, loadLicense);
@@ -220,6 +230,27 @@ export function App() {
     setTerminalTableContext(context);
     navigateToModule("sales");
   }
+
+  // Sign out after a while without use, like the Android app's till lock, so an unattended
+  // computer does not stay open on someone's account. Staff sign back in with their PIN.
+  const logoutRef = useRef(logout);
+  logoutRef.current = logout;
+  useEffect(() => {
+    if (!auth) return;
+    let lastActivity = Date.now();
+    const markActive = () => {
+      lastActivity = Date.now();
+    };
+    const events = ["pointerdown", "keydown", "wheel", "touchstart"] as const;
+    events.forEach((name) => window.addEventListener(name, markActive, { passive: true }));
+    const timer = window.setInterval(() => {
+      if (Date.now() - lastActivity > idleSignOutMs) void logoutRef.current();
+    }, 30_000);
+    return () => {
+      events.forEach((name) => window.removeEventListener(name, markActive));
+      window.clearInterval(timer);
+    };
+  }, [auth]);
 
   async function logout() {
     try {
@@ -317,7 +348,7 @@ export function App() {
           <div className="brand-mark">AP</div>
           <div>
             <strong>Ajoke POS</strong>
-            <span>Multi-tenant SaaS</span>
+            <span>Point of sale</span>
           </div>
         </div>
         <nav aria-label="Main modules">
@@ -333,7 +364,7 @@ export function App() {
       <div className="workspace">
         <header className="top-bar">
           <div>
-            <span>{auth.staff.tenantId}</span>
+            <span>{businessName || auth.staff.tenantId}</span>
             <strong>{currentUser.branch || "No branch assigned"}</strong>
           </div>
           <div className="top-actions">

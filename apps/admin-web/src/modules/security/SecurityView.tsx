@@ -75,7 +75,8 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
   const [allLoginTerminals, setAllLoginTerminals] = useState<TerminalOption[]>([]);
   const [loginForm, setLoginForm] = useState({ identifier: auth?.staff.email ?? "", password: "", terminalId: auth?.session.terminalId ?? "" });
   const [pinForm, setPinForm] = useState({ staffId: "", terminalId: "", pin: "" });
-  const [rememberDevice, setRememberDevice] = useState(true);
+  // Off by default: on a shared shop computer a remembered sign-in reopens after a restart.
+  const [rememberDevice, setRememberDevice] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [sessionQuery, setSessionQuery] = useState("");
   const [sessionStatusFilter, setSessionStatusFilter] = useState("");

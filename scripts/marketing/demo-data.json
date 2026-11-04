@@ -1,0 +1,62 @@
+{
+  "business": {
+    "businessName": "Green Basket Market",
+    "currency": "USD",
+    "vatPercent": 8,
+    "branchName": "Downtown",
+    "city": "Springfield",
+    "ownerName": "Maria Lopez",
+    "email": "maria@greenbasket.example",
+    "phone": "+1 555 0142",
+    "password": "DemoPass2026!",
+    "pin": "482915"
+  },
+  "settings": {
+    "receiptFooter": "Thank you for shopping local!",
+    "taxId": "TAX-55-0142",
+    "serviceChargeEnabled": false
+  },
+  "categories": ["Fresh Produce", "Bakery", "Dairy", "Beverages", "Pantry", "Snacks"],
+  "products": [
+    { "name": "Bananas (bunch)", "category": "Fresh Produce", "price": 249, "cost": 120, "stock": 60, "reorder": 15, "emoji": "🍌", "color": "#FFF6D6" },
+    { "name": "Red Apples 1 kg", "category": "Fresh Produce", "price": 399, "cost": 210, "stock": 45, "reorder": 10, "emoji": "🍎", "color": "#FDE4E1" },
+    { "name": "Avocados", "category": "Fresh Produce", "price": 179, "cost": 85, "stock": 8, "reorder": 12, "emoji": "🥑", "color": "#E6F4DC" },
+    { "name": "Vine Tomatoes 1 kg", "category": "Fresh Produce", "price": 299, "cost": 150, "stock": 30, "reorder": 10, "emoji": "🍅", "color": "#FDE4E1" },
+    { "name": "Sourdough Loaf", "category": "Bakery", "price": 549, "cost": 220, "stock": 24, "reorder": 8, "emoji": "🍞", "color": "#F7EBDD" },
+    { "name": "Butter Croissant", "category": "Bakery", "price": 225, "cost": 80, "stock": 40, "reorder": 12, "emoji": "🥐", "color": "#F7EBDD" },
+    { "name": "French Baguette", "category": "Bakery", "price": 325, "cost": 110, "stock": 18, "reorder": 6, "emoji": "🥖", "color": "#F7EBDD" },
+    { "name": "Whole Milk 1 L", "category": "Dairy", "price": 189, "cost": 105, "stock": 50, "reorder": 15, "emoji": "🥛", "color": "#E7F0FB" },
+    { "name": "Aged Cheddar 400 g", "category": "Dairy", "price": 649, "cost": 380, "stock": 20, "reorder": 6, "emoji": "🧀", "color": "#FFF6D6" },
+    { "name": "Free-range Eggs (12)", "category": "Dairy", "price": 499, "cost": 290, "stock": 36, "reorder": 10, "emoji": "🥚", "color": "#F4F1EA" },
+    { "name": "Fresh Orange Juice", "category": "Beverages", "price": 429, "cost": 190, "stock": 28, "reorder": 8, "emoji": "🧃", "color": "#FFEBD6" },
+    { "name": "Coffee Beans 500 g", "category": "Beverages", "price": 1299, "cost": 690, "stock": 15, "reorder": 5, "emoji": "☕", "color": "#EFE4DA" },
+    { "name": "Spring Water 1.5 L", "category": "Beverages", "price": 99, "cost": 35, "stock": 120, "reorder": 30, "emoji": "💧", "color": "#E2F3FB" },
+    { "name": "Basmati Rice 2 kg", "category": "Pantry", "price": 749, "cost": 420, "stock": 22, "reorder": 6, "emoji": "🍚", "color": "#F4F1EA" },
+    { "name": "Extra Virgin Olive Oil", "category": "Pantry", "price": 899, "cost": 510, "stock": 14, "reorder": 5, "emoji": "🫒", "color": "#EAF1DC" },
+    { "name": "Wildflower Honey", "category": "Pantry", "price": 679, "cost": 360, "stock": 16, "reorder": 5, "emoji": "🍯", "color": "#FFF1D0" },
+    { "name": "Dark Chocolate 70%", "category": "Snacks", "price": 299, "cost": 140, "stock": 48, "reorder": 12, "emoji": "🍫", "color": "#EFE4DA" },
+    { "name": "Oat Cookies", "category": "Snacks", "price": 349, "cost": 150, "stock": 6, "reorder": 10, "emoji": "🍪", "color": "#F7EBDD" }
+  ],
+  "staff": [
+    { "name": "James Carter", "email": "james@greenbasket.example", "phone": "+1 555 0150", "role": "manager" },
+    { "name": "Aisha Bello", "email": "aisha@greenbasket.example", "phone": "+1 555 0151", "role": "cashier" },
+    { "name": "Tom Nguyen", "email": "tom@greenbasket.example", "phone": "+1 555 0152", "role": "cashier" },
+    { "name": "Priya Shah", "email": "priya@greenbasket.example", "phone": "+1 555 0153", "role": "inventory" }
+  ],
+  "customers": [
+    { "name": "Daniel Brooks", "phone": "+1 555 0170", "email": "daniel@example.com", "group": "VIP", "creditLimit": 0, "loyaltyPoints": 320 },
+    { "name": "Sunrise Cafe", "phone": "+1 555 0171", "email": "orders@sunrisecafe.example", "group": "Credit account", "creditLimit": 50000, "loyaltyPoints": 0 },
+    { "name": "Grace Kim", "phone": "+1 555 0172", "email": "grace@example.com", "group": "Walk-in", "creditLimit": 0, "loyaltyPoints": 45 },
+    { "name": "Hilltop Deli", "phone": "+1 555 0173", "email": "buy@hilltopdeli.example", "group": "Wholesale", "creditLimit": 100000, "loyaltyPoints": 0 }
+  ],
+  "suppliers": [
+    { "name": "Valley Farms Co-op", "contactPerson": "Ben Ortiz", "phone": "+1 555 0190", "email": "sales@valleyfarms.example", "leadTimeDays": 2, "categories": ["Fresh Produce", "Dairy"] },
+    { "name": "Golden Crust Bakery", "contactPerson": "Lena Fischer", "phone": "+1 555 0191", "email": "orders@goldencrust.example", "leadTimeDays": 1, "categories": ["Bakery"] },
+    { "name": "Metro Wholesale", "contactPerson": "Raj Patel", "phone": "+1 555 0192", "email": "trade@metrowholesale.example", "leadTimeDays": 5, "categories": ["Beverages", "Pantry", "Snacks"] }
+  ],
+  "expenses": [
+    { "category": "Utilities", "description": "Electricity bill - October", "vendor": "City Power", "amount": 18450, "paymentMethod": "bank_transfer", "daysAgo": 3 },
+    { "category": "Supplies", "description": "Paper bags and receipt rolls", "vendor": "PackRight", "amount": 4290, "paymentMethod": "card", "daysAgo": 2 },
+    { "category": "Maintenance", "description": "Fridge service", "vendor": "CoolTech Repairs", "amount": 12500, "paymentMethod": "cash", "daysAgo": 1 }
+  ]
+}

@@ -7,8 +7,8 @@ import { staffIdBase } from "../staff/staff.repository";
 import { planCatalog } from "../subscriptions/subscriptions.repository";
 
 /**
- * Creates a real client business (no demo data): the business, its first branch, a
- * subscription record and the owner. Used by the first-run setup page and `business create`.
+ * Creates a real client business (no demo data): the business, its first branch and till,
+ * a subscription record and the owner. Used by the first-run setup page and `business create`.
  */
 export interface CreateBusinessInput {
   name: string;
@@ -90,6 +90,10 @@ export async function createBusiness(input: CreateBusinessInput) {
       }
     });
     await tx.branch.create({ data: { id: branchId, tenantId, name: branchName, city: input.city?.trim() ?? "" } });
+    // A first till so the register can be opened and sales made straight away.
+    await tx.terminal.create({
+      data: { id: `${branchId}-till-1`.slice(0, 80), tenantId, branchId, name: "Till 1", deviceCode: "TILL-1", status: "online", appVersion: "web", lastSeenAt: new Date() }
+    });
     await tx.tenantSubscription.create({
       data: {
         id: `sub-${tenantId}`.slice(0, 64),

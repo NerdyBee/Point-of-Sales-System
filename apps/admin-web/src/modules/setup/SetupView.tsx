@@ -163,11 +163,11 @@ export function SetupView({ local }: SetupViewProps) {
               </label>
               <label>
                 6-digit PIN (for quick sign-in)
-                <input inputMode="numeric" pattern="\d{6}" maxLength={6} value={form.pin} onChange={(event) => update("pin", event.target.value.replace(/\D/g, ""))} placeholder="Optional" />
+                <input type="password" autoComplete="new-password" inputMode="numeric" pattern="\d{6}" maxLength={6} value={form.pin} onChange={(event) => update("pin", event.target.value.replace(/\D/g, ""))} placeholder="Optional" />
               </label>
               <label>
                 Repeat PIN
-                <input inputMode="numeric" pattern="\d{6}" maxLength={6} value={form.pinAgain} onChange={(event) => update("pinAgain", event.target.value.replace(/\D/g, ""))} />
+                <input type="password" autoComplete="new-password" inputMode="numeric" pattern="\d{6}" maxLength={6} value={form.pinAgain} onChange={(event) => update("pinAgain", event.target.value.replace(/\D/g, ""))} />
               </label>
             </fieldset>
 
