@@ -787,7 +787,7 @@ describe("api foundation", () => {
     expect(firstAbujaBranch.status).toBe(201);
     expect(secondAbujaBranch.status).toBe(201);
     expect(limitResponse.status).toBe(409);
-    expect(limitResponse.body.error).toBe("Active branch limit reached for this tenant plan");
+    expect(limitResponse.body.error).toBe("Branch limit reached. Contact your Ajoke POS provider to add more branches.");
   });
 
   it("manages tenant subscriptions and billing invoices", async () => {
@@ -931,12 +931,12 @@ describe("api foundation", () => {
     expect(finalizedInvoiceResponse.status).toBe(409);
     expect(finalizedInvoiceResponse.body.error).toBe("Paid or void subscription invoices cannot be changed");
     expect(branchLimitResponse.status).toBe(409);
-    expect(branchLimitResponse.body.error).toBe("Active branch limit reached for this tenant plan");
+    expect(branchLimitResponse.body.error).toBe("Branch limit reached. Contact your Ajoke POS provider to add more branches.");
     expect(freeTrialLimitResponse.status).toBe(200);
     expect(terminalLimitResponse.status).toBe(409);
-    expect(terminalLimitResponse.body.error).toBe("Terminal limit reached for this tenant plan");
+    expect(terminalLimitResponse.body.error).toBe("Terminal limit reached. Contact your Ajoke POS provider to add more terminals.");
     expect(userLimitResponse.status).toBe(409);
-    expect(userLimitResponse.body.error).toBe("User limit reached for this tenant plan");
+    expect(userLimitResponse.body.error).toBe("Staff limit reached. Contact your Ajoke POS provider to add more staff.");
     expect(restoreSubscriptionResponse.status).toBe(200);
   });
 

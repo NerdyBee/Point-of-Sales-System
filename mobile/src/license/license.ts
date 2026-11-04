@@ -13,6 +13,10 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 export interface LicensePayload {
   /** Format version. */
   v: 1;
+  /** "office" for an installed Ajoke POS server (server/api/src/modules/license); absent for phones. */
+  product?: "office";
+  /** Server licences only: what was paid for; a missing number means unlimited. */
+  limits?: { branches?: number; staff?: number; terminals?: number };
   /** Licence id, for the vendor's records. */
   id: string;
   /** Shop / customer the licence was sold to. */
@@ -135,6 +139,7 @@ export function verifyLicense(code: string, input: { publicKeyHex: string; devic
     valid = false;
   }
   if (!valid || license.v !== 1) return { ok: false, reason: "signature", message: "This activation code is not genuine or was changed." };
+  if (license.product) return { ok: false, reason: "wrong_device", license, message: "This code is for an Ajoke POS server, not this phone." };
 
   if (normalizeDeviceCode(license.device) !== normalizeDeviceCode(input.deviceCode)) {
     return { ok: false, reason: "wrong_device", license, message: `This code is for device ${license.device}, not this device (${input.deviceCode}).` };

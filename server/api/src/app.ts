@@ -13,6 +13,8 @@ import { customersRouter } from "./modules/customers/customers.routes";
 import { expensesRouter } from "./modules/expenses/expenses.routes";
 import { healthRouter } from "./modules/health/health.routes";
 import { inventoryRouter } from "./modules/inventory/inventory.routes";
+import { licenseRouter } from "./modules/license/license.routes";
+import { requireLicense } from "./modules/license/license";
 import { kitchenRouter } from "./modules/kitchen/kitchen.routes";
 import { restaurantRouter } from "./modules/restaurant/restaurant.routes";
 import { registersRouter } from "./modules/registers/registers.routes";
@@ -36,9 +38,11 @@ export function createApp() {
   app.use(express.json({ limit: "1mb" }));
   app.use(morgan("dev"));
   app.use(attachTenantContext);
+  app.use(requireLicense);
   app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 
   app.use("/health", healthRouter);
+  app.use("/api/v1/license", licenseRouter);
   app.use("/api/v1/setup", setupRouter);
   app.use("/api/v1/auth", authRouter);
   app.use("/api/v1/tenants", tenantsRouter);

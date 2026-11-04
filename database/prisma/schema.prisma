@@ -154,6 +154,10 @@ model SyncIdentity {
   nodeCode  String   @db.VarChar(12)
   role        String   @db.VarChar(20)
   triggerHash String?  @db.VarChar(64)
+  /// Activation code for this installation (see server/api/src/modules/license).
+  licenseCode   String?   @db.Text
+  /// Latest time the server ran; a clock far behind it means the date was moved back.
+  licenseSeenAt DateTime?
   createdAt   DateTime @default(now())
 
   @@map("sync_identity")

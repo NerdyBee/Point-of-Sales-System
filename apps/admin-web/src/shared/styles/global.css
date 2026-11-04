@@ -4835,3 +4835,28 @@ th {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Activation page (modules/license/LicenseView.tsx) and the renewal reminder. */
+.license-note {
+  margin: 10px auto 0;
+}
+
+.setup-form textarea {
+  border: 1px solid #b8c0cc;
+  border-radius: 4px;
+  color: var(--text);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 13px;
+  padding: 10px 11px;
+  resize: vertical;
+  text-transform: none;
+  width: 100%;
+}
+
+.license-warning {
+  background: var(--warning-bg);
+  border-bottom: 1px solid #f3d27a;
+  color: var(--warning);
+  font-weight: 700;
+  padding: 10px 24px;
+}

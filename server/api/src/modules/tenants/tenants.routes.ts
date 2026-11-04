@@ -1,6 +1,7 @@
 import { productCategoryRenameSchema, tenantSettingsSchema } from "@pos/validation";
 import { Router } from "express";
 import { requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
+import { licensedLimits } from "../license/license";
 import {
   appendTenantAudit,
   findRemovedProductCategoriesInUse,
@@ -30,7 +31,9 @@ tenantsRouter.get("/current", requireTenant, requireAuthenticatedUser, async (re
     metadata: { route: "/api/v1/tenants/current" }
   });
 
-  res.json({ tenant });
+  // Installed copies: the licence's branch limit (0 = unlimited) instead of the old plan's.
+  const licensed = await licensedLimits();
+  res.json({ tenant: licensed ? { ...tenant, branchLimit: Number.isFinite(licensed.branches) ? licensed.branches : 0 } : tenant });
 });
 
 tenantsRouter.patch("/current/settings", requireTenant, requirePermission("settings.manage"), async (req, res) => {

@@ -3,6 +3,8 @@
  *
  *   npm run license -- keygen                       create the signing key (once) and update src/license/publicKey.ts
  *   npm run license -- issue --device ABCD-EFGH-JKLM --name "Mama Nkechi Stores" [--days 365 | --expires 2027-12-31]
+ *   npm run license -- issue --product office --device ABCD-EFGH-JKLM --name "Bella Foods" [--days 365]
+ *       [--branches 2] [--staff 10] [--terminals 4]     for an installed server; a limit left out = unlimited
  *   npm run license -- verify --device ABCD-EFGH-JKLM --code <activation code>
  *   npm run license -- reset-pin --request ABCD-EFGH-JKLM-WXYZ-2345   one-time code for a forgotten owner PIN
  *   npm run license -- open-backup --file <backup.json> --password <new>   unlock a backup whose password was lost
@@ -77,9 +79,22 @@ if (command === "keygen") {
   const days = option("days");
   const expires = option("expires") ?? (days ? new Date(Date.now() + Number(days) * 86_400_000).toISOString().slice(0, 10) : null);
   if (expires && !/^\d{4}-\d{2}-\d{2}$/.test(expires)) throw new Error("--expires must look like 2027-12-31");
+  const product = option("product");
+  if (product && product !== "office") throw new Error('--product is "office" for an installed server; leave it out for a phone.');
+  const limits: Record<string, number> = {};
+  for (const key of ["branches", "staff", "terminals"]) {
+    const value = option(key);
+    if (value === undefined) continue;
+    if (!product) throw new Error(`--${key} only applies to server licences (--product office).`);
+    if (!/^\d+$/.test(value) || Number(value) < 1) throw new Error(`--${key} must be a whole number of at least 1.`);
+    limits[key] = Number(value);
+  }
   const payload: LicensePayload = {
     v: 1,
-    id: `LIC-${randomUUID().slice(0, 8).toUpperCase()}`,
+    ...(product ? { product: "office" as const } : {}),
+    ...(Object.keys(limits).length ? { limits } : {}),
+    // OFF- marks server licences in issued.csv; LIC- is a phone.
+    id: `${product ? "OFF" : "LIC"}-${randomUUID().slice(0, 8).toUpperCase()}`,
     name: name.trim(),
     device: normalizeDeviceCode(device),
     issued: new Date().toISOString().slice(0, 10),
@@ -89,7 +104,7 @@ if (command === "keygen") {
   mkdirSync(keyDir, { recursive: true });
   if (!existsSync(issuedLog)) appendFileSync(issuedLog, "licence id,shop,device,issued,expires\n");
   appendFileSync(issuedLog, `${payload.id},"${payload.name.replace(/"/g, '""')}",${payload.device},${payload.issued},${payload.expires ?? "never"}\n`);
-  console.log(`Licence ${payload.id} for "${payload.name}" on device ${payload.device}${expires ? `, valid until ${expires}` : ", no expiry"}.\n\nSend this activation code to the shop (copy it exactly):\n\n${code}\n`);
+  console.log(`${product ? "Server licence" : "Licence"} ${payload.id} for "${payload.name}" on ${product ? "computer" : "device"} ${payload.device}${expires ? `, valid until ${expires}` : ", no expiry"}${product ? `, limits: ${["branches", "staff", "terminals"].map((key) => `${limits[key] ?? "unlimited"} ${key}`).join(", ")}` : ""}.\n\nSend this activation code to the shop (copy it exactly):\n\n${code}\n`);
 } else if (command === "verify") {
   const device = option("device");
   const code = option("code");

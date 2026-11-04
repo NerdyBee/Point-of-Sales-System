@@ -1251,10 +1251,18 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
+    noticeLicenseRequired(response.status, body);
     throw new Error(body.error ?? `API request failed with ${response.status}`);
   }
 
   return response.json() as Promise<T>;
+}
+
+export const licenseRequiredEvent = "ajokepos-license-required";
+
+/** The server refuses everything once its licence is missing or expired; the app then shows the activation page. */
+function noticeLicenseRequired(status: number, body: { code?: string }) {
+  if (status === 403 && body.code === "license_required") window.dispatchEvent(new Event(licenseRequiredEvent));
 }
 
 async function requestPublicJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -1265,6 +1273,7 @@ async function requestPublicJson<T>(path: string, init?: RequestInit): Promise<T
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
+    noticeLicenseRequired(response.status, body);
     const lockedUntil = body.lockedUntil ? `locked until ${new Date(body.lockedUntil).toLocaleTimeString()}` : "";
     const diagnostic = [body.reason, body.identifier, body.staffId, body.branchId, body.terminalId, body.tenantId, lockedUntil].filter(Boolean).join(" | ");
     throw new Error(`${body.error ?? `API request failed with ${response.status}`}${diagnostic ? ` (${diagnostic})` : ""}`);
@@ -1985,6 +1994,28 @@ export async function assignStaffRole(staffId: string, role: string, branchId = 
     headers: { "x-branch-id": branchId },
     body: JSON.stringify({ staffId, role })
   });
+}
+
+export interface LicenseStatus {
+  /** False when running from source (development): activation is not enforced. */
+  required: boolean;
+  active: boolean;
+  /** This computer's code, sent to the vendor to get an activation code. */
+  deviceCode: string;
+  message?: string;
+  licensedTo?: string;
+  expires: string | null;
+  daysLeft: number | null;
+  /** Expires within the warning period. */
+  warn: boolean;
+}
+
+export async function fetchLicenseStatus() {
+  return requestPublicJson<LicenseStatus>("/api/v1/license");
+}
+
+export async function activateServerLicense(code: string) {
+  return requestPublicJson<LicenseStatus>("/api/v1/license", { method: "POST", body: JSON.stringify({ code }) });
 }
 
 export interface SetupStatus {

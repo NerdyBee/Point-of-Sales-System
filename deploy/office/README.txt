@@ -22,6 +22,9 @@ INSTALL
    - Without one: just press Enter to skip.
 4. When it finishes, Ajoke POS opens in your browser. An "Ajoke POS" shortcut is now
    on the desktop.
+   - First it asks you to activate it. Send the device code it shows (for example
+     K7QF-29XM-C4TB) to your Ajoke POS provider, paste the activation code they send back,
+     and click "Activate". Each computer needs its own code.
    - With a cloud server: sign in with the staff ID and password your provider gave you.
    - Without one: the "Welcome to Ajoke POS" page appears. Enter your business name,
      currency, VAT and your owner details, then click "Create business". Write down the

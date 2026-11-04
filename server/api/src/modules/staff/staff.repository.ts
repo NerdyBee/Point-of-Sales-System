@@ -6,6 +6,7 @@ import { hashPassword, verifyPassword } from "../../shared/security/passwords";
 import { getRolePermissions } from "../roles/roles.repository";
 import { planCatalog } from "../subscriptions/subscriptions.repository";
 
+import { licensedLimits } from "../license/license";
 const useDemoStore = process.env.NODE_ENV === "test";
 
 type StaffInput = {
@@ -148,6 +149,8 @@ async function getTenantUserLimit(tenantId: string) {
     prisma.tenantSubscription.findUnique({ where: { tenantId }, select: { userLimit: true } })
   ]);
   const plan = tenant?.plan && tenant.plan in planCatalog ? tenant.plan as keyof typeof planCatalog : "Professional";
+  const licensed = await licensedLimits();
+  if (licensed) return licensed.staff;
   return subscription?.userLimit ?? planCatalog[plan].userLimit;
 }
 

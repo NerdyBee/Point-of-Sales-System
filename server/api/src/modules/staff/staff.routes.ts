@@ -132,7 +132,7 @@ staffRouter.post("/", requireTenant, requirePermission("staff.manage"), async (r
   }
 
   if (result.status === "user_limit_reached") {
-    res.status(409).json({ error: "User limit reached for this tenant plan" });
+    res.status(409).json({ error: "Staff limit reached. Contact your Ajoke POS provider to add more staff." });
     return;
   }
 

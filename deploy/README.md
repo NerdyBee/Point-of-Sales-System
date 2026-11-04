@@ -59,6 +59,31 @@ Before each new release, raise `version` in the root `package.json`.
 docker compose exec -T db sh -c 'mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers naijapos' | gzip > /root/naijapos-$(date +%F).sql.gz
 ```
 
+## Activation (every installation)
+
+Each installed copy, office or cloud, must be activated for the computer it runs on, so one zip can't be installed on more PCs than were paid for. It uses the same signing key and tool as the Android app (`mobile/.license/private-key.json`; keep it backed up and private).
+
+1. **Get the device code.** An unactivated install shows an **Activate Ajoke POS** page with a code like `K7QF-29XM-C4TB`, and the office installer prints it at the end. On the cloud, run `docker compose exec app node dist/license.cjs status`.
+2. **Issue the activation code** (in `mobile/`):
+   ```
+   npm run license -- issue --product office --device "K7QF-29XM-C4TB" --name "Bella Foods" --days 365 --branches 2 --staff 10 --terminals 4
+   ```
+   - `--days 365` or `--expires 2027-12-31` sets an expiry. Leave both out for no expiry.
+   - `--branches`, `--staff` and `--terminals` are what the client paid for. Each one you leave out is unlimited.
+   - The code is recorded in `mobile/.license/issued.csv` with an `OFF-` ID.
+3. **The client pastes the code** on the activation page. On the cloud, run `docker compose exec app node dist/license.cjs activate --code "<code>"`.
+
+How it behaves:
+- **Tied to the computer.** The code is tied to Windows' machine ID, so reinstalling on the same PC keeps it but a different PC needs its own code. On the cloud, it's tied to the installation's database.
+- **Expiry.** The app warns 14 days before expiry. After that it shows only the activation page until a new code is entered. No data is lost.
+- **Moving the clock back** to dodge expiry is detected.
+- **Upgrades.** To sell more branches, staff or terminals, issue a new code with higher limits and the client pastes it in.
+- **Limits can't be changed by the client.** Installed copies ignore the database's own plan limits and use only the limits in the signed code.
+
+Phones still need their own activation codes as before (`issue` without `--product office`).
+
+**Limit:** this stops ordinary copying. Someone skilled enough to change the program's code could still remove the check, as with any software that runs offline.
+
 ## 3. Send the office package to the client
 
 Send `AjokePOS-Office-<version>.zip` (Google Drive or WeTransfer link) along with:

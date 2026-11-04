@@ -155,8 +155,14 @@ for ($i = 0; $i -lt 60 -and -not $ready; $i++) {
 if (-not $ready) { Fail "Ajoke POS did not start. See $(Join-Path $InstallDir 'logs\server.log')." }
 
 $addresses = Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" } | ForEach-Object { "http://$($_.IPAddress):$Port" }
+Push-Location $Server
+$licenseStatus = & $Node "dist\license.cjs" status | Where-Object { $_ -match "Device code|Activated|Not active" }
+Pop-Location
+
 Write-Host ""
 Write-Host "Ajoke POS is running." -ForegroundColor Green
+$licenseStatus | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+if ($licenseStatus -match "Not active") { Write-Host "  Send the device code above to your Ajoke POS provider for your activation code." -ForegroundColor Yellow }
 Write-Host "  On this computer : http://localhost:$Port (shortcut on the desktop)"
 Write-Host "  Other devices    : $($addresses -join ', ')"
 Write-Host "  Backups          : $(Join-Path $InstallDir 'backups') (every day at 21:00)"

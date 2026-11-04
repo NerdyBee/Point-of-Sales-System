@@ -290,8 +290,8 @@ export function BranchesView() {
       <section className="stats-grid">
         <article className="stat-card stat-card-dark">
           <div className="stat-card-top"><span>Active branches</span><Building2 size={20} /></div>
-          <strong>{activeBranchCount}/{tenantProfile.branchLimit}</strong>
-          <small>{tenantProfile.plan} plan</small>
+          <strong>{tenantProfile.branchLimit > 0 ? `${activeBranchCount}/${tenantProfile.branchLimit}` : activeBranchCount}</strong>
+          <small>{tenantProfile.branchLimit > 0 ? "Allowed by your licence" : "No branch limit"}</small>
         </article>
         <article className="stat-card">
           <div className="stat-card-top"><span>Terminals</span><MonitorCog size={20} /></div>

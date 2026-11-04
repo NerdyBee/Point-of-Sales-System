@@ -256,13 +256,13 @@ export function SettingsView() {
 
       <section className="stats-grid">
         <article className="stat-card stat-card-dark">
-          <div className="stat-card-top"><span>Plan</span><Building2 size={20} /></div>
-          <strong>{tenant?.plan ?? "Not loaded"}</strong>
+          <div className="stat-card-top"><span>Business</span><Building2 size={20} /></div>
+          <strong>{tenant?.name ?? "Not loaded"}</strong>
           <small>{status}</small>
         </article>
         <article className="stat-card">
           <div className="stat-card-top"><span>Branches</span></div>
-          <strong>{tenant ? `${tenant.activeBranches}/${tenant.branchLimit}` : "0/0"}</strong>
+          <strong>{tenant ? (tenant.branchLimit > 0 ? `${tenant.activeBranches}/${tenant.branchLimit}` : tenant.activeBranches) : "0"}</strong>
           <small>Active branch capacity</small>
         </article>
         <article className="stat-card">

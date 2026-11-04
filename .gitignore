@@ -5,4 +5,4 @@ uploads/
 .env
 .env.*
 !.env.example
-release/
+/release/

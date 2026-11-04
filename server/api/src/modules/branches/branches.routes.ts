@@ -80,7 +80,7 @@ branchesRouter.post("/", requireTenant, requirePermission("branch.manage"), asyn
   }
 
   if (result.status === "branch_limit_reached") {
-    res.status(409).json({ error: "Active branch limit reached for this tenant plan" });
+    res.status(409).json({ error: "Branch limit reached. Contact your Ajoke POS provider to add more branches." });
     return;
   }
 
@@ -116,7 +116,7 @@ branchesRouter.patch("/:branchId", requireTenant, requirePermission("branch.mana
   }
 
   if (result.status === "branch_limit_reached") {
-    res.status(409).json({ error: "Active branch limit reached for this tenant plan" });
+    res.status(409).json({ error: "Branch limit reached. Contact your Ajoke POS provider to add more branches." });
     return;
   }
 
@@ -168,7 +168,7 @@ branchesRouter.post("/terminals", requireTenant, requirePermission("branch.manag
   }
 
   if (result.status === "terminal_limit_reached") {
-    res.status(409).json({ error: "Terminal limit reached for this tenant plan" });
+    res.status(409).json({ error: "Terminal limit reached. Contact your Ajoke POS provider to add more terminals." });
     return;
   }
 

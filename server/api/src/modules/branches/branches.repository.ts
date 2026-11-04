@@ -4,6 +4,7 @@ import type { BranchProfile, TerminalDevice } from "../../shared/data/demoStore"
 import { prisma } from "../../shared/db/prisma";
 import { planCatalog } from "../subscriptions/subscriptions.repository";
 
+import { licensedLimits } from "../license/license";
 const useDemoStore = process.env.NODE_ENV === "test";
 
 type BranchInput = {
@@ -60,6 +61,8 @@ async function getTenantBranchPolicy(tenantId: string) {
     prisma.tenantSubscription.findUnique({ where: { tenantId }, select: { terminalLimit: true } })
   ]);
   const plan = tenant?.plan && tenant.plan in planCatalog ? tenant.plan as keyof typeof planCatalog : "Professional";
+  const licensed = await licensedLimits();
+  if (tenant && licensed) return { branchLimit: licensed.branches, terminalLimit: licensed.terminals, defaultBranchId: readDefaultBranchId(tenant.settings) };
   return tenant ? { branchLimit: tenant.branchLimit, terminalLimit: subscription?.terminalLimit ?? planCatalog[plan].terminalLimit, defaultBranchId: readDefaultBranchId(tenant.settings) } : null;
 }
 

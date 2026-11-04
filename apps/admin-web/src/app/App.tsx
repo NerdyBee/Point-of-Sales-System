@@ -1,6 +1,5 @@
 import {
   BarChart3,
-  BadgeDollarSign,
   Building2,
   ChefHat,
   CircleDollarSign,
@@ -44,12 +43,13 @@ import { SalesHistoryView } from "../modules/sales/SalesHistoryView";
 import { StaffView } from "../modules/staff/StaffView";
 import { SecurityView } from "../modules/security/SecurityView";
 import { SetupView } from "../modules/setup/SetupView";
-import { SubscriptionsView } from "../modules/subscriptions/SubscriptionsView";
+import { LicenseView } from "../modules/license/LicenseView";
+import { LICENSE_VENDOR } from "../shared/vendor";
 import { SyncMonitorView } from "../modules/sync/SyncMonitorView";
 import { SettingsView } from "../modules/settings/SettingsView";
-import { clearStoredAuth, fetchBranchOptions, fetchSetupStatus, type SetupStatus, logoutAuthSession, readStoredAuth, refreshAuth, storeAuth, type ApprovalRequest, type AuthResponse, type BranchOption } from "../shared/api/client";
+import { clearStoredAuth, fetchBranchOptions, fetchLicenseStatus, fetchSetupStatus, licenseRequiredEvent, type LicenseStatus, type SetupStatus, logoutAuthSession, readStoredAuth, refreshAuth, storeAuth, type ApprovalRequest, type AuthResponse, type BranchOption } from "../shared/api/client";
 
-type ModuleKey = "dashboard" | "sales" | "salesHistory" | "reports" | "catalog" | "inventory" | "expenses" | "branches" | "registers" | "floor" | "kitchen" | "customers" | "staff" | "roles" | "profile" | "security" | "subscriptions" | "sync" | "approvals" | "audit" | "settings";
+type ModuleKey = "dashboard" | "sales" | "salesHistory" | "reports" | "catalog" | "inventory" | "expenses" | "branches" | "registers" | "floor" | "kitchen" | "customers" | "staff" | "roles" | "profile" | "security" | "sync" | "approvals" | "audit" | "settings";
 
 const navItems = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "reports.profit.view" },
@@ -67,7 +67,6 @@ const navItems = [
   { key: "staff", label: "Staff", icon: ShieldCheck, permission: "staff.manage" },
   { key: "roles", label: "Roles", icon: LockKeyhole, permission: "roles.manage" },
   { key: "security", label: "Security", icon: KeyRound, permission: "staff.manage" },
-  { key: "subscriptions", label: "Subscriptions", icon: BadgeDollarSign, permission: "subscription.manage" },
   { key: "sync", label: "Sync", icon: RefreshCcw, permission: "sync.manage" },
   { key: "approvals", label: "Approvals", icon: ClipboardCheck, permission: "approval.manage" },
   { key: "audit", label: "Audit", icon: ClipboardList, permission: "audit.view" },
@@ -89,6 +88,8 @@ export function App() {
   const [auth, setAuth] = useState<AuthResponse | null>(() => readStoredAuth());
   // A fresh offline install has no business yet: show the setup page instead of sign-in.
   const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
+  // Installed copies must be activated; until then only the activation page is shown.
+  const [license, setLicense] = useState<LicenseStatus | null>(null);
   const [branches, setBranches] = useState<BranchOption[]>([]);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const activeBranchId = auth?.session.branchId ?? auth?.staff.branchId ?? "";
@@ -172,9 +173,16 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (auth) return;
+    const loadLicense = () => fetchLicenseStatus().then(setLicense).catch(() => undefined);
+    void loadLicense();
+    window.addEventListener(licenseRequiredEvent, loadLicense);
+    return () => window.removeEventListener(licenseRequiredEvent, loadLicense);
+  }, []);
+
+  useEffect(() => {
+    if (auth || (license?.required && !license.active)) return;
     fetchSetupStatus().then(setSetupStatus).catch(() => setSetupStatus(null));
-  }, [auth]);
+  }, [auth, license]);
 
   useEffect(() => {
     if (!auth) return;
@@ -269,7 +277,6 @@ export function App() {
     roles: <RolesView />,
     profile: <ProfileView user={currentUser} />,
     security: <SecurityView auth={auth} onAuthChange={handleAuthChange} />,
-    subscriptions: <SubscriptionsView />,
     sync: <SyncMonitorView />,
     approvals: (
       <ApprovalsView
@@ -282,6 +289,16 @@ export function App() {
     audit: <AuditLogView />,
     settings: <SettingsView />
   };
+
+  if (license?.required && !license.active) {
+    return (
+      <div className="auth-gate">
+        <main className="auth-gate-main">
+          <LicenseView status={license} onActivated={setLicense} />
+        </main>
+      </div>
+    );
+  }
 
   if (!auth) {
     return (
@@ -353,6 +370,11 @@ export function App() {
             </div>
           </div>
         </header>
+        {license?.warn ? (
+          <div className="license-warning" role="status">
+            Your Ajoke POS licence ends on {license.expires} ({license.daysLeft} day{license.daysLeft === 1 ? "" : "s"} left). Send code {license.deviceCode} to {LICENSE_VENDOR.name} to renew.
+          </div>
+        ) : null}
         <main key={`${displayedModule}:${authModuleKey}`}>{moduleViews[displayedModule]}</main>
       </div>
     </div>
