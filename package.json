@@ -14,7 +14,8 @@
     "db:reset": "prisma db push --force-reset --schema database/prisma/schema.prisma && tsx database/seed.ts",
     "sync": "tsx server/api/src/sync-cli.ts",
     "business": "tsx server/api/src/business-cli.ts",
-    "release": "node scripts/release/build.mjs"
+    "release": "node scripts/release/build.mjs",
+    "package:client": "node scripts/release/client-package.mjs"
   },
   "workspaces": [
     "apps/*",
