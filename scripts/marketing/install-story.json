@@ -1,0 +1,24 @@
+{
+  "output": "Ajoke-POS-Installation",
+  "title": "Installing Ajoke POS",
+  "tagline": "Set up Ajoke POS on your shop computer in about ten minutes",
+  "vendor": { "name": "Ajoke Code Sphere", "phone": "+234 803 415 0437" },
+  "voice": "Microsoft Zira Desktop",
+  "pronounce": {
+    "Ajoke": { "ipa": "ˌɑ.ˌdʒɔ.ˈkɛ" }
+  },
+  "scenes": [
+    { "id": "intro", "caption": "Installing Ajoke POS", "narration": "This video shows how to install Ajoke POS on your shop computer. It takes about ten minutes." },
+    { "id": "need", "image": "install-art/need.png", "caption": "A Windows PC, administrator access, the zip file and your provider's number", "narration": "You need a Windows ten or eleven computer that stays on while the shop is open, permission to install programs on it, the Ajoke POS zip file from your provider, and your provider's WhatsApp number for the activation code." },
+    { "id": "extract", "image": "install-art/extract.png", "caption": "Right-click the zip, choose Extract All, then double-click Install.cmd", "narration": "Right-click the zip file and choose Extract All. Open the folder it creates, and double-click Install dot c m d." },
+    { "id": "security", "image": "install-art/security.png", "caption": "Click Yes. If Windows protected your PC appears: More info, then Run anyway", "narration": "Windows asks for permission. Click Yes. On some computers, Windows also shows Windows protected your PC. If you see it, click More info, then Run anyway." },
+    { "id": "console", "image": "install-art/console.png", "caption": "The installer sets everything up. No cloud server? Just press Enter.", "narration": "The installer now sets up the database and the Ajoke POS server. When it asks for a cloud address, type the address and pairing code from your provider. If you don't have a cloud server, just press Enter." },
+    { "id": "finished", "image": "install-art/finished.png", "caption": "Note the device code and the address for other devices", "narration": "When it finishes, it shows this computer's device code, and the address other computers and tablets in the shop can use. Ajoke POS now starts by itself whenever the computer starts, and backs up every evening." },
+    { "id": "activate", "caption": "Send the device code to your provider, then paste your activation code", "narration": "Ajoke POS opens in your browser on the activation page. Send the device code to your provider on WhatsApp. Paste the activation code you receive, and click Activate." },
+    { "id": "setup", "caption": "Create your business: name, currency, tax and owner account", "narration": "Now create your business. Enter its name, choose your currency carefully, because it cannot be changed later, enter your sales tax, and set up the owner account with a password and a PIN." },
+    { "id": "setup-done", "caption": "Write down your staff ID", "narration": "Your business is ready. Write down your staff ID, then click Continue." },
+    { "id": "signin", "caption": "Sign in with your staff ID and password, or your PIN", "narration": "From now on, sign in with your staff ID and password, or your PIN. On a shared computer, leave Remember this device unticked." },
+    { "id": "settings", "caption": "Add your address and phone numbers for receipts", "narration": "Finally, open Settings and add your address, phone numbers and receipt message, then add your products and staff. You are ready to sell." },
+    { "id": "outro", "caption": "Ajoke POS by Ajoke Code Sphere", "narration": "Need help? Contact Ajoke Code Sphere on WhatsApp. Thank you for choosing Ajoke POS." }
+  ]
+}

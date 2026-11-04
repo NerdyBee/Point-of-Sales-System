@@ -1,12 +1,17 @@
 """Demo/guide video from the screenshots: one scene per screen, captions and a Windows voice.
 
     npx tsx scripts/marketing/demo.ts       (screenshots first)
-    python scripts/marketing/video.py       -> release/marketing/Ajoke-POS-Demo.mp4 (+ .srt)
+    python scripts/marketing/video.py                       -> release/marketing/Ajoke-POS-Demo.mp4 (+ .srt)
+    python scripts/marketing/video.py install-story.json    -> the installation guide video
+
+A story's "output" names the files; a scene shows the screenshot with its id, or its
+"image" (a file under release/marketing, such as an installer illustration).
 
 Scenes, captions and narration are in scripts/marketing/story.json. Needs ffmpeg on PATH
 and Windows (System.Speech) for the voice.
 """
 import json
+import sys
 import subprocess
 import wave
 from xml.sax.saxutils import escape
@@ -16,8 +21,9 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 root = Path(__file__).resolve().parents[2]
 out = root / "release/marketing"
-work = out / "video-work"
-story = json.loads((root / "scripts/marketing/story.json").read_text(encoding="utf-8"))
+story = json.loads((root / "scripts/marketing" / (sys.argv[1] if len(sys.argv) > 1 else "story.json")).read_text(encoding="utf-8"))
+output_name = story.get("output", "Ajoke-POS-Demo")
+work = out / "video-work" / output_name
 shots = {shot["id"]: out / "shots" / shot["file"] for shot in json.loads((out / "shots.json").read_text(encoding="utf-8"))["shots"]}
 
 W, H = 1920, 1080
@@ -124,7 +130,7 @@ def srt_time(value):
 
 
 def main():
-    scenes = [scene for scene in story["scenes"] if scene["id"] in ("intro", "outro") or scene["id"] in shots]
+    scenes = [scene for scene in story["scenes"] if scene["id"] in ("intro", "outro") or scene["id"] in shots or scene.get("image")]
     print(f"{len(scenes)} scenes; generating narration...")
     speak(scenes)
 
@@ -134,9 +140,9 @@ def main():
             image = title_frame(story["title"], story["tagline"])
         elif scene["id"] == "outro":
             vendor = story["vendor"]
-            image = title_frame(story["title"], f"by {vendor['name']}", f"WhatsApp {vendor['phone']}")
+            image = title_frame("Ajoke POS", f"by {vendor['name']}", f"WhatsApp {vendor['phone']}")
         else:
-            image = screen_frame(shots[scene["id"]], scene["caption"])
+            image = screen_frame(out / scene["image"] if scene.get("image") else shots[scene["id"]], scene["caption"])
         frame_path = work / f"{index:02d}-{scene['id']}.png"
         image.save(frame_path)
 
@@ -163,9 +169,9 @@ def main():
 
     listing = work / "segments.txt"
     listing.write_text("".join(f"file '{segment.as_posix()}'\n" for segment in segments), encoding="utf-8")
-    final = out / "Ajoke-POS-Demo.mp4"
+    final = out / f"{output_name}.mp4"
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", "-movflags", "+faststart", str(final)], check=True)
-    (out / "Ajoke-POS-Demo.srt").write_text(
+    (out / f"{output_name}.srt").write_text(
         "".join(f"{number}\n{srt_time(start)} --> {srt_time(end)}\n{text}\n\n" for number, (start, end, text) in enumerate(subtitles, 1)), encoding="utf-8"
     )
     print(f"\n{final} ({clock / 60:.1f} min)")

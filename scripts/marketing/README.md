@@ -8,6 +8,10 @@ These scripts rebuild the demo video and the PDF manual from the real app, so yo
 | `Ajoke-POS-Demo.mp4` | Narrated 1080p demo and guide video |
 | `Ajoke-POS-Demo-WhatsApp.mp4` | Smaller 720p copy for WhatsApp and social media |
 | `Ajoke-POS-Demo.srt` | Subtitles for YouTube and Facebook uploads |
+| `Ajoke-POS-Installation-Guide.pdf` | A4 guide for clients installing the office server themselves |
+| `Ajoke-POS-Installation.mp4` (+ `-WhatsApp.mp4`, `.srt`) | Narrated installation video |
+
+The Windows steps in the installation guide and video (extracting the zip, the permission prompts, the installer window) are drawings by `install_art.py`. Running the real installer would change the build machine's Windows services. The steps inside the app use real screenshots.
 
 ## Rebuild
 
@@ -17,6 +21,9 @@ python scripts/marketing/tiles.py        # product pictures for the demo shop
 npx tsx scripts/marketing/demo.ts        # demo shop + 23 screenshots (about 2 minutes)
 python scripts/marketing/manual.py       # PDF manual
 python scripts/marketing/video.py        # video + subtitles (about 5 minutes)
+python scripts/marketing/install_art.py  # installer illustrations
+python scripts/marketing/install_guide.py                 # installation guide PDF
+python scripts/marketing/video.py install-story.json     # installation video
 ffmpeg -i release/marketing/Ajoke-POS-Demo.mp4 -vf scale=1280:720 -c:v libx264 -crf 28 -c:a aac -b:a 96k release/marketing/Ajoke-POS-Demo-WhatsApp.mp4
 ```
 
@@ -30,7 +37,9 @@ Requirements:
 
 - **`demo-data.json`**: the demo shop (Green Basket Market, USD), with its products, staff, customers, suppliers and expenses.
 - **`story.json`**: the video's scenes, captions and narration, and the voice (`Microsoft Zira Desktop`; `Microsoft David Desktop` also works). It also holds your contact details for the title and closing cards.
-- **`manual.py`**: the manual's text, chapter by chapter.
+- **`manual.py`**: the manual's text, chapter by chapter, and the PDF design that `install_guide.py` reuses.
+- **`install_guide.py`** and **`install-story.json`**: the installation guide and video. Keep them in step with `deploy/office/README.txt` and `install.ps1`.
+- **`story.json` `"pronounce"`**: how the voice says "Ajoke" (Yoruba Àjọkẹ́).
 - **`demo.ts`**: which screens are captured and in what order.
 
 To record your own voice-over, use the narration text in `story.json`, or the timings in the `.srt` file. Replace the audio with ffmpeg, or in any video editor.
