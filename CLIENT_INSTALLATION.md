@@ -1,3 +1,5 @@
+> **Out of date.** This describes the old NaijaPOS setup for developers. For building, releasing and delivering Ajoke POS, see [BUILD_GUIDE.md](BUILD_GUIDE.md). Clients install with the Installation Guide in the client package (`npm run package:client`).
+
 # NaijaPOS Client Installation and Testing Guide
 
 This document explains how to install and run NaijaPOS locally on a client machine for testing and demo purposes, and summarizes the main features that are currently available.

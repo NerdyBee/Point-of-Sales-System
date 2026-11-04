@@ -1,3 +1,5 @@
+> Developer setup with a local MySQL. For releases, installers and delivering to clients, see [BUILD_GUIDE.md](BUILD_GUIDE.md).
+
 # NaijaPOS Startup Instructions
 
 Use these steps from the project root:

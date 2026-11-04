@@ -1,3 +1,5 @@
+> **Out of date.** This describes the old NaijaPOS setup for developers. For building, releasing and delivering Ajoke POS, see [BUILD_GUIDE.md](BUILD_GUIDE.md). Clients install with the Installation Guide in the client package (`npm run package:client`).
+
 # NaijaPOS Quick Start
 
 ## 1. Clone / open the project
