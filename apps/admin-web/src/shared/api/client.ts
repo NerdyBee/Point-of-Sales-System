@@ -1,7 +1,8 @@
 import type { Product } from "../../modules/catalog/types";
 import type { SaleSummary } from "../../modules/sales/types";
 
-const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4000";
+// Production builds are served by the API itself, so they call their own address.
+const apiBaseUrl = import.meta.env.VITE_API_URL ?? (import.meta.env.PROD ? "" : "http://127.0.0.1:4000");
 
 const baseHeaders = {
   "content-type": "application/json"
@@ -944,7 +945,9 @@ export interface TenantSettings {
   defaultTaxRate: number;
   serviceChargeEnabled: boolean;
   serviceChargeRate: number;
-  currency: "NGN" | "USD" | "GHS" | "KES" | "ZAR";
+  currency: string;
+  /** Decimal places of stored amounts, fixed when the business was created (missing = 0). */
+  moneyDecimals?: number;
   productCategories: string[];
   receiptFooter: string;
   whatsappReceipts: boolean;
@@ -1981,6 +1984,37 @@ export async function assignStaffRole(staffId: string, role: string, branchId = 
     method: "POST",
     headers: { "x-branch-id": branchId },
     body: JSON.stringify({ staffId, role })
+  });
+}
+
+export interface SetupStatus {
+  /** True while the installation has no business yet. */
+  needsSetup: boolean;
+  /** True when this browser runs on the server computer (only it may create the business). */
+  local: boolean;
+}
+
+export interface FirstBusinessInput {
+  businessName: string;
+  currency: string;
+  vatPercent: number;
+  branchName?: string;
+  city?: string;
+  ownerName: string;
+  email: string;
+  phone?: string;
+  password: string;
+  pin?: string;
+}
+
+export async function fetchSetupStatus() {
+  return requestPublicJson<SetupStatus>("/api/v1/setup/status");
+}
+
+export async function createFirstBusiness(input: FirstBusinessInput) {
+  return requestPublicJson<{ business: { tenantId: string; staffId: string; branchName: string; currency: string; moneyDecimals: number } }>("/api/v1/setup", {
+    method: "POST",
+    body: JSON.stringify(input)
   });
 }
 

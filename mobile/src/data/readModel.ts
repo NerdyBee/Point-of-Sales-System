@@ -5,7 +5,9 @@ import type { Db } from "./db";
 export interface TenantSettings {
   businessName: string;
   taxId?: string;
-  currency: "NGN" | "USD" | "GHS" | "KES" | "ZAR";
+  currency: string;
+  /** Decimal places of stored amounts, fixed when the business is created (missing = 0). */
+  moneyDecimals?: number;
   defaultTaxRate?: number;
   serviceChargeEnabled?: boolean;
   serviceChargeRate?: number;

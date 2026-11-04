@@ -16,7 +16,7 @@ import {
 } from "../standalone/expenses";
 import { periodRange } from "../standalone/inventory";
 import { EmptyState, Fab, ListItem, Sheet } from "../ui/appKit";
-import { Badge, Banner, Button, Field, Muted, NumberField } from "../ui/components";
+import { Badge, Banner, Button, Field, MoneyField, Muted } from "../ui/components";
 import { colors, font, radius, spacing } from "../ui/theme";
 
 type Period = "today" | "week" | "month";
@@ -195,7 +195,7 @@ function ExpenseSheet(props: { onClose(): void }) {
         </>
       }
     >
-      <NumberField label="Amount" value={amount} onChangeText={setAmount} placeholder="0" />
+      <MoneyField label="Amount" value={amount} onChangeText={setAmount} placeholder="0" />
       <Text style={styles.fieldLabel}>Category</Text>
       <View style={styles.chips}>
         {expenseCategories.map((item) => (

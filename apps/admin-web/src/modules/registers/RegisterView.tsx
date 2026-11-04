@@ -24,6 +24,7 @@ import { TablePagination, usePaginatedRows } from "../../shared/components/Table
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 import { applyManagerApproval } from "../sales/pricing";
 
+import { MoneyInput } from "../../shared/components/MoneyInput";
 const fallbackBranches: BranchOption[] = [];
 
 const defaultMovement: Omit<CashMovementPayload, "shiftId"> = {
@@ -626,7 +627,7 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
             </label>
             <label>
               Opening cash
-              <input type="number" min={0} value={openingBalance} onChange={(event) => setOpeningBalance(Number(event.target.value))} disabled={allBranchHistoryMode} required />
+              <MoneyInput min={0} value={openingBalance} onChange={(amount) => setOpeningBalance(amount)} disabled={allBranchHistoryMode} required />
             </label>
             <div className="form-summary">
               <span>{allBranchHistoryMode ? `${shiftHistory.length} shifts across accessible branches` : shift ? `Opened ${new Date(shift.openedAt).toLocaleString()}` : "Ready to start a new drawer"}</span>
@@ -652,7 +653,7 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
             </label>
             <label>
               Amount
-              <input type="number" min={1} value={movement.amount} onChange={(event) => updateMovementForm("amount", Number(event.target.value))} required />
+              <MoneyInput min={1} value={movement.amount} onChange={(amount) => updateMovementForm("amount", amount)} required />
             </label>
             <label className="wide-field">
               Reason
@@ -677,7 +678,7 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
             </div>
             <label>
               Counted cash
-              <input type="number" min={0} value={countedCash} onChange={(event) => updateCountedCash(Number(event.target.value))} required />
+              <MoneyInput min={0} value={countedCash} onChange={(amount) => updateCountedCash(amount)} required />
             </label>
             <label>
               Variance

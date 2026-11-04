@@ -19,6 +19,7 @@ import { TablePagination, usePaginatedRows } from "../../shared/components/Table
 import { formatMoney, type CurrencyCode } from "../../shared/utils/money";
 import { printReceipt } from "./receiptPrint";
 
+import { MoneyInput } from "../../shared/components/MoneyInput";
 const statusOptions: SaleStatus[] = ["completed", "partially_refunded", "refunded", "voided"];
 const fallbackBranches: BranchOption[] = [];
 const paymentFilterOptions = ["cash", "card", "bank_transfer", "mobile_money", "customer_credit", "voucher"];
@@ -516,7 +517,7 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
                 </label>
                 <label>
                   Refund amount
-                  <input type="number" min={1} max={selectedSale.summary.total - selectedSale.refundTotal} value={refundAmount} onChange={(event) => setRefundAmount(Number(event.target.value))} required />
+                  <MoneyInput min={1} max={selectedSale.summary.total - selectedSale.refundTotal} value={refundAmount} onChange={(amount) => setRefundAmount(amount)} required />
                 </label>
                 {canRefundSale || canVoidSale ? (
                   <label>

@@ -1,5 +1,6 @@
 import { Check, IdCard, KeyRound, Mail, MapPin, MonitorSmartphone, Phone, Settings, ShieldCheck, UserRound } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 import { fetchBranchOptions, fetchMyProfile, readStoredAuth, updateMyProfile, updateMySecurity, updateStoredAuthStaff, type AuthResponse, type BranchOption } from "../../shared/api/client";
 
 interface ProfileViewProps {
@@ -13,6 +14,7 @@ interface ProfileViewProps {
 }
 
 export function ProfileView({ user }: ProfileViewProps) {
+  const { displayMoney } = useTenantSettings();
   const [storedAuth, setStoredAuth] = useState<AuthResponse | null>(() => readStoredAuth());
   const [profile, setProfile] = useState(user);
   const [profileMeta, setProfileMeta] = useState({
@@ -197,7 +199,7 @@ export function ProfileView({ user }: ProfileViewProps) {
   return (
     <div className="module-view">
       <section className="profile-hero">
-        <div className="profile-avatar-large">{initials || "NP"}</div>
+        <div className="profile-avatar-large">{initials || "AP"}</div>
         <div className="profile-hero-copy">
           <span>{status}</span>
           <h2>{profile.name || "Current user"}</h2>
@@ -290,7 +292,7 @@ export function ProfileView({ user }: ProfileViewProps) {
           </div>
           <div className="profile-session-card">
             <small>Sales total</small>
-            <strong>NGN {profileMeta.salesTotal.toLocaleString()}</strong>
+            <strong>{displayMoney(profileMeta.salesTotal)}</strong>
           </div>
         </section>
 

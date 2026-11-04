@@ -8,6 +8,7 @@ import { activeClearance, applyManagerApproval, calculateSale, expandCart, manua
 import { printReceipt, type PrintableReceipt } from "./receiptPrint";
 import type { CartItem, SaleSyncState } from "./types";
 
+import { MoneyInput } from "../../shared/components/MoneyInput";
 const defaultBranchId = "";
 const defaultTerminalId = "";
 const fallbackBranches: BranchOption[] = [];
@@ -1221,12 +1222,11 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
           <div className="payment-reference">
             <span>Amount</span>
             <div className="payment-amount-row">
-              <input
-                min="0"
+              <MoneyInput
+                min={0}
                 max={tenderBalance}
-                type="number"
                 value={paymentAmount || ""}
-                onChange={(event) => setPaymentAmount(Number(event.target.value))}
+                onChange={(amount) => setPaymentAmount(amount)}
                 placeholder={displayMoney(tenderBalance)}
               />
               <button className="secondary-button" disabled={paymentMethods.length === 0 || tenderBalance <= 0} onClick={addTenderPayment}>
@@ -1355,7 +1355,7 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
               </label>
               <label>
                 Discount per item
-                <input type="number" min={0} max={selectedDiscountItem?.product.price ?? 0} value={discountAmount} onChange={(event) => setDiscountAmount(Number(event.target.value))} required />
+                <MoneyInput min={0} max={selectedDiscountItem?.product.price ?? 0} value={discountAmount} onChange={(amount) => setDiscountAmount(amount)} required />
               </label>
               <label className="wide-field">
                 Reason

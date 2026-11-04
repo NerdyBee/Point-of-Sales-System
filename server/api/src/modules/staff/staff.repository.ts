@@ -2,6 +2,7 @@ import type { Prisma, StaffMember as DbStaffMember } from "@prisma/client";
 import { appendAudit, branches, demoSecretHash, demoTenants, staffMembers, tenantSubscriptions } from "../../shared/data/demoStore";
 import type { StaffMember } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
+import { hashPassword, verifyPassword } from "../../shared/security/passwords";
 import { getRolePermissions } from "../roles/roles.repository";
 import { planCatalog } from "../subscriptions/subscriptions.repository";
 
@@ -57,14 +58,19 @@ function codeFromFirstWord(value: string) {
   return firstWord.padEnd(3, "X").slice(0, 3).toUpperCase();
 }
 
-async function nextStaffId(tenantId: string, branchId: string, staffName: string) {
+/** Readable staff ID from the business, branch and person, e.g. "Bella Foods", "Main", "Grace" → BEL-MAI-GRA. */
+export function staffIdBase(tenantName: string, branchName: string, staffName: string) {
+  return `${codeFromWords(tenantName)}-${codeFromFirstWord(branchName)}-${codeFromFirstWord(staffName)}`;
+}
+
+export async function nextStaffId(tenantId: string, branchId: string, staffName: string) {
   const tenantName = useDemoStore
     ? demoTenants.find((tenant) => tenant.id === tenantId)?.name ?? tenantId
     : (await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }))?.name ?? tenantId;
   const branchName = useDemoStore
     ? branches.find((branch) => branch.tenantId === tenantId && branch.id === branchId)?.name ?? branchId
     : (await prisma.branch.findFirst({ where: { tenantId, id: branchId }, select: { name: true } }))?.name ?? branchId;
-  const baseId = `${codeFromWords(tenantName)}-${codeFromFirstWord(branchName)}-${codeFromFirstWord(staffName)}`;
+  const baseId = staffIdBase(tenantName, branchName, staffName);
 
   for (let index = 0; index < 100; index += 1) {
     const candidate = index === 0 ? baseId : `${baseId}${String(index + 1).padStart(2, "0")}`;
@@ -81,6 +87,7 @@ function nextAuditId() {
   return `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** PIN hashing; tablets verify the same `sha256:` format offline. Passwords use shared/security/passwords. */
 function hashSecret(secret: string) {
   return demoSecretHash(secret);
 }
@@ -288,13 +295,13 @@ export async function updateOwnSecurity(tenantId: string, userId: string, input:
     if (staffIndex === -1) return { status: "not_found" as const };
 
     const member = staffMembers[staffIndex] as StaffMember & { passwordHash?: string; pinHash?: string };
-    if (!member.passwordHash || member.passwordHash !== hashSecret(input.currentPassword)) return { status: "password_mismatch" as const };
+    if (!member.passwordHash || !(await verifyPassword(input.currentPassword, member.passwordHash))) return { status: "password_mismatch" as const };
     if (pinEnabled === true && !newPin) return { status: "pin_required" as const };
 
     const changedFields: string[] = [];
     const updatedMember = { ...member };
     if (newPassword) {
-      updatedMember.passwordHash = hashSecret(newPassword);
+      updatedMember.passwordHash = await hashPassword(newPassword);
       changedFields.push("password");
     }
     if (newPin) {
@@ -323,13 +330,13 @@ export async function updateOwnSecurity(tenantId: string, userId: string, input:
 
   const existingStaff = await prisma.staffMember.findFirst({ where: { tenantId, id: userId } });
   if (!existingStaff) return { status: "not_found" as const };
-  if (!existingStaff.passwordHash || existingStaff.passwordHash !== hashSecret(input.currentPassword)) return { status: "password_mismatch" as const };
+  if (!existingStaff.passwordHash || !(await verifyPassword(input.currentPassword, existingStaff.passwordHash))) return { status: "password_mismatch" as const };
   if (pinEnabled === true && !newPin) return { status: "pin_required" as const };
 
   const changedFields: string[] = [];
   const data: Prisma.StaffMemberUpdateInput = {};
   if (newPassword) {
-    data.passwordHash = hashSecret(newPassword);
+    data.passwordHash = await hashPassword(newPassword);
     changedFields.push("password");
   }
   if (newPin) {
@@ -587,7 +594,7 @@ export async function updateStaffSecurity(
 
     const changedFields: string[] = [];
     if (temporaryPassword) {
-      member.passwordHash = hashSecret(temporaryPassword);
+      member.passwordHash = await hashPassword(temporaryPassword);
       member.inviteStatus = "accepted";
       member.active = true;
       changedFields.push("temporary_password");
@@ -621,7 +628,7 @@ export async function updateStaffSecurity(
   const changedFields: string[] = [];
   const data: Prisma.StaffMemberUpdateInput = {};
   if (temporaryPassword) {
-    data.passwordHash = hashSecret(temporaryPassword);
+    data.passwordHash = await hashPassword(temporaryPassword);
     data.inviteStatus = "accepted";
     data.active = true;
     changedFields.push("temporary_password");

@@ -3,6 +3,7 @@ import type { Customer } from "../data/readModel";
 import { getKv, setKv, type DeviceSettings } from "../sync/settings";
 import { context, getRow, now, putRow } from "./store";
 
+import { groupAmount, toMajorUnits } from "../pos/pricing";
 /**
  * Customer credit ("on account") for a standalone device.
  *
@@ -93,7 +94,7 @@ export async function chargeToAccount(platform: Platform, input: { customerId: s
   }
   const available = availableCredit(customer);
   if (input.amount > available) {
-    throw new CreditError(`Credit limit exceeded: ${customer.name} can buy up to ${available.toLocaleString()} more on account.`);
+    throw new CreditError(`Credit limit exceeded: ${customer.name} can buy up to ${groupAmount(toMajorUnits(available))} more on account.`);
   }
   const entry = await writeEntry(platform, settings, customer, {
     type: "credit_sale",
@@ -138,7 +139,7 @@ export async function receivePayment(
     const customer = await loadCustomer(platform, input.customerId);
     const owed = Number(customer.outstandingBalance ?? 0);
     if (owed <= 0) throw new CreditError(`${customer.name} does not owe anything`);
-    if (input.amount > owed) throw new CreditError(`${customer.name} owes ${owed.toLocaleString()}. Enter that amount or less.`);
+    if (input.amount > owed) throw new CreditError(`${customer.name} owes ${groupAmount(toMajorUnits(owed))}. Enter that amount or less.`);
 
     if (input.method === "cash") {
       const shift = await platform.db.first<{ id: string }>("SELECT id FROM shifts WHERE status = 'open' ORDER BY openedAt DESC LIMIT 1");

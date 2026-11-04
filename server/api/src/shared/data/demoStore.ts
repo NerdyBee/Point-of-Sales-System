@@ -106,7 +106,9 @@ export interface TenantSettings {
   defaultTaxRate: number;
   serviceChargeEnabled: boolean;
   serviceChargeRate: number;
-  currency: "NGN" | "USD" | "GHS" | "KES" | "ZAR";
+  currency: string;
+  /** Decimal places of stored amounts; set once at creation (missing = 0). See @pos/types currencies. */
+  moneyDecimals?: number;
   productCategories: string[];
   receiptFooter: string;
   whatsappReceipts: boolean;

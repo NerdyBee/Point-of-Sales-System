@@ -9,6 +9,7 @@ import { context, getRow, putRow } from "./store";
 export { context, getRow, putRow };
 import { loadSettings, saveSettings, type DeviceSettings } from "../sync/settings";
 
+import { currencyDecimals } from "../pos/currencies";
 /**
  * Standalone mode: the tablet is the whole system for a very small shop.
  *
@@ -95,6 +96,8 @@ export async function createStandaloneBusiness(platform: Platform, input: Standa
     serviceChargeEnabled: input.serviceChargePercent > 0,
     serviceChargeRate: input.serviceChargePercent / 100,
     currency: input.currency,
+    // Fixed for the life of the business: every stored amount depends on it.
+    moneyDecimals: currencyDecimals(input.currency),
     productCategories: ["General"],
     receiptFooter: input.receiptFooter?.trim() || "Thank you for your patronage",
     whatsappReceipts: false,

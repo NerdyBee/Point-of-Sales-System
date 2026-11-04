@@ -16,7 +16,7 @@ import {
   type LotWithRemaining
 } from "../standalone/expiry";
 import { EmptyState, ListItem, Sheet } from "../ui/appKit";
-import { Badge, Banner, Button, Muted, NumberField } from "../ui/components";
+import { Badge, Banner, Button, MoneyField, Muted, NumberField } from "../ui/components";
 import { DateField, formatIsoDate } from "../ui/DateField";
 import { colors, font, radius, spacing } from "../ui/theme";
 
@@ -181,7 +181,7 @@ export function ClearanceSheet(props: { product: Product; lot?: LotWithRemaining
       </Muted>
       <View style={styles.twoColumns}>
         <View style={styles.column}><NumberField label="Percent off" value={percent} onChangeText={changePercent} /></View>
-        <View style={styles.column}><NumberField label="Clearance price" value={newPrice} onChangeText={changePrice} /></View>
+        <View style={styles.column}><MoneyField label="Clearance price" value={newPrice} onChangeText={changePrice} /></View>
       </View>
       <NumberField label="Units on clearance" value={units} onChangeText={setUnits} hint={props.lot ? `${props.lot.remaining} left from this batch` : undefined} />
       <DateField label="Clearance ends on" value={endsAt} onChange={setEndsAt} placeholder="No end date" minimumDate={new Date()} hint="Usually the expiry date. After it, the normal price comes back." />

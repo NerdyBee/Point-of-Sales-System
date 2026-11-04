@@ -1,0 +1,48 @@
+# Ajoke POS cloud server: MySQL + API/web app + Caddy (automatic HTTPS).
+# Fill in .env (copy .env.example), then: docker compose up -d --build
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: naijapos
+      MYSQL_USER: naijapos
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    command: ["--log-bin-trust-function-creators=1"]
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${DB_ROOT_PASSWORD}"]
+      interval: 10s
+      retries: 12
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql://naijapos:${DB_PASSWORD}@db:3306/naijapos
+      NODE_ID: ${NODE_ID:-cloud}
+    volumes:
+      - uploads:/app/uploads
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [app]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+
+volumes:
+  db-data:
+  uploads:
+  caddy-data:

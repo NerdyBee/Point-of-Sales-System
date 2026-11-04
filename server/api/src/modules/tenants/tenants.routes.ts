@@ -60,7 +60,8 @@ tenantsRouter.patch("/current/settings", requireTenant, requirePermission("setti
     return;
   }
 
-  const updatedTenant = await updateTenantSettingsRecord(tenant.id, parsed.data);
+  // moneyDecimals is fixed when the business is created: stored amounts depend on it.
+  const updatedTenant = await updateTenantSettingsRecord(tenant.id, { ...parsed.data, moneyDecimals: tenant.settings.moneyDecimals });
 
   await appendTenantAudit({
     tenantId: req.tenantContext!.tenantId,

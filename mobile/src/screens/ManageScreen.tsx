@@ -49,7 +49,7 @@ import { ExpiringSection, ProductExpiryPanel } from "./ExpiryScreens";
 import { DateField } from "../ui/DateField";
 import { activeClearance } from "../pos/clearance";
 import { KeyboardAwareScrollView } from "../ui/keyboard";
-import { Badge, Banner, Button, Card, Field, Muted, NumberField } from "../ui/components";
+import { Badge, Banner, Button, Card, Field, MoneyField, Muted, NumberField } from "../ui/components";
 import { colors, font, radius, spacing } from "../ui/theme";
 
 type Section = "products" | "inflow" | "expiring" | "expenses" | "customers" | "staff" | "business";
@@ -297,8 +297,8 @@ function ProductSheet(props: { product: Product | null; categories: string[]; on
             </ScrollView>
           ) : null}
           <View style={styles.twoColumns}>
-            <View style={styles.column}><NumberField label="Selling price" value={price} onChangeText={setPrice} /></View>
-            <View style={styles.column}><NumberField label="Cost price" value={cost} onChangeText={setCost} placeholder="Optional" /></View>
+            <View style={styles.column}><MoneyField label="Selling price" value={price} onChangeText={setPrice} /></View>
+            <View style={styles.column}><MoneyField label="Cost price" value={cost} onChangeText={setCost} placeholder="Optional" /></View>
           </View>
           <View style={styles.twoColumns}>
             {existing ? null : <View style={styles.column}><NumberField label="Quantity in stock" value={stock} onChangeText={setStock} /></View>}
@@ -339,7 +339,7 @@ function StockPanel(props: { product: Product; onDone(): void }) {
       </View>
       <View style={styles.twoColumns}>
         <View style={styles.column}><NumberField label="Quantity" value={quantity} onChangeText={setQuantity} /></View>
-        {direction === "in" ? <View style={styles.column}><NumberField label="Cost per unit" value={unitCost} onChangeText={setUnitCost} placeholder="Optional" /></View> : null}
+        {direction === "in" ? <View style={styles.column}><MoneyField label="Cost per unit" value={unitCost} onChangeText={setUnitCost} placeholder="Optional" /></View> : null}
         <View style={[styles.column, { flex: 2 }]}><Field label={direction === "in" ? "Supplier / note" : "Reason"} value={reason} onChangeText={setReason} placeholder={direction === "in" ? "Optional" : "Damaged / expired / recount"} /></View>
       </View>
       {direction === "in" ? <DateField label="Expiry date" value={expiryDate} onChange={setExpiryDate} placeholder="No expiry date" minimumDate={new Date()} /> : null}
@@ -615,7 +615,7 @@ function CustomerSheet(props: { customer: Customer | null; onClose(): void }) {
             </View>
           ) : paying ? (
             <>
-              <NumberField label="Amount received" value={payAmount} onChangeText={setPayAmount} hint={`Owes ${money(owes)}`} />
+              <MoneyField label="Amount received" value={payAmount} onChangeText={setPayAmount} hint={`Owes ${money(owes)}`} />
               <View style={styles.wrapRow}>
                 {(Object.keys(payLabels) as PaymentChannel[]).map((item) => (
                   <Pressable key={item} onPress={() => setPayMethod(item)} style={[styles.chip, payMethod === item && styles.chipActive]}>
@@ -674,7 +674,7 @@ function CustomerSheet(props: { customer: Customer | null; onClose(): void }) {
             ))}
           </View>
           {canSetCredit ? (
-            <NumberField
+            <MoneyField
               label="Credit limit"
               value={creditLimit}
               onChangeText={setCreditLimit}

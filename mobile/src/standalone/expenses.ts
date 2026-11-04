@@ -2,6 +2,7 @@ import type { Platform } from "../data/db";
 import { getKv, setKv } from "../sync/settings";
 import { context, getRow, now, putRow } from "./store";
 
+import { groupAmount, toMajorUnits } from "../pos/pricing";
 /**
  * Shop expenses on a standalone device (same fields as the server's expenses table).
  *
@@ -83,7 +84,7 @@ export async function recordExpense(platform: Platform, input: ExpenseInput) {
       );
       if (!shift) throw new ExpenseError("Open the register to pay from the till drawer, or turn off \"Paid from the till drawer\" if the cash came from elsewhere.");
       const inDrawer = shift.openingBalance + shift.cashSales + Number(shift.cashIn ?? 0) - Number(shift.cashOut ?? 0);
-      if (input.amount > inDrawer) throw new ExpenseError(`Only about ${inDrawer.toLocaleString()} should be in the drawer. Check the amount, or turn off "Paid from the till drawer".`);
+      if (input.amount > inDrawer) throw new ExpenseError(`Only about ${groupAmount(toMajorUnits(inDrawer))} should be in the drawer. Check the amount, or turn off "Paid from the till drawer".`);
       await platform.db.run("UPDATE shifts SET cashOut = cashOut + ? WHERE id = ?", [input.amount, shift.id]);
       shiftId = shift.id;
     }

@@ -12,6 +12,8 @@ import { AboutLine, BrandHeader } from "../ui/BrandMark";
 import { Banner, Button, Card, Field, Muted, Title } from "../ui/components";
 import { colors, font, radius, spacing } from "../ui/theme";
 
+import { currencies, currencyDecimals } from "../pos/currencies";
+import { formatMoney } from "../pos/pricing";
 const modes: { value: SyncMode; title: string; description: string }[] = [
   { value: "local", title: "Office server only", description: "Syncs over the shop Wi-Fi with the server installed in the office. Works without internet." },
   { value: "cloud", title: "Cloud only", description: "Syncs with the online server whenever this device has internet." },
@@ -23,7 +25,6 @@ const modes: { value: SyncMode; title: string; description: string }[] = [
   }
 ];
 
-const currencies: TenantSettings["currency"][] = ["NGN", "GHS", "KES", "ZAR", "USD"];
 
 interface ServerForm {
   url: string;
@@ -211,12 +212,15 @@ function StandaloneSetup() {
         <Field label="Business name" value={businessName} onChangeText={setBusinessName} placeholder="e.g. Mama Nkechi Provisions" />
         <Text style={styles.label}>Currency</Text>
         <View style={styles.row}>
-          {currencies.map((item) => (
-            <Pressable key={item} accessibilityRole="radio" accessibilityState={{ selected: currency === item }} onPress={() => setCurrency(item)} style={[styles.chip, currency === item && styles.chipActive]}>
-              <Text style={[styles.chipLabel, currency === item && { color: colors.primaryText }]}>{item}</Text>
+          {currencies.map(({ code }) => (
+            <Pressable key={code} accessibilityRole="radio" accessibilityState={{ selected: currency === code }} onPress={() => setCurrency(code)} style={[styles.chip, currency === code && styles.chipActive]}>
+              <Text style={[styles.chipLabel, currency === code && { color: colors.primaryText }]}>{code}</Text>
             </Pressable>
           ))}
         </View>
+        <Muted>
+          {currencies.find((item) => item.code === currency)?.name}: prices {currencyDecimals(currency) ? `with ${currencyDecimals(currency)} decimal places, e.g. ${formatMoney(499, currency, currencyDecimals(currency))}` : `in whole units, e.g. ${formatMoney(1500, currency, 0)}`}. This cannot be changed later.
+        </Muted>
         <Field label="VAT %" value={vat} onChangeText={setVat} keyboardType="decimal-pad" hint="Use 0 if you do not charge VAT" />
         <View style={styles.switchRow}>
           <Text style={styles.label}>Add a service charge</Text>

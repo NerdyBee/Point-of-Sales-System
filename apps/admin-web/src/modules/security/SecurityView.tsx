@@ -43,6 +43,14 @@ function sessionLabel(session: AuthSession) {
   return "active";
 }
 
+function rememberedTenantId() {
+  try {
+    return localStorage.getItem(lastTenantKey) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 function rememberTenantId(tenantId: string) {
   try {
     localStorage.setItem(lastTenantKey, tenantId);
@@ -58,7 +66,7 @@ function normalizeLoginText(value: string) {
 export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
   const activeUserId = auth?.staff.id ?? "";
   const canUseAllBranches = auth?.staff.role === "owner" || auth?.staff.role === "state_manager";
-  const [tenantId, setTenantId] = useState(auth?.staff.tenantId ?? "tenant-lagos-foods");
+  const [tenantId, setTenantId] = useState(auth?.staff.tenantId ?? (import.meta.env.PROD ? rememberedTenantId() : "tenant-lagos-foods"));
   const [sessions, setSessions] = useState<AuthSession[]>([]);
   const [staff, setStaff] = useState<PinStaffOption[]>([]);
   const [branchId, setBranchId] = useState(canUseAllBranches ? "" : auth?.session.branchId ?? auth?.staff.branchId ?? "");
@@ -160,7 +168,7 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
           setSessions([]);
           setStaff([]);
           setTerminals([]);
-          setStatus("Enter tenant ID to load login options");
+          setStatus("Sign in with your staff ID");
           return;
         }
 
@@ -429,7 +437,7 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
       <div className="auth-terminal-view">
         <section className="samba-login-window">
           <header className="samba-login-titlebar">
-            <div className="brand-mark">NP</div>
+            <div className="brand-mark">AP</div>
             <div>
               <strong>Cashier / Teller Login</strong>
               <span>{status}</span>
@@ -446,7 +454,7 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
 
               <div className="auth-id-panel">
                 <Store size={28} />
-                <strong>NaijaPOS Terminal</strong>
+                <strong>Ajoke POS Terminal</strong>
                 <span>Enter your assigned staff ID, email, password or PIN to open your session.</span>
               </div>
 
@@ -486,7 +494,7 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
                     value={pinForm.staffId}
                     onBlur={(event) => void loadPinBootstrapForStaffId(event.target.value)}
                     onChange={(event) => changePinStaffId(event.target.value.toUpperCase())}
-                    placeholder="LCF-MAI-MUS"
+                    placeholder="Your staff ID"
                     required
                   />
                 </label>
@@ -528,7 +536,7 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
               Remember this device
             </label>
             <a className="auth-support-link" href="mailto:support@naijapos.local">Support</a>
-            <span className="auth-company-footer">Revo Space Enterprise Ltd.</span>
+            <span className="auth-company-footer">Ajoke Code Sphere</span>
           </footer>
         </section>
       </div>
@@ -609,7 +617,7 @@ export function SecurityView({ auth, onAuthChange }: SecurityViewProps) {
           <div className="settings-form">
             <label className="wide-field">
               Staff ID
-              <input value={pinForm.staffId} onChange={(event) => changePinStaffId(event.target.value.toUpperCase())} placeholder="LCF-MAI-MUS" required />
+              <input value={pinForm.staffId} onChange={(event) => changePinStaffId(event.target.value.toUpperCase())} placeholder="Your staff ID" required />
             </label>
             <label>
               Terminal

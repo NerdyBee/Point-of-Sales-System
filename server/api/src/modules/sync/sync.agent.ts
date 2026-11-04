@@ -132,7 +132,11 @@ async function runOnce(): Promise<UpstreamRunResult> {
 }
 
 /** Connects this office to the cloud using a pairing code created in the cloud admin. */
-export async function connectUpstream(input: { url: string; pairingCode: string; localTenantId: string }) {
+/**
+ * Links this office to the cloud. `localTenantId` is null for a fresh install with no
+ * business yet: the office then adopts the cloud's business and receives it on first pull.
+ */
+export async function connectUpstream(input: { url: string; pairingCode: string; localTenantId: string | null }) {
   const identity = await getNodeIdentity();
   if (identity.role !== "office") return { status: "not_office" as const };
 
@@ -143,7 +147,7 @@ export async function connectUpstream(input: { url: string; pairingCode: string;
   }>(url, "/pair", { method: "POST", body: { pairingCode: input.pairingCode, appVersion: `office/${identity.nodeId}` } });
 
   if (paired.node.kind !== "office") return { status: "wrong_kind" as const };
-  if (paired.node.tenantId !== input.localTenantId) return { status: "tenant_mismatch" as const, cloudTenantId: paired.node.tenantId };
+  if (input.localTenantId !== null && paired.node.tenantId !== input.localTenantId) return { status: "tenant_mismatch" as const, cloudTenantId: paired.node.tenantId };
 
   const peer = await prisma.syncPeer.upsert({
     where: { id: "upstream" },

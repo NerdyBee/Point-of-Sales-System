@@ -24,6 +24,7 @@ import { TablePagination, usePaginatedRows } from "../../shared/components/Table
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 import { dateRangeErrorMessage, hasInvertedDateRange } from "../../shared/utils/dateFilters";
 
+import { MoneyInput } from "../../shared/components/MoneyInput";
 const blankCustomer: CustomerPayload = {
   name: "",
   phone: "",
@@ -615,7 +616,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
               </label>
               <label>
                 Credit limit
-                <input min="0" type="number" value={form.creditLimit} onChange={(event) => updateForm("creditLimit", Number(event.target.value))} />
+                <MoneyInput min={0} value={form.creditLimit} onChange={(amount) => updateForm("creditLimit", amount)} />
               </label>
               <label>
                 Loyalty points
@@ -673,12 +674,11 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
               </label>
               <label>
                 Amount
-                <input
-                  min="0"
+                <MoneyInput
+                  min={0}
                   max={ledgerForm.type === "payment" || ledgerForm.type === "voucher" ? ledgerCustomer.outstandingBalance : undefined}
-                  type="number"
                   value={ledgerForm.amount}
-                  onChange={(event) => updateLedgerForm("amount", Number(event.target.value))}
+                  onChange={(amount) => updateLedgerForm("amount", amount)}
                 />
               </label>
               <label>

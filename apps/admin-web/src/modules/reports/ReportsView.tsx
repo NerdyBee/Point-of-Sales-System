@@ -6,6 +6,7 @@ import { TablePagination, usePaginatedRows } from "../../shared/components/Table
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 import { dateRangeErrorMessage, hasInvertedDateRange } from "../../shared/utils/dateFilters";
 
+import { toMajorUnits } from "../../shared/utils/money";
 type ReportFocus = "sales" | "inventory" | "staff" | "cash" | "customers" | "approvals";
 
 const periods: Array<{ value: ReportPeriod; label: string }> = [
@@ -179,24 +180,26 @@ export function ReportsView() {
   }, []);
 
   function exportCsv() {
+    // Money columns in normal units (4.99), not the stored smallest unit.
+    const m = (amount: number) => toMajorUnits(amount);
     const rows = [
       ["section", "name", "quantity", "sales", "cost", "profit", "meta"],
-      ...(shouldShow("sales") ? categoryRows.map((item) => ["category", item.category, item.quantity, item.sales, item.cost, item.profit]) : []),
-      ...(shouldShow("sales") ? topProductRows.map((item) => ["product", item.name, item.quantity, item.sales, "", item.profit]) : []),
-      ...(shouldShow("sales") ? paymentRows.map(([method, amount]) => ["payment", method, "", amount, "", ""]) : []),
-      ...(shouldShow("sales") ? report.hourlySales.map((item) => ["sales_trend", item.label, "", item.amount, "", ""]) : []),
+      ...(shouldShow("sales") ? categoryRows.map((item) => ["category", item.category, item.quantity, m(item.sales), m(item.cost), m(item.profit)]) : []),
+      ...(shouldShow("sales") ? topProductRows.map((item) => ["product", item.name, item.quantity, m(item.sales), "", m(item.profit)]) : []),
+      ...(shouldShow("sales") ? paymentRows.map(([method, amount]) => ["payment", method, "", m(amount), "", ""]) : []),
+      ...(shouldShow("sales") ? report.hourlySales.map((item) => ["sales_trend", item.label, "", m(item.amount), "", ""]) : []),
       ...(shouldShow("sales") ? [
-        ["tax_summary", "taxable_sales", "", report.summary.taxableSales, "", "", `${report.summary.discountTotal} discounts`],
-        ["tax_summary", "vat_collected", "", report.summary.vatTotal, "", "", `${report.summary.serviceChargeTotal} service charge`]
+        ["tax_summary", "taxable_sales", "", m(report.summary.taxableSales), "", "", `${m(report.summary.discountTotal)} discounts`],
+        ["tax_summary", "vat_collected", "", m(report.summary.vatTotal), "", "", `${m(report.summary.serviceChargeTotal)} service charge`]
       ] : []),
-      ...(shouldShow("cash") ? cashMovementRows.map((item) => ["cash_movement", item.type, "", item.amount, "", "", `${item.reason}; created by ${item.createdBy}`]) : []),
+      ...(shouldShow("cash") ? cashMovementRows.map((item) => ["cash_movement", item.type, "", m(item.amount), "", "", `${item.reason}; created by ${item.createdBy}`]) : []),
       ...(shouldShow("customers") ? [
-        ["customer_accounts", "outstanding_balance", report.summary.customerCount, report.summary.customerOutstandingBalance, "", "", `${report.summary.customerLoyaltyPoints} loyalty points; ${report.summary.customerCreditLimit} credit limit`],
-        ["customer_accounts", "payments_received", "", report.summary.customerAccountPayments, "", "", `${report.summary.customerAccountCreditIssued} credit issued`]
+        ["customer_accounts", "outstanding_balance", report.summary.customerCount, m(report.summary.customerOutstandingBalance), "", "", `${report.summary.customerLoyaltyPoints} loyalty points; ${m(report.summary.customerCreditLimit)} credit limit`],
+        ["customer_accounts", "payments_received", "", m(report.summary.customerAccountPayments), "", "", `${m(report.summary.customerAccountCreditIssued)} credit issued`]
       ] : []),
       ...(shouldShow("inventory") ? lowStockRows.map((item) => ["low_stock", item.name, item.stock, "", "", "", `SKU ${item.sku}; reorder ${item.reorderPoint}`]) : []),
-      ...(shouldShow("staff") ? staffRows.map((item) => ["staff", item.name, "", item.salesTotal, "", "", `${item.role}; ${item.status}`]) : []),
-      ...(shouldShow("approvals") ? approvalRows.map((item) => ["approval", item.reason, "", item.amount, "", "", `${item.type}; ${item.entityType}; requested by ${item.requestedBy}`]) : [])
+      ...(shouldShow("staff") ? staffRows.map((item) => ["staff", item.name, "", m(item.salesTotal), "", "", `${item.role}; ${item.status}`]) : []),
+      ...(shouldShow("approvals") ? approvalRows.map((item) => ["approval", item.reason, "", m(item.amount), "", "", `${item.type}; ${item.entityType}; requested by ${item.requestedBy}`]) : [])
     ];
     const csv = rows.map((row) => row.map((cell) => csvEscape(cell)).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -280,7 +283,7 @@ export function ReportsView() {
     printWindow.document.write(`<!doctype html>
 <html>
   <head>
-    <title>NaijaPOS ${htmlEscape(report.periodLabel)} Report</title>
+    <title>Ajoke POS ${htmlEscape(report.periodLabel)} Report</title>
     <style>
       * { box-sizing: border-box; }
       body { color: #080326; font-family: Arial, sans-serif; margin: 0; padding: 28px; }
@@ -301,7 +304,7 @@ export function ReportsView() {
     <header>
       <div>
         <p>Operational reporting</p>
-        <h1>NaijaPOS ${htmlEscape(report.periodLabel)} Report</h1>
+        <h1>Ajoke POS ${htmlEscape(report.periodLabel)} Report</h1>
         <p>${htmlEscape(branchLabel)} - ${htmlEscape(focusLabel)}</p>
       </div>
       <div class="meta">

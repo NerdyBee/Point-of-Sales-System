@@ -5,7 +5,7 @@ import { formatMoney } from "../pos/pricing";
 import { useApp } from "../shell/AppContext";
 import { cancelInflow, listInflows, recordInflow, type Inflow } from "../standalone/inventory";
 import { EmptyState, Fab, Icon, IconButton, ListItem, Sheet } from "../ui/appKit";
-import { Badge, Banner, Button, Field, Muted, NumberField } from "../ui/components";
+import { Badge, Banner, Button, Field, MoneyField, Muted, NumberField } from "../ui/components";
 import { DateField, formatIsoDate } from "../ui/DateField";
 import { colors, font, radius, spacing } from "../ui/theme";
 
@@ -148,7 +148,7 @@ function InflowSheet(props: { onClose(): void; initialProduct?: Product }) {
           </View>
           <View style={styles.twoColumns}>
             <View style={styles.column}><NumberField label="Quantity received" value={line.quantity} onChangeText={(value) => update(line.product.id, { quantity: value })} /></View>
-            {showCosts ? <View style={styles.column}><NumberField label="Cost per unit" value={line.unitCost} onChangeText={(value) => update(line.product.id, { unitCost: value })} placeholder="Optional" /></View> : null}
+            {showCosts ? <View style={styles.column}><MoneyField label="Cost per unit" value={line.unitCost} onChangeText={(value) => update(line.product.id, { unitCost: value })} placeholder="Optional" /></View> : null}
           </View>
           <DateField label="Expiry date" value={line.expiryDate} onChange={(value) => update(line.product.id, { expiryDate: value })} placeholder="No expiry date" minimumDate={new Date()} />
         </View>

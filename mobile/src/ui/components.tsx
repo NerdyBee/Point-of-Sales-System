@@ -1,6 +1,7 @@
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, type TextInputProps, type ViewStyle } from "react-native";
 import { markActivity } from "./activity";
+import { fromMajorUnits, groupAmount, moneyDecimals, toMajorUnits } from "../pos/pricing";
 import { groupDigits } from "./numberFormat";
 import { colors, font, radius, spacing } from "./theme";
 
@@ -69,6 +70,49 @@ export function Field(props: TextInputProps & { label: string; hint?: string }) 
 export function NumberField(props: Omit<TextInputProps, "value" | "onChangeText" | "keyboardType"> & { label: string; hint?: string; value: string; onChangeText(digits: string): void }) {
   const { value, onChangeText, ...rest } = props;
   return <Field {...rest} value={groupDigits(value)} onChangeText={(text) => onChangeText(text.replace(/\D/g, ""))} keyboardType="number-pad" />;
+}
+
+/**
+ * Field for money. With whole-unit currencies it behaves like NumberField. When the business
+ * uses decimals people type 4.99, but the value going in and coming out is still the stored
+ * amount as digits ("499"), so callers parse it exactly as before.
+ */
+export function MoneyField(props: Omit<TextInputProps, "value" | "onChangeText" | "keyboardType"> & { label: string; hint?: string; value: string; onChangeText(digits: string): void }) {
+  const { value, onChangeText, onFocus, onBlur, ...rest } = props;
+  const decimals = moneyDecimals();
+  const shown = (stored: string) => (stored === "" ? "" : groupAmount(toMajorUnits(Number(stored)), decimals));
+  const [text, setText] = useState(() => shown(value));
+  const [focused, setFocused] = useState(false);
+
+  // Follow changes made elsewhere (prefills, "percent off" updating the price) unless typing.
+  useEffect(() => {
+    if (!focused) setText(shown(value));
+  }, [value, focused, decimals]);
+
+  if (!decimals) return <NumberField {...props} />;
+  return (
+    <Field
+      {...rest}
+      value={text}
+      keyboardType="decimal-pad"
+      onFocus={(event) => {
+        setFocused(true);
+        onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        setFocused(false);
+        onBlur?.(event);
+      }}
+      onChangeText={(input) => {
+        // Accept "1,234.5" or "1234,5"; keep one separator and at most `decimals` places.
+        const cleaned = input.replace(/,(?=\d{3}(\D|$))/g, "").replace(",", ".").replace(/[^\d.]/g, "");
+        const [whole, ...rest] = cleaned.split(".");
+        const next = rest.length ? `${whole}.${rest.join("").slice(0, decimals)}` : whole;
+        setText(next);
+        onChangeText(next === "" || next === "." ? "" : String(fromMajorUnits(Number(next), decimals)));
+      }}
+    />
+  );
 }
 
 export function Card(props: { children: ReactNode; style?: ViewStyle }) {

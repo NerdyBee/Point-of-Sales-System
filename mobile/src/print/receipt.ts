@@ -1,7 +1,7 @@
 import { BRAND } from "../brand";
 import type { TenantSettings } from "../data/readModel";
 import type { SaleRecord } from "../pos/actions";
-import type { SaleSummary } from "../pos/pricing";
+import { groupAmount, toMajorUnits, type SaleSummary } from "../pos/pricing";
 import type { LedgerEntry } from "../standalone/credit";
 import { EscPosBuilder, type PaperWidth } from "./escpos";
 import { logoForPrinter } from "./logo";
@@ -32,13 +32,12 @@ export interface ReceiptData {
 }
 
 const methodNames: Record<string, string> = { cash: "Cash", card: "Card", bank_transfer: "Transfer", mobile_money: "Mobile money", customer_credit: "On account" };
-const printSymbols: Record<string, string> = { NGN: "N", GHS: "GHS ", KES: "KSh ", ZAR: "R", USD: "$" };
+const printSymbols: Record<string, string> = { NGN: "N", GHS: "GHS ", KES: "KSh ", ZAR: "R", USD: "$", CAD: "$", AUD: "$" };
 
-/** Money in plain ASCII, e.g. N12,500 — thermal printers cannot print ₦. */
+/** Money in plain ASCII, e.g. N12,500 or GBP 4.99 — thermal printers cannot print ₦, £ or €. */
 export function printMoney(amount: number, currency: string) {
   const sign = amount < 0 ? "-" : "";
-  const grouped = Math.abs(Math.round(amount)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `${sign}${printSymbols[currency] ?? `${currency} `}${grouped}`;
+  return `${sign}${printSymbols[currency] ?? `${currency} `}${groupAmount(toMajorUnits(Math.abs(amount)))}`;
 }
 
 function formatDate(iso: string) {

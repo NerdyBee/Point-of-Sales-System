@@ -17,7 +17,7 @@ import {
 } from "../pos/actions";
 import { calculateSale, formatMoney, type CartLine, type SaleSummary } from "../pos/pricing";
 import { activeClearance, clearanceUnits, expandCart } from "../pos/clearance";
-import { Badge, Banner, Button, Field, Muted, NumberField, Title } from "../ui/components";
+import { Badge, Banner, Button, Field, MoneyField, Muted, Title } from "../ui/components";
 import { useLayout } from "../ui/layout";
 import { EmptyState, Icon } from "../ui/appKit";
 import { loadPrinterSettings, printReceipt, printingAvailable, receiptFromSale } from "../print/printer";
@@ -533,7 +533,7 @@ function CheckoutModal(props: {
                     <Text style={styles.creditName}>{account.name}</Text>
                     <Text style={styles.lineMeta}>Owes {money(owed)} · Limit {limitText}{limit !== null ? ` · Available ${availableText}` : ""}</Text>
                   </View>
-                  <NumberField label="Paid now (optional)" value={paidNow} onChangeText={setPaidNow} placeholder="0" />
+                  <MoneyField label="Paid now (optional)" value={paidNow} onChangeText={setPaidNow} placeholder="0" />
                   {paidNowValue > 0 ? (
                     <>
                       <View style={styles.methods}>
@@ -553,7 +553,7 @@ function CheckoutModal(props: {
               )
             ) : method === "cash" ? (
               <>
-                <NumberField label="Cash received" value={tendered} onChangeText={setTendered} />
+                <MoneyField label="Cash received" value={tendered} onChangeText={setTendered} />
                 <View style={styles.quickCash}>
                   {[props.total, Math.ceil(props.total / 1000) * 1000, Math.ceil(props.total / 5000) * 5000].filter((value, index, all) => all.indexOf(value) === index).map((value) => (
                     <Button key={value} label={money(value)} variant="secondary" onPress={() => setTendered(String(value))} />
@@ -601,7 +601,7 @@ function PriceModal(props: { line: CartLine; currency: string; onSave(discountPe
           <View style={styles.modal}>
             <Title>{props.line.product.name}</Title>
             <Muted>Set price {money(setPrice)} each</Muted>
-            <NumberField label="Price each" value={price} onChangeText={(text) => { setPriceText(text); setError(null); }} autoFocus selectTextOnFocus />
+            <MoneyField label="Price each" value={price} onChangeText={(text) => { setPriceText(text); setError(null); }} autoFocus selectTextOnFocus />
             {value <= setPrice && discount > 0 ? (
               <Banner
                 tone="info"

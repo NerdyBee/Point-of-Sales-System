@@ -2,6 +2,7 @@ import type { AuthSession as DbAuthSession, Prisma, StaffMember as DbStaffMember
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { appendAudit, authSessions, demoSecretHash, staffMembers, terminals, type AuthSession, type StaffMember } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
+import { hashPassword, needsPasswordRehash, verifyPassword } from "../../shared/security/passwords";
 import { getRolePermissions } from "../roles/roles.repository";
 
 const useDemoStore = process.env.NODE_ENV === "test";
@@ -156,6 +157,8 @@ function dateOrNull(value?: string) {
 }
 
 export async function findOrCreateSeededStaff(tenantId: string | undefined, identifier: string) {
+  // Demo accounts have well-known passwords; installed client servers never recreate them.
+  if (process.env.NODE_ENV === "production") return null;
   const identifierKey = normalizeLoginText(identifier).toLowerCase();
   const staffIdKey = normalizeStaffId(identifier);
   const demoStaff = staffMembers.find((member) =>
@@ -410,7 +413,7 @@ export async function loginWithPassword(input: LoginInput, meta: { userAgent?: s
     ) as StaffShape | undefined;
     if (!staff) return await fail("staff_not_found");
     if (!staff.active || staff.inviteStatus !== "accepted") return await fail("staff_inactive_or_pending", staff);
-    if (!verifySecret(input.password, staff.passwordHash)) return await fail("password_mismatch", staff);
+    if (!(await verifyPassword(input.password, staff.passwordHash))) return await fail("password_mismatch", staff);
     if (!(await terminalBelongsToBranch(staff.tenantId, staff.branchId, input.terminalId))) return await fail("terminal_mismatch", staff);
     clearFailedAttempt(attemptKey);
     return { status: "authenticated" as const, auth: await createSession(staff, { terminalId: input.terminalId, userAgent: meta.userAgent, ipAddress: meta.ipAddress, action: "auth.login" }) };
@@ -425,9 +428,13 @@ export async function loginWithPassword(input: LoginInput, meta: { userAgent?: s
   const staff = record ? toApiStaff(record) : await findOrCreateSeededStaff(submittedTenantId, identifierKey);
   if (!staff) return await fail("staff_not_found");
   if (!staff.active || staff.inviteStatus !== "accepted") return await fail("staff_inactive_or_pending", staff);
-  if (!verifySecret(input.password, staff.passwordHash)) return await fail("password_mismatch", staff);
+  if (!(await verifyPassword(input.password, staff.passwordHash))) return await fail("password_mismatch", staff);
   if (!(await terminalBelongsToBranch(staff.tenantId, staff.branchId, input.terminalId))) return await fail("terminal_mismatch", staff);
   clearFailedAttempt(attemptKey);
+  if (needsPasswordRehash(staff.passwordHash)) {
+    // Upgrade old unsalted hashes now that we know the password.
+    await prisma.staffMember.update({ where: { id: staff.id }, data: { passwordHash: await hashPassword(input.password) } });
+  }
   return { status: "authenticated" as const, auth: await createSession(staff, { terminalId: input.terminalId, userAgent: meta.userAgent, ipAddress: meta.ipAddress, action: "auth.login" }) };
 }
 

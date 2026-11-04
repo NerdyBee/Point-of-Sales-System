@@ -49,6 +49,8 @@ import { TablePagination, usePaginatedRows } from "../../shared/components/Table
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 import type { Product } from "../catalog/types";
 
+import { MoneyInput } from "../../shared/components/MoneyInput";
+import { toMajorUnits } from "../../shared/utils/money";
 const defaultBranchId = "";
 const fallbackBranches: BranchOption[] = [];
 
@@ -615,8 +617,8 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
         product.category,
         String(product.stock),
         String(product.reorderPoint),
-        String(product.cost),
-        String(product.stock * product.cost)
+        String(toMajorUnits(product.cost)),
+        String(toMajorUnits(product.stock * product.cost))
       ])
     ];
     const csv = rows.map((row) => row.map((cell) => `"${cell.replaceAll("\"", "\"\"")}"`).join(",")).join("\n");
@@ -1665,7 +1667,7 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
                         {orderProducts.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
                       </select>
                       <input min={1} type="number" value={line.quantity} onChange={(event) => updatePurchaseOrderLine(index, { quantity: Number(event.target.value) })} aria-label="Purchase order quantity" />
-                      <input min={0} type="number" value={line.unitCost ?? selectedLineProduct?.cost ?? 0} onChange={(event) => updatePurchaseOrderLine(index, { unitCost: Number(event.target.value) })} aria-label="Purchase order unit cost" />
+                      <MoneyInput min={0} value={line.unitCost ?? selectedLineProduct?.cost ?? 0} onChange={(amount) => updatePurchaseOrderLine(index, { unitCost: amount })} aria-label="Purchase order unit cost" />
                       <button className="icon-button" type="button" onClick={() => removePurchaseOrderLine(index)} aria-label="Remove purchase order line" disabled={purchaseOrderDraft.lines.length === 1}><Trash2 size={16} /></button>
                     </div>
                   );
@@ -1734,7 +1736,7 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
               </label>
               <label>
                 Amount
-                <input type="number" min={1} value={supplierInvoiceDraft.amount} onChange={(event) => updateSupplierInvoiceDraft("amount", Number(event.target.value))} required />
+                <MoneyInput min={1} value={supplierInvoiceDraft.amount} onChange={(amount) => updateSupplierInvoiceDraft("amount", amount)} required />
               </label>
               <label>
                 Invoice date
@@ -1774,7 +1776,7 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
               </div>
               <label>
                 Amount
-                <input type="number" min={1} max={invoicePaymentTarget.balanceDue} value={supplierPaymentDraft.amount} onChange={(event) => updateSupplierPaymentDraft("amount", Number(event.target.value))} required />
+                <MoneyInput min={1} max={invoicePaymentTarget.balanceDue} value={supplierPaymentDraft.amount} onChange={(amount) => updateSupplierPaymentDraft("amount", amount)} required />
               </label>
               <label>
                 Method
@@ -1922,7 +1924,7 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
               </label>
               <label>
                 Unit cost
-                <input type="number" min={0} value={supplierReturnDraft.unitCost ?? selectedReturnProduct?.cost ?? 0} onChange={(event) => updateSupplierReturnDraft("unitCost", Number(event.target.value))} required />
+                <MoneyInput min={0} value={supplierReturnDraft.unitCost ?? selectedReturnProduct?.cost ?? 0} onChange={(amount) => updateSupplierReturnDraft("unitCost", amount)} required />
               </label>
               <label>
                 Reference

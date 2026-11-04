@@ -494,7 +494,7 @@ export const tenantSettingsSchema = z.object({
   defaultTaxRate: z.number().min(0).max(1),
   serviceChargeEnabled: z.boolean().default(true),
   serviceChargeRate: z.number().min(0).max(1).default(0.05),
-  currency: z.enum(["NGN", "USD", "GHS", "KES", "ZAR"]),
+  currency: z.string().regex(/^[A-Z]{3}$/, "Use a 3-letter currency code"),
   productCategories: z.array(productCategorySchema).min(1),
   receiptFooter: z.string().max(180),
   whatsappReceipts: z.boolean(),

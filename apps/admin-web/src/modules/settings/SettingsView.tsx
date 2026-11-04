@@ -4,6 +4,7 @@ import { fetchBranchOptions, fetchCatalogProducts, fetchCurrentTenant, readStore
 import { notifyTenantSettingsUpdated } from "../../shared/hooks/useTenantSettings";
 import { formatMoney } from "../../shared/utils/money";
 
+import { currencies } from "../../shared/utils/money";
 const emptySettings: TenantSettings = {
   businessName: "",
   taxId: "",
@@ -302,12 +303,10 @@ export function SettingsView() {
               Currency
               <select value={settings.currency} onChange={(event) => updateSetting("currency", event.target.value as TenantSettings["currency"])}>
                 <option value="">Currency</option>
-                <option value="NGN">NGN</option>
-                <option value="USD">USD</option>
-                <option value="GHS">GHS</option>
-                <option value="KES">KES</option>
-                <option value="ZAR">ZAR</option>
+                {currencies.map((currency) => <option key={currency.code} value={currency.code}>{currency.code} - {currency.name}</option>)}
+                {currencies.some((currency) => currency.code === settings.currency) ? null : <option value={settings.currency}>{settings.currency}</option>}
               </select>
+              <small>Amounts use {settings.moneyDecimals ?? 0} decimal places; that is fixed when the business is created.</small>
             </label>
             <label>
               VAT rate (%)

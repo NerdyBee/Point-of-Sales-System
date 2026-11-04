@@ -5,7 +5,8 @@
  *   npm run sync -- status                                show identity, upstream and nodes
  *   npm run sync -- pair-office --name "Ikeja office"     (cloud) create an office pairing code
  *   npm run sync -- pair-device --terminal <id> --name "Tablet 1"   create a tablet pairing code
- *   npm run sync -- connect --url https://cloud.example.com --code ABCD-EFGH   (office) link to cloud
+ *   npm run sync -- connect --url https://cloud.example.com --code ABCD-EFGH   (office) link to cloud;
+ *                                                         an empty office adopts the cloud's business
  *   npm run sync -- run                                   (office) run one push/pull cycle now
  *   npm run sync -- disconnect                            (office) remove the cloud link
  */
@@ -61,10 +62,21 @@ async function main() {
       const url = option("url");
       const code = option("code");
       if (!url || !code) throw new Error("Usage: connect --url <cloud url> --code <pairing code>");
-      const result = await connectUpstream({ url, pairingCode: code, localTenantId: await tenantId() });
+      // Triggers must exist before the first pull, or the downloaded rows would later be
+      // backfilled as local changes and sent straight back to the cloud.
+      await ensureSyncTriggers({ log: () => undefined });
+      const empty = !option("tenant") && (await prisma.tenant.count()) === 0;
+      const result = await connectUpstream({ url, pairingCode: code, localTenantId: empty ? null : await tenantId() });
+      if (result.status === "tenant_mismatch") throw new Error(`The cloud business (${result.cloudTenantId}) is not this office's business`);
       if (result.status !== "connected") throw new Error(result.status);
-      console.log("Connected to cloud. Running first sync...");
-      console.log(JSON.stringify(await runUpstreamSync(), null, 2));
+      console.log("Connected to cloud. Downloading the business...");
+      // The first pull arrives in batches; keep going until nothing new comes down.
+      for (let round = 0; round < 200; round += 1) {
+        const outcome = await runUpstreamSync();
+        if (outcome.error) throw new Error(outcome.error);
+        if (!outcome.pushed && !outcome.pulled.applied && !outcome.pulled.skipped && !outcome.pulled.conflicts) break;
+      }
+      console.log("First sync complete.");
       break;
     }
     case "run":

@@ -4,6 +4,7 @@ import { createCatalogProduct, fetchBranchOptions, fetchCatalogProducts, readSto
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 import type { Product, ProductCategory } from "./types";
 
+import { MoneyInput } from "../../shared/components/MoneyInput";
 const defaultTaxRate = 0.075;
 const fallbackBranches: BranchOption[] = [];
 type StockFilter = "" | "stocked" | "low" | "out" | "services";
@@ -353,11 +354,11 @@ export function CatalogView() {
               </label>
               <label>
                 Price
-                <input min="0" type="number" value={form.price} onChange={(event) => updateForm("price", Number(event.target.value))} required />
+                <MoneyInput min={0} value={form.price} onChange={(amount) => updateForm("price", amount)} required />
               </label>
               <label>
                 Cost
-                <input min="0" type="number" value={form.cost} onChange={(event) => updateForm("cost", Number(event.target.value))} required />
+                <MoneyInput min={0} value={form.cost} onChange={(amount) => updateForm("cost", amount)} required />
               </label>
               <label>
                 VAT rate

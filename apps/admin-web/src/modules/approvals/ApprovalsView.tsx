@@ -17,6 +17,7 @@ import { TablePagination, usePaginatedRows } from "../../shared/components/Table
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 import { dateRangeErrorMessage, hasInvertedDateRange } from "../../shared/utils/dateFilters";
 
+import { MoneyInput } from "../../shared/components/MoneyInput";
 const approvalTypes: ApprovalType[] = ["discount", "void", "refund", "cash_movement", "register_close", "stock_adjustment", "customer_credit", "expense"];
 const approvalStatuses: ApprovalStatus[] = ["pending", "approved", "rejected", "applied"];
 type ApprovalSourceModule = "sales" | "salesHistory" | "inventory" | "registers" | "customers" | "expenses";
@@ -476,7 +477,7 @@ export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
               </label>
               <label>
                 Amount
-                <input type="number" min={0} value={requestForm.amount} onChange={(event) => updateRequestForm("amount", Number(event.target.value))} />
+                <MoneyInput min={0} value={requestForm.amount} onChange={(amount) => updateRequestForm("amount", amount)} />
               </label>
               <label>
                 Entity type

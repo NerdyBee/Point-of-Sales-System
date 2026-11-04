@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { AppState } from "react-native";
 import type { Platform } from "../data/db";
 import { readModel, type Staff, type Tenant } from "../data/readModel";
+import { setMoneyDecimals } from "../pos/pricing";
 import { SyncEngine, type SyncStatus } from "../sync/engine";
 import { loadSettings, type DeviceSettings } from "../sync/settings";
 import { ensureStandaloneUpgrades } from "../standalone/business";
@@ -81,7 +82,9 @@ export function AppProvider(props: { platform: Platform; children: ReactNode }) 
       }
       const next = await loadSettings(props.platform);
       setSettings(next);
-      setTenant(next ? await readModel.tenant(props.platform.db, next.tenantId) : null);
+      const nextTenant = next ? await readModel.tenant(props.platform.db, next.tenantId) : null;
+      setMoneyDecimals(nextTenant?.settings.moneyDecimals);
+      setTenant(nextTenant);
       await engine.refreshCounts();
       setLoadError(null);
       setReady(true);

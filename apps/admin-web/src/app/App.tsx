@@ -43,10 +43,11 @@ import { SalesTerminal, type SettledTableReceipt, type TerminalTableContext } fr
 import { SalesHistoryView } from "../modules/sales/SalesHistoryView";
 import { StaffView } from "../modules/staff/StaffView";
 import { SecurityView } from "../modules/security/SecurityView";
+import { SetupView } from "../modules/setup/SetupView";
 import { SubscriptionsView } from "../modules/subscriptions/SubscriptionsView";
 import { SyncMonitorView } from "../modules/sync/SyncMonitorView";
 import { SettingsView } from "../modules/settings/SettingsView";
-import { clearStoredAuth, fetchBranchOptions, logoutAuthSession, readStoredAuth, refreshAuth, storeAuth, type ApprovalRequest, type AuthResponse, type BranchOption } from "../shared/api/client";
+import { clearStoredAuth, fetchBranchOptions, fetchSetupStatus, type SetupStatus, logoutAuthSession, readStoredAuth, refreshAuth, storeAuth, type ApprovalRequest, type AuthResponse, type BranchOption } from "../shared/api/client";
 
 type ModuleKey = "dashboard" | "sales" | "salesHistory" | "reports" | "catalog" | "inventory" | "expenses" | "branches" | "registers" | "floor" | "kitchen" | "customers" | "staff" | "roles" | "profile" | "security" | "subscriptions" | "sync" | "approvals" | "audit" | "settings";
 
@@ -86,6 +87,8 @@ export function App() {
   const [approvalHandoff, setApprovalHandoff] = useState<ApprovalRequest | null>(null);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [auth, setAuth] = useState<AuthResponse | null>(() => readStoredAuth());
+  // A fresh offline install has no business yet: show the setup page instead of sign-in.
+  const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
   const [branches, setBranches] = useState<BranchOption[]>([]);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const activeBranchId = auth?.session.branchId ?? auth?.staff.branchId ?? "";
@@ -167,6 +170,11 @@ export function App() {
         handleAuthChange(null);
       });
   }, []);
+
+  useEffect(() => {
+    if (auth) return;
+    fetchSetupStatus().then(setSetupStatus).catch(() => setSetupStatus(null));
+  }, [auth]);
 
   useEffect(() => {
     if (!auth) return;
@@ -279,7 +287,7 @@ export function App() {
     return (
       <div className="auth-gate">
         <main className="auth-gate-main">
-          <SecurityView auth={auth} onAuthChange={handleAuthChange} />
+          {setupStatus?.needsSetup ? <SetupView local={setupStatus.local} /> : <SecurityView auth={auth} onAuthChange={handleAuthChange} />}
         </main>
       </div>
     );
@@ -289,9 +297,9 @@ export function App() {
     <div className="app-shell">
       <aside className="side-nav">
         <div className="brand-block">
-          <div className="brand-mark">NP</div>
+          <div className="brand-mark">AP</div>
           <div>
-            <strong>NaijaPOS</strong>
+            <strong>Ajoke POS</strong>
             <span>Multi-tenant SaaS</span>
           </div>
         </div>

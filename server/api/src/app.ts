@@ -2,6 +2,7 @@ import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import morgan from "morgan";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { approvalsRouter } from "./modules/approvals/approvals.routes";
 import { authRouter } from "./modules/auth/auth.routes";
@@ -18,6 +19,7 @@ import { registersRouter } from "./modules/registers/registers.routes";
 import { reportsRouter } from "./modules/reports/reports.routes";
 import { rolesRouter } from "./modules/roles/roles.routes";
 import { salesRouter } from "./modules/sales/sales.routes";
+import { setupRouter } from "./modules/setup/setup.routes";
 import { staffRouter } from "./modules/staff/staff.routes";
 import { subscriptionsRouter } from "./modules/subscriptions/subscriptions.routes";
 import { syncRouter } from "./modules/sync/sync.routes";
@@ -37,6 +39,7 @@ export function createApp() {
   app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 
   app.use("/health", healthRouter);
+  app.use("/api/v1/setup", setupRouter);
   app.use("/api/v1/auth", authRouter);
   app.use("/api/v1/tenants", tenantsRouter);
   app.use("/api/v1/branches", branchesRouter);
@@ -55,6 +58,13 @@ export function createApp() {
   app.use("/api/v1/sync", syncRouter);
   app.use("/api/v1/approvals", approvalsRouter);
   app.use("/api/v1/audit", auditRouter);
+
+  // Installed builds serve the admin web app from the same address as the API.
+  const webDir = process.env.WEB_DIR ? path.resolve(process.env.WEB_DIR) : "";
+  if (webDir && existsSync(path.join(webDir, "index.html"))) {
+    app.use(express.static(webDir, { index: false }));
+    app.get(/^\/(?!api\/|uploads\/|health).*/, (_req, res) => res.sendFile(path.join(webDir, "index.html")));
+  }
 
   return app;
 }

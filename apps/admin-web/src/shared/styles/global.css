@@ -4729,3 +4729,109 @@ th {
   margin: 0 0 8px;
   color: #5b6675;
 }
+
+/* First-run "Create your business" page (modules/setup/SetupView.tsx). */
+.setup-window {
+  min-height: 0;
+}
+
+.setup-body {
+  display: grid;
+  gap: 18px;
+  padding: 22px 26px;
+}
+
+.setup-form fieldset {
+  border: 1px solid var(--outline);
+  border-radius: 6px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  padding: 16px 18px 18px;
+}
+
+.setup-form legend {
+  font-weight: 800;
+  padding: 0 6px;
+}
+
+.setup-form label {
+  color: var(--muted);
+  display: grid;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 7px;
+  text-transform: uppercase;
+}
+
+.setup-form input,
+.setup-form select {
+  background: white;
+  border: 1px solid #b8c0cc;
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 14px;
+  min-height: 38px;
+  padding: 0 11px;
+  text-transform: none;
+  width: 100%;
+}
+
+.setup-wide {
+  grid-column: 1 / -1;
+}
+
+.setup-hint {
+  color: var(--muted);
+  font-size: 13px;
+  margin: -4px 0 0;
+}
+
+.setup-error {
+  background: var(--danger-bg);
+  border-radius: 4px;
+  color: var(--danger);
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.setup-note {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  margin: 40px auto;
+  max-width: 460px;
+  text-align: center;
+}
+
+.setup-note span {
+  color: var(--muted);
+}
+
+.setup-done svg {
+  color: var(--success);
+}
+
+.setup-staff-id {
+  background: var(--primary-soft);
+  border-radius: 6px;
+  font-size: 26px;
+  letter-spacing: 2px;
+  padding: 10px 18px;
+}
+
+.setup-footer {
+  border-top: 1px solid var(--outline);
+  color: var(--muted);
+  font-size: 12px;
+  padding: 10px 26px;
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .setup-form fieldset {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -4,6 +4,7 @@ import { endProductClearance, fetchExpiringLots, setProductClearance, type Expir
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 import { activeClearance } from "../sales/pricing";
 
+import { MoneyInput } from "../../shared/components/MoneyInput";
 const windows = [7, 30, 60, 90];
 
 function expiryText(daysLeft: number) {
@@ -156,7 +157,7 @@ export function ExpiringPanel(props: { branchId: string; canSetClearance: boolea
           </label>
           <label>
             Clearance price
-            <input type="number" min={0} value={price} onChange={(event) => changePrice(event.target.value)} required />
+            <MoneyInput min={0} value={price === "" ? "" : Number(price)} onChange={(amount) => changePrice(String(amount))} required />
           </label>
           <label>
             Units on clearance

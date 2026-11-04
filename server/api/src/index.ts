@@ -49,7 +49,7 @@ if (process.env.NODE_ENV !== "test") {
     .then(prepareReplication)
     .finally(() => {
       createApp().listen(port, host, () => {
-        console.log(`NaijaPOS API listening on http://${host === "0.0.0.0" ? "127.0.0.1" : host}:${port}`);
+        console.log(`Ajoke POS API listening on http://${host === "0.0.0.0" ? "127.0.0.1" : host}:${port}`);
       });
     });
 }

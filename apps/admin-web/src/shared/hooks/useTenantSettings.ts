@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchCurrentTenant, type TenantSettings } from "../api/client";
-import { formatMoney, type CurrencyCode } from "../utils/money";
+import { formatMoney, setMoneyDecimals, type CurrencyCode } from "../utils/money";
 
 export const tenantSettingsUpdatedEvent = "pos:tenant-settings-updated";
 
@@ -19,6 +19,7 @@ export function useTenantSettings() {
       try {
         const response = await fetchCurrentTenant();
         if (!cancelled) {
+          setMoneyDecimals(response.tenant.settings.moneyDecimals);
           setSettings(response.tenant.settings);
           setCurrency(response.tenant.settings.currency);
         }
@@ -39,7 +40,8 @@ export function useTenantSettings() {
     };
   }, []);
 
-  const displayMoney = useMemo(() => (amount: number, nextCurrency: CurrencyCode = currency) => formatMoney(amount, nextCurrency), [currency]);
+  const decimals = settings?.moneyDecimals;
+  const displayMoney = useMemo(() => (amount: number, nextCurrency: CurrencyCode = currency) => formatMoney(amount, nextCurrency, decimals ?? 0), [currency, decimals]);
 
   return { settings, currency, displayMoney };
 }

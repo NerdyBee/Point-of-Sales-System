@@ -21,6 +21,7 @@ import { TablePagination, usePaginatedRows } from "../../shared/components/Table
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 import { dateRangeErrorMessage, hasInvertedDateRange } from "../../shared/utils/dateFilters";
 
+import { MoneyInput } from "../../shared/components/MoneyInput";
 const fallbackBranches: BranchOption[] = [];
 const expenseCategories = ["Utilities", "Repairs", "Rent", "Transport", "Marketing", "Supplies", "Staff welfare", "Other"];
 const paymentMethods: Array<{ value: ExpensePaymentMethodCode; label: string }> = [
@@ -458,7 +459,7 @@ export function ExpensesView({ approvalHandoff, onApprovalHandoffConsumed }: Exp
               </label>
               <label>
                 Amount
-                <input min={1} type="number" value={form.amount} onChange={(event) => updateForm("amount", Number(event.target.value))} required />
+                <MoneyInput min={1} value={form.amount} onChange={(amount) => updateForm("amount", amount)} required />
               </label>
               <label>
                 Spent date
@@ -489,7 +490,7 @@ export function ExpensesView({ approvalHandoff, onApprovalHandoffConsumed }: Exp
                 <input value={form.note ?? ""} onChange={(event) => updateForm("note", event.target.value)} />
               </label>
               <div className="form-summary">
-                <span>Expenses above NGN 50,000 are queued for approval if marked paid.</span>
+                <span>Expenses of {displayMoney(50000)} or more are queued for approval if marked paid.</span>
                 <button className="primary-button" type="submit"><Check size={18} /> Save expense</button>
               </div>
             </form>

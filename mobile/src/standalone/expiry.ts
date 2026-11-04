@@ -4,6 +4,7 @@ import { activeClearance } from "../pos/clearance";
 import type { DeviceSettings } from "../sync/settings";
 import { context, getRow, now, putRow } from "./store";
 
+import { groupAmount, toMajorUnits } from "../pos/pricing";
 /**
  * Stock batches ("lots") and expiry dates.
  *
@@ -158,7 +159,7 @@ export async function setClearance(
   const product = await getRow<Product & Record<string, unknown>>(platform.db, "products", input.productId);
   if (!product) throw new Error("Product not found");
   if (!Number.isInteger(input.clearancePrice) || input.clearancePrice < 0) throw new Error("Enter the clearance price");
-  if (input.clearancePrice >= product.price) throw new Error(`The clearance price must be below the normal price of ${product.price.toLocaleString()}`);
+  if (input.clearancePrice >= product.price) throw new Error(`The clearance price must be below the normal price of ${groupAmount(toMajorUnits(product.price))}`);
   if (!Number.isInteger(input.units) || input.units <= 0) throw new Error("Enter how many units are on clearance");
   if (input.units > Number(product.stock)) throw new Error(`Only ${product.stock} ${product.name} in stock`);
   const endsAt = validExpiryDate(input.endsAt);
