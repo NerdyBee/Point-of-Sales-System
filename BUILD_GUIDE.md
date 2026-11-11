@@ -73,6 +73,10 @@ cd mobile; npm test; npm run typecheck; cd ..
 
 Two Android backup tests can time out when the PC is busy, for example straight after a build. Run them again before treating that as a failure.
 
+### Speed with large histories
+
+Before a release that touches reports, the sales list or database indexes, re-run the load test in [scripts/perf/README.md](scripts/perf/README.md). It adds up to a million sales to a test database and times the screens.
+
 ### Database changes
 
 Edit `database/prisma/schema.prisma`, then run `npm run db:generate` and `npm run db:push`. Installed servers apply the same change themselves when they're updated: the office installer and the cloud container run `prisma db push`, which refuses changes that would delete data.

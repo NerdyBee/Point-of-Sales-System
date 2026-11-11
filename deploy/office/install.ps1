@@ -77,6 +77,15 @@ if (-not (Get-Service $DbService -ErrorAction SilentlyContinue)) {
   Set-Content -Path $RootFile -Value $rootPassword -Encoding ascii
   & icacls $RootFile /inheritance:r /grant:r "Administrators:F" "SYSTEM:F" | Out-Null
 }
+# MariaDB's default memory cache (128 MB) is small for years of sales; 512 MB keeps the
+# busy parts of the database in memory. Added once; also applied to existing installs.
+$myIni = Join-Path $DataDir "my.ini"
+if ((Test-Path $myIni) -and -not (Select-String -Path $myIni -Pattern "innodb_buffer_pool_size" -Quiet)) {
+  Stop-Service $DbService -ErrorAction SilentlyContinue
+  $ini = Get-Content $myIni -Raw
+  $ini = $ini -replace "\[mysqld\]", "[mysqld]`r`ninnodb_buffer_pool_size=512M"
+  Set-Content -Path $myIni -Value $ini -Encoding ascii
+}
 Set-Service $DbService -StartupType Automatic
 Start-Service $DbService
 

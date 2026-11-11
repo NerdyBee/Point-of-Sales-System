@@ -719,6 +719,8 @@ model PaymentRecord {
   shift  RegisterShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, branchId, method])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, branchId, createdAt])
   @@map("payment_records")
 }
 
@@ -751,6 +753,9 @@ model CompletedSale {
 
   @@unique([tenantId, idempotencyKey])
   @@index([tenantId, branchId, status, createdAt])
+  // Date-range reads (dashboard, sales list) for all branches or one branch.
+  @@index([tenantId, createdAt])
+  @@index([tenantId, branchId, createdAt])
   @@map("completed_sales")
 }
 
@@ -770,6 +775,7 @@ model CashMovement {
   shift  RegisterShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, branchId, shiftId])
+  @@index([tenantId, createdAt])
   @@map("cash_movements")
 }
 
@@ -793,6 +799,7 @@ model ApprovalRequest {
   branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, branchId, status, createdAt])
+  @@index([tenantId, status])
   @@map("approval_requests")
 }
 
@@ -820,6 +827,7 @@ model Expense {
   branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, branchId, status, spentAt])
+  @@index([tenantId, spentAt])
   @@map("expenses")
 }
 
@@ -883,6 +891,8 @@ model AuditEvent {
   branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, branchId, action, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, branchId, createdAt])
   @@map("audit_events")
 }
 

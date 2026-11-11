@@ -47,14 +47,27 @@ salesRouter.get("/", requireTenant, requirePermission("sale.create"), async (req
   if (!scope) return;
 
   const status = req.query.status?.toString();
+  // A period, not all history: the last 30 days unless from/to are given (ISO date or time).
+  const parseDate = (value: unknown, endOfDay = false) => {
+    if (typeof value !== "string" || !value.trim()) return undefined;
+    const date = new Date(value.includes("T") ? value : `${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}`);
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  };
+  const to = parseDate(req.query.to, true);
+  const from = parseDate(req.query.from) ?? (req.query.to ? undefined : new Date(Date.now() - 30 * 86_400_000));
+  const limit = Math.min(Math.max(Number(req.query.limit) || 2000, 1), 5000);
   const sales = await listSales(req.tenantContext!.tenantId, {
     branchId: scope.branchId,
     branchIds: scope.branchIds,
     status,
-    cashierId: selfScopedUserId(req.tenantContext!)
+    cashierId: selfScopedUserId(req.tenantContext!),
+    from,
+    to,
+    search: req.query.search?.toString(),
+    limit
   });
 
-  res.json({ sales });
+  res.json({ sales, from: from?.toISOString() ?? null, to: to?.toISOString() ?? null, limited: sales.length >= limit });
 });
 
 salesRouter.post("/", requireTenant, requirePermission("sale.create"), async (req, res) => {

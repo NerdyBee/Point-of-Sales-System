@@ -46,6 +46,11 @@ interface SalesHistoryViewProps {
   onApprovalHandoffConsumed?: () => void;
 }
 
+/** YYYY-MM-DD in local time, for date inputs. */
+function localDay(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }: SalesHistoryViewProps) {
   const storedAuth = useMemo(() => readStoredAuth(), []);
   const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
@@ -67,6 +72,11 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
   const [actionReason, setActionReason] = useState("Customer request");
   const [actionApprovalId, setActionApprovalId] = useState("");
   const [status, setStatus] = useState("Ready");
+  // Sales are loaded for a date range (all history would grow without end).
+  const [fromDate, setFromDate] = useState(() => localDay(new Date(Date.now() - 29 * 86_400_000)));
+  const [toDate, setToDate] = useState(() => localDay(new Date()));
+  const [limited, setLimited] = useState(false);
+  const [searchedAll, setSearchedAll] = useState(false);
   const handledApprovalIdRef = useRef<string | null>(null);
 
   const filteredSales = useMemo(() => {
@@ -105,7 +115,7 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
   const displayMoney = (amount: number, currency: CurrencyCode = activeCurrency) => formatMoney(amount, currency);
   const receiptMoney = (sale: CompletedSale, amount: number) => formatMoney(amount, sale.receipt.currency);
 
-  async function loadSales(nextStatus = statusFilter, nextBranchId = branchId) {
+  async function loadSales(nextStatus = statusFilter, nextBranchId = branchId, range: { from: string; to: string; search?: string } = { from: fromDate, to: toDate }) {
     setStatus("Syncing sales...");
 
     try {
@@ -120,8 +130,10 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
         return;
       }
 
-      const response = await fetchSales(nextBranchId, nextStatus || "all", activeUserId);
+      const response = await fetchSales(nextBranchId, nextStatus || "all", activeUserId, range.search ? { search: range.search } : { from: range.from, to: range.to });
       setSales(response.sales);
+      setLimited(Boolean(response.limited));
+      setSearchedAll(Boolean(range.search));
       setSelectedSale((current) => response.sales.find((sale) => sale.id === current?.id) ?? response.sales[0] ?? null);
       setRefundAmount(response.sales[0]?.summary.total ?? 0);
       setStatus(nextBranchId ? "Sales synced" : "Sales synced across accessible branches");
@@ -353,6 +365,14 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
             <option value="">Status</option>
             {statusOptions.map((option) => <option key={option} value={option}>{option.replace("_", " ")}</option>)}
           </select>
+          <label className="compact-date">
+            <span>From</span>
+            <input type="date" value={fromDate} max={toDate} onChange={(event) => { setFromDate(event.target.value); void loadSales(statusFilter, branchId, { from: event.target.value, to: toDate }); }} />
+          </label>
+          <label className="compact-date">
+            <span>To</span>
+            <input type="date" value={toDate} min={fromDate} onChange={(event) => { setToDate(event.target.value); void loadSales(statusFilter, branchId, { from: fromDate, to: event.target.value }); }} />
+          </label>
           <button className="secondary-button" onClick={() => loadSales(statusFilter, branchId)}><RefreshCcw size={18} /> Sync</button>
         </div>
       </div>
@@ -379,14 +399,20 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
         <section className="panel">
           <div className="panel-header">
             <h2>Receipt ledger</h2>
-            <span>{filteredSales.length} of {sales.length} receipts</span>
+            <span>
+              {filteredSales.length} of {sales.length} receipts {searchedAll ? "found in all history" : `from ${fromDate} to ${toDate}`}
+              {limited ? " (newest only: narrow the dates to see the rest)" : ""}
+            </span>
           </div>
           <div className="table-toolbar sales-history-filter-toolbar">
             <div className="search-box compact-search">
               <Search size={16} />
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search receipt, customer, item or payment ref" />
               {query ? (
-                <button type="button" onClick={() => setQuery("")} aria-label="Clear sales search"><X size={14} /></button>
+                <button type="button" onClick={() => { setQuery(""); if (searchedAll) void loadSales(statusFilter, branchId); }} aria-label="Clear sales search"><X size={14} /></button>
+              ) : null}
+              {query.trim().length >= 3 && !searchedAll ? (
+                <button type="button" className="search-all-history" onClick={() => void loadSales(statusFilter, branchId, { from: fromDate, to: toDate, search: query.trim() })}>Search all history</button>
               ) : null}
             </div>
             <select value={paymentFilter} onChange={(event) => setPaymentFilter(event.target.value)}>

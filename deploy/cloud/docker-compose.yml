@@ -9,7 +9,8 @@ services:
       MYSQL_DATABASE: naijapos
       MYSQL_USER: naijapos
       MYSQL_PASSWORD: ${DB_PASSWORD}
-    command: ["--log-bin-trust-function-creators=1"]
+    # A bigger memory cache than MySQL's 128 MB default keeps years of sales fast.
+    command: ["--log-bin-trust-function-creators=1", "--innodb-buffer-pool-size=512M"]
     volumes:
       - db-data:/var/lib/mysql
     healthcheck:

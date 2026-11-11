@@ -210,10 +210,13 @@ export function SalesScreen() {
   const [open, setOpen] = useState<SaleWithPayments | null>(null);
   const money = (amount: number) => formatMoney(amount, currency);
 
-  const { data, error, loading, reload } = useLive(
-    () => api.request<{ sales: SaleWithPayments[] }>(`/sales${branchId ? `?branchId=${encodeURIComponent(branchId)}` : ""}`, { branchId: branchId || undefined }),
-    [api, branchId]
-  );
+  const { data, error, loading, reload } = useLive(() => {
+    // Only the chosen period, from the phone's midnight; the server never sends all history.
+    const window = periodWindow(period);
+    const params = new URLSearchParams({ from: window.start.toISOString(), to: window.end.toISOString() });
+    if (branchId) params.set("branchId", branchId);
+    return api.request<{ sales: SaleWithPayments[]; limited?: boolean }>(`/sales?${params.toString()}`, { branchId: branchId || undefined });
+  }, [api, branchId, period]);
 
   const sales = useMemo(() => {
     const window = periodWindow(period);

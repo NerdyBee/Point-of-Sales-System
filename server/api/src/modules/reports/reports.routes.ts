@@ -13,6 +13,7 @@ import {
   saleLedger,
   staffMembers
 } from "../../shared/data/demoStore";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../../shared/db/prisma";
 import { canAccessAllBranches, canAccessScopedBranches, resolveBranchScope, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 
@@ -108,8 +109,16 @@ function isWithinReportWindow(createdAt: string, window: { start?: Date | null; 
   return (!window.start || date >= window.start) && (!window.end || date <= window.end);
 }
 
+/** Product lookups by branch and id; a scan of the whole catalogue per item sold was slow on big shops. */
+const productIndexes = new WeakMap<ReportProduct[], Map<string, ReportProduct>>();
+
 function findReportProduct(products: ReportProduct[], tenantId: string, branchId: string, productId: string) {
-  return products.find((item) => item.tenantId === tenantId && item.branchId === branchId && item.id === productId);
+  let index = productIndexes.get(products);
+  if (!index) {
+    index = new Map(products.map((item) => [`${item.tenantId}|${item.branchId}|${item.id}`, item]));
+    productIndexes.set(products, index);
+  }
+  return index.get(`${tenantId}|${branchId}|${productId}`);
 }
 
 async function branchBelongsToTenant(tenantId: string, branchId: string) {
@@ -126,63 +135,64 @@ function formatShortDate(date: Date) {
 }
 
 function buildSalesTrend(sales: ReportSale[], period: ReportPeriod) {
+  // Each period below makes one pass over the sales (they were re-scanned per bucket).
+  const dates = sales.map((sale) => new Date(sale.createdAt));
   if (period === "today") {
-    return Array.from({ length: 7 }, (_, index) => {
-      const hour = 8 + index * 2;
-      const amount = sales
-        .filter((sale) => new Date(sale.createdAt).getHours() <= hour)
-        .reduce((sum, sale) => sum + Math.round((sale.summary.total - sale.refundTotal) / 7), 0);
-      return { label: `${hour.toString().padStart(2, "0")}:00`, amount };
+    const hours = Array.from({ length: 7 }, (_, index) => 8 + index * 2);
+    const amounts = hours.map(() => 0);
+    sales.forEach((sale, saleIndex) => {
+      const saleHour = dates[saleIndex].getHours();
+      const share = Math.round((sale.summary.total - sale.refundTotal) / 7);
+      hours.forEach((hour, index) => {
+        if (saleHour <= hour) amounts[index] += share;
+      });
     });
+    return hours.map((hour, index) => ({ label: `${hour.toString().padStart(2, "0")}:00`, amount: amounts[index] }));
   }
 
   if (period === "week") {
     const start = startOfWeek(new Date());
-    return Array.from({ length: 7 }, (_, index) => {
+    const buckets = Array.from({ length: 7 }, (_, index) => {
       const bucketDate = new Date(start);
       bucketDate.setDate(start.getDate() + index);
-      const amount = sales
-        .filter((sale) => {
-          const saleDate = new Date(sale.createdAt);
-          return saleDate.getFullYear() === bucketDate.getFullYear() && saleDate.getMonth() === bucketDate.getMonth() && saleDate.getDate() === bucketDate.getDate();
-        })
-        .reduce((sum, sale) => sum + sale.summary.total - sale.refundTotal, 0);
-      return { label: bucketDate.toLocaleDateString("en-US", { weekday: "short" }), amount };
+      return { key: `${bucketDate.getFullYear()}-${bucketDate.getMonth()}-${bucketDate.getDate()}`, label: bucketDate.toLocaleDateString("en-US", { weekday: "short" }), amount: 0 };
     });
+    const byDay = new Map(buckets.map((bucket) => [bucket.key, bucket]));
+    sales.forEach((sale, saleIndex) => {
+      const saleDate = dates[saleIndex];
+      const bucket = byDay.get(`${saleDate.getFullYear()}-${saleDate.getMonth()}-${saleDate.getDate()}`);
+      if (bucket) bucket.amount += sale.summary.total - sale.refundTotal;
+    });
+    return buckets.map(({ label, amount }) => ({ label, amount }));
   }
 
   if (period === "month") {
     const now = new Date();
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const bucketCount = Math.ceil(daysInMonth / 7);
-    return Array.from({ length: bucketCount }, (_, index) => {
+    const amounts = Array.from({ length: bucketCount }, () => 0);
+    sales.forEach((sale, saleIndex) => {
+      const saleDate = dates[saleIndex];
+      if (saleDate.getFullYear() === now.getFullYear() && saleDate.getMonth() === now.getMonth()) amounts[Math.floor((saleDate.getDate() - 1) / 7)] += sale.summary.total - sale.refundTotal;
+    });
+    return amounts.map((amount, index) => {
       const startDay = index * 7 + 1;
-      const endDay = Math.min(startDay + 6, daysInMonth);
-      const amount = sales
-        .filter((sale) => {
-          const saleDate = new Date(sale.createdAt);
-          return saleDate.getFullYear() === now.getFullYear() && saleDate.getMonth() === now.getMonth() && saleDate.getDate() >= startDay && saleDate.getDate() <= endDay;
-        })
-        .reduce((sum, sale) => sum + sale.summary.total - sale.refundTotal, 0);
-      return { label: `${startDay}-${endDay}`, amount };
+      return { label: `${startDay}-${Math.min(startDay + 6, daysInMonth)}`, amount };
     });
   }
 
   if (period === "year") {
     const now = new Date();
-    return Array.from({ length: 12 }, (_, month) => {
-      const amount = sales
-        .filter((sale) => {
-          const saleDate = new Date(sale.createdAt);
-          return saleDate.getFullYear() === now.getFullYear() && saleDate.getMonth() === month;
-        })
-        .reduce((sum, sale) => sum + sale.summary.total - sale.refundTotal, 0);
-      return { label: new Date(now.getFullYear(), month, 1).toLocaleDateString("en-US", { month: "short" }), amount };
+    const amounts = Array.from({ length: 12 }, () => 0);
+    sales.forEach((sale, saleIndex) => {
+      const saleDate = dates[saleIndex];
+      if (saleDate.getFullYear() === now.getFullYear()) amounts[saleDate.getMonth()] += sale.summary.total - sale.refundTotal;
     });
+    return amounts.map((amount, month) => ({ label: new Date(now.getFullYear(), month, 1).toLocaleDateString("en-US", { month: "short" }), amount }));
   }
 
-  const monthTotals = sales.reduce<Record<string, { label: string; amount: number }>>((summary, sale) => {
-    const saleDate = new Date(sale.createdAt);
+  const monthTotals = sales.reduce<Record<string, { label: string; amount: number }>>((summary, sale, saleIndex) => {
+    const saleDate = dates[saleIndex];
     const key = `${saleDate.getFullYear()}-${saleDate.getMonth()}`;
     const current = summary[key] ?? { label: formatShortDate(new Date(saleDate.getFullYear(), saleDate.getMonth(), 1)), amount: 0 };
     current.amount += sale.summary.total - sale.refundTotal;
@@ -253,7 +263,13 @@ function parseSaleSummary(value: unknown): ReportSale["summary"] {
   };
 }
 
-async function loadReportSources(tenantId: string) {
+/**
+ * What a report needs, read for the chosen period and branches only. Growing tables (sales,
+ * payments, cash movements, expenses) are filtered by the database, receipts are not loaded,
+ * and audit events are only counted, so a report costs the same in a shop's first week and
+ * after years of trading. The figures are still worked out below exactly as before.
+ */
+async function loadReportSources(tenantId: string, scope: { window: { start?: Date | null; end?: Date | null }; branchIds?: string[] }) {
   if (useDemoStore) {
     return {
       sales: saleLedger,
@@ -266,22 +282,48 @@ async function loadReportSources(tenantId: string) {
       payments: paymentRecords,
       expenses,
       approvals: approvalRequests,
+      auditCount: undefined as number | undefined,
+      paymentMix: undefined as Record<string, number> | undefined,
       audits: auditEvents
     };
   }
 
+  const branch = scope.branchIds ? { branchId: { in: scope.branchIds } } : {};
+  const createdAt = scope.window.start || scope.window.end ? { gte: scope.window.start ?? undefined, lte: scope.window.end ?? undefined } : undefined;
+  const inBranches = scope.branchIds ? Prisma.sql`AND branchId IN (${Prisma.join(scope.branchIds)})` : Prisma.empty;
+  const inWindow = Prisma.sql`${scope.window.start ? Prisma.sql`AND createdAt >= ${scope.window.start}` : Prisma.empty} ${scope.window.end ? Prisma.sql`AND createdAt <= ${scope.window.end}` : Prisma.empty}`;
+  // With a period chosen, read through the date indexes. On large tables where every row
+  // belongs to one business, MariaDB otherwise preferred scanning the whole table.
+  const dateIndex = (table: string) =>
+    scope.window.start ? Prisma.raw(`FORCE INDEX (${table}_tenantId_createdAt_idx, ${table}_tenantId_branchId_createdAt_idx)`) : Prisma.empty;
+
   const [sales, products, shifts, movementRecords, customerRecords, ledgerRecords, staff, payments, expenseRecords, approvals, audits] = await Promise.all([
-    prisma.completedSale.findMany({ where: { tenantId } }),
+    // A plain query: on a busy year the ORM's per-row JSON handling was most of the time.
+    prisma.$queryRaw<{ tenantId: string; branchId: string; cashierId: string; status: string; refundTotal: number; createdAt: Date; summary: string }[]>`
+      SELECT tenantId, branchId, cashierId, status, refundTotal, createdAt, CAST(summary AS CHAR) AS summary
+      FROM completed_sales ${dateIndex("completed_sales")}
+      WHERE tenantId = ${tenantId}
+        ${scope.branchIds ? Prisma.sql`AND branchId IN (${Prisma.join(scope.branchIds)})` : Prisma.empty}
+        ${scope.window.start ? Prisma.sql`AND createdAt >= ${scope.window.start}` : Prisma.empty}
+        ${scope.window.end ? Prisma.sql`AND createdAt <= ${scope.window.end}` : Prisma.empty}`,
     prisma.product.findMany({ where: { tenantId } }),
-    prisma.registerShift.findMany({ where: { tenantId } }),
-    prisma.cashMovement.findMany({ where: { tenantId } }),
+    prisma.registerShift.findMany({ where: { tenantId, status: "open" } }),
+    prisma.cashMovement.findMany({ where: { tenantId, ...branch, createdAt } }),
     prisma.customer.findMany({ where: { tenantId } }),
-    prisma.customerLedgerEntry.findMany({ where: { tenantId } }),
+    // All of it: branch balances come from each customer's latest entry.
+    prisma.customerLedgerEntry.findMany({ where: { tenantId, ...branch } }),
     prisma.staffMember.findMany({ where: { tenantId } }),
-    prisma.paymentRecord.findMany({ where: { tenantId } }),
-    prisma.expense.findMany({ where: { tenantId } }),
-    prisma.approvalRequest.findMany({ where: { tenantId } }),
-    prisma.auditEvent.findMany({ where: { tenantId } })
+    // Only the total per payment method is reported, so the database adds them up.
+    prisma.$queryRaw<{ method: string; amount: number | null }[]>`
+      SELECT method, SUM(amount) AS amount
+      FROM payment_records ${dateIndex("payment_records")}
+      WHERE tenantId = ${tenantId} ${inBranches} ${inWindow}
+      GROUP BY method`,
+    prisma.expense.findMany({ where: { tenantId, ...branch, status: "paid", spentAt: createdAt } }),
+    prisma.approvalRequest.findMany({ where: { tenantId, status: "pending" } }),
+    prisma.$queryRaw<{ total: number }[]>`
+      SELECT COUNT(*) AS total FROM audit_events ${dateIndex("audit_events")}
+      WHERE tenantId = ${tenantId} ${inBranches} ${inWindow}`
   ]);
 
   return {
@@ -290,9 +332,9 @@ async function loadReportSources(tenantId: string) {
       branchId: sale.branchId,
       cashierId: sale.cashierId,
       status: sale.status,
-      refundTotal: sale.refundTotal,
-      createdAt: sale.createdAt.toISOString(),
-      summary: parseSaleSummary(sale.summary)
+      refundTotal: Number(sale.refundTotal),
+      createdAt: new Date(sale.createdAt).toISOString(),
+      summary: parseSaleSummary(typeof sale.summary === "string" ? JSON.parse(sale.summary) : sale.summary)
     })),
     products: products.map((product): ReportProduct => ({
       id: product.id,
@@ -336,7 +378,8 @@ async function loadReportSources(tenantId: string) {
       createdAt: entry.createdAt.toISOString()
     })),
     staff: staff.map((member) => ({ id: member.id, tenantId: member.tenantId, branchId: member.branchId, name: member.name, role: member.role, active: member.active })),
-    payments: payments.map((payment) => ({ tenantId: payment.tenantId, branchId: payment.branchId, method: payment.method, amount: payment.amount, createdAt: payment.createdAt.toISOString() })),
+    paymentMix: Object.fromEntries(payments.map((group) => [group.method, Number(group.amount ?? 0)])),
+    payments: [] as { tenantId: string; branchId: string; method: string; amount: number; createdAt: string }[],
     expenses: expenseRecords.map((expense) => ({ tenantId: expense.tenantId, branchId: expense.branchId, status: expense.status, category: expense.category, amount: expense.amount, spentAt: expense.spentAt.toISOString() })),
     approvals: approvals.map((approval) => ({
       id: approval.id,
@@ -351,7 +394,8 @@ async function loadReportSources(tenantId: string) {
       requestedBy: approval.requestedBy,
       createdAt: approval.createdAt.toISOString()
     })),
-    audits: audits.map((event) => ({ tenantId: event.tenantId, branchId: event.branchId ?? undefined, createdAt: event.createdAt.toISOString() }))
+    auditCount: Number(audits[0]?.total ?? 0),
+    audits: [] as { tenantId: string; branchId?: string; createdAt: string }[]
   };
 }
 
@@ -381,8 +425,8 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
     }
   }
 
-  const sources = await loadReportSources(tenantId);
   const branchScopeIds = !branchId ? effectiveScope.branchScopeIds : undefined;
+  const sources = await loadReportSources(tenantId, { window, branchIds: branchId ? [branchId] : branchScopeIds?.length ? branchScopeIds : undefined });
   const branchMatches = (recordBranchId?: string) => {
     if (branchId) return recordBranchId === branchId;
     if (branchScopeIds?.length) return Boolean(recordBranchId && branchScopeIds.includes(recordBranchId));
@@ -479,6 +523,7 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
     .filter((entry) => entry.type === "credit_sale")
     .reduce((sum, entry) => sum + Math.max(entry.amount, 0), 0);
   const hourlySales = buildSalesTrend(activeSales, period);
+  const salesByCashier = activeSales.reduce((totals, sale) => totals.set(sale.cashierId, (totals.get(sale.cashierId) ?? 0) + sale.summary.total - sale.refundTotal), new Map<string, number>());
   const staffPerformance = sources.staff
     .filter((member) => member.tenantId === tenantId)
     .filter((member) => branchMatches(member.branchId))
@@ -486,10 +531,10 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
       id: member.id,
       name: member.name,
       role: member.role,
-      salesTotal: activeSales.filter((sale) => sale.cashierId === member.id).reduce((sum, sale) => sum + sale.summary.total - sale.refundTotal, 0),
+      salesTotal: salesByCashier.get(member.id) ?? 0,
       status: member.active ? "active" : "inactive"
     }));
-  const paymentMix = sources.payments
+  const paymentMix = sources.paymentMix ?? sources.payments
     .filter((payment) => payment.tenantId === tenantId)
     .filter((payment) => branchMatches(payment.branchId))
     .filter((payment) => isWithinReportWindow(payment.createdAt, window))
@@ -556,7 +601,7 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
       customerLoyaltyPoints,
       customerAccountPayments,
       customerAccountCreditIssued,
-      auditEventCount: sources.audits
+      auditEventCount: sources.auditCount ?? sources.audits
         .filter((event) => event.tenantId === tenantId)
         .filter((event) => branchMatches(event.branchId))
         .filter((event) => isWithinReportWindow(event.createdAt, window)).length,

@@ -119,7 +119,9 @@ export async function listApprovals(
       type: type === "all" ? undefined : type,
       createdAt
     },
-    orderBy: { createdAt: "desc" }
+    orderBy: { createdAt: "desc" },
+    // Newest first; older ones are reached with the date filters.
+    take: 1000
   });
 
   return approvals.map(toApiApproval);

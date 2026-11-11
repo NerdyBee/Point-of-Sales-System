@@ -253,6 +253,10 @@ async function serializeDbSale(sale: DbCompletedSale): Promise<SerializedSale> {
     sale.customerId ? prisma.customer.findFirst({ where: { tenantId: sale.tenantId, id: sale.customerId } }) : Promise.resolve(null),
     prisma.paymentRecord.findMany({ where: { tenantId: sale.tenantId, saleId: sale.id }, orderBy: { createdAt: "desc" } })
   ]);
+  return serializeDbSaleWith(sale, customer, payments);
+}
+
+function serializeDbSaleWith(sale: DbCompletedSale, customer: DbCustomer | null, payments: DbPaymentRecord[]): SerializedSale {
   const apiSale = toApiSale(sale);
 
   return {
@@ -527,27 +531,66 @@ async function applyDbCustomerSaleReversal(
   }
 }
 
-export async function listSales(tenantId: string, filters: BranchScopeFilter & { status?: string; cashierId?: string } = {}) {
+export interface SaleListFilters extends BranchScopeFilter {
+  status?: string;
+  cashierId?: string;
+  /** Sales made from / up to these times. */
+  from?: Date;
+  to?: Date;
+  /** Part of a receipt number; searches all history, ignoring from/to. */
+  search?: string;
+  /** Most sales returned, newest first (the caller asks again with narrower dates for more). */
+  limit?: number;
+}
+
+export async function listSales(tenantId: string, filters: SaleListFilters = {}) {
+  const limit = filters.limit ?? 2000;
+  const search = filters.search?.trim();
+  const inRange = (createdAt: Date) => search || ((!filters.from || createdAt >= filters.from) && (!filters.to || createdAt <= filters.to));
+
   if (useDemoStore) {
     return saleLedger
       .filter((sale) => sale.tenantId === tenantId)
       .filter((sale) => matchesBranchScope(filters, sale.branchId))
       .filter((sale) => !filters.cashierId || sale.cashierId === filters.cashierId)
       .filter((sale) => !filters.status || filters.status === "all" || sale.status === filters.status)
+      .filter((sale) => inRange(new Date(sale.createdAt)))
+      .filter((sale) => !search || sale.id.toLowerCase().startsWith(search.toLowerCase()))
+      .slice(0, limit)
       .map((sale) => serializeDemoSale(sale));
   }
 
+  // A receipt number is matched from its start (INV-0004...), which the primary key index
+  // answers at any size; matching anywhere inside it meant reading every sale ever made.
+  const matchingIds = search
+    ? (await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM completed_sales FORCE INDEX (PRIMARY)
+        WHERE id LIKE ${`${search.replace(/[\\%_]/g, (char) => `\\${char}`)}%`} AND tenantId = ${tenantId}
+        LIMIT ${limit}`).map((row) => row.id)
+    : null;
   const sales = await prisma.completedSale.findMany({
     where: {
       tenantId,
       branchId: branchWhere(filters),
       cashierId: filters.cashierId ? filters.cashierId : undefined,
-      status: filters.status && filters.status !== "all" ? filters.status : undefined
+      status: filters.status && filters.status !== "all" ? filters.status : undefined,
+      ...(matchingIds ? { id: { in: matchingIds } } : { createdAt: filters.from || filters.to ? { gte: filters.from, lte: filters.to } : undefined })
     },
-    orderBy: { createdAt: "desc" }
+    orderBy: { createdAt: "desc" },
+    take: limit
   });
 
-  return Promise.all(sales.map((sale) => serializeDbSale(sale)));
+  // Customers and payments for the whole page in two queries, not two per sale.
+  const saleIds = sales.map((sale) => sale.id);
+  const customerIds = [...new Set(sales.map((sale) => sale.customerId).filter((id): id is string => Boolean(id)))];
+  const [customerRows, paymentRows] = await Promise.all([
+    customerIds.length ? prisma.customer.findMany({ where: { tenantId, id: { in: customerIds } } }) : Promise.resolve([]),
+    saleIds.length ? prisma.paymentRecord.findMany({ where: { tenantId, saleId: { in: saleIds } }, orderBy: { createdAt: "desc" } }) : Promise.resolve([])
+  ]);
+  const customersById = new Map(customerRows.map((customer) => [customer.id, customer]));
+  const paymentsBySale = new Map<string, typeof paymentRows>();
+  for (const payment of paymentRows) paymentsBySale.set(payment.saleId, [...(paymentsBySale.get(payment.saleId) ?? []), payment]);
+  return sales.map((sale) => serializeDbSaleWith(sale, sale.customerId ? customersById.get(sale.customerId) ?? null : null, paymentsBySale.get(sale.id) ?? []));
 }
 
 function withPriceOverrides<T extends { id: string; price: number }>(products: T[], overrides?: Record<string, number>) {

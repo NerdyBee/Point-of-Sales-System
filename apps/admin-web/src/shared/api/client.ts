@@ -1548,8 +1548,12 @@ export async function createSale(payload: CreateSalePayload) {
   });
 }
 
-export async function fetchSales(branchId = "", status = "all", userId = "") {
-  return requestJson<{ sales: CompletedSale[] }>(`/api/v1/sales${queryString({ branchId, status })}`, {
+/**
+ * Sales for a period (the server's default is the last 30 days) or, with `search`, the
+ * receipts whose number contains it across all history. `limited` means more exist.
+ */
+export async function fetchSales(branchId = "", status = "all", userId = "", options: { from?: string; to?: string; search?: string } = {}) {
+  return requestJson<{ sales: CompletedSale[]; from: string | null; to: string | null; limited?: boolean }>(`/api/v1/sales${queryString({ branchId, status, from: options.from, to: options.to, search: options.search })}`, {
     headers: branchHeaders(branchId)
   });
 }

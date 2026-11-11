@@ -111,7 +111,9 @@ export async function listExpenses(
       status: filters.status && filters.status !== "all" ? filters.status : undefined,
       spentAt
     },
-    orderBy: { spentAt: "desc" }
+    orderBy: { spentAt: "desc" },
+    // Newest first; older ones are reached with the date filters.
+    take: 1000
   });
 
   return records.map(toApiExpense);
