@@ -73,6 +73,17 @@ const registerOpenSchema = z.object({
   openingBalance: z.number().int().nonnegative()
 });
 
+/** "Tablet count 45000": how a tablet's register count is written into the close request. */
+export function tabletCountReason(countedCash: number) {
+  return `Tablet count ${countedCash}`;
+}
+
+/** The counted cash in a tablet's register-close request, or null for other requests. */
+export function countedCashFromReason(reason: string) {
+  const match = /^Tablet count (\d+)/.exec(reason);
+  return match ? Number(match[1]) : null;
+}
+
 const registerCloseSchema = z.object({
   shiftId: z.string().min(1).max(120),
   countedCash: z.number().int().nonnegative(),
@@ -199,14 +210,18 @@ export async function executeDeviceCommand(context: CommandContext, command: Dev
       if (!shiftId) return { id: command.id, status: "conflict", error: "Shift has not been synced to the server" };
 
       // Closing a register always needs a manager approval on this platform, so the
-      // tablet's count becomes an approval request that a manager finalises.
+      // tablet's count becomes an approval request that a manager finalises. The amount is
+      // the cash difference the approval must cover; the count is kept in the reason.
+      const expectedCash = useDemoStore
+        ? registerShifts.find((shift) => shift.id === shiftId)?.expectedCash ?? 0
+        : (await prisma.registerShift.findUnique({ where: { id: shiftId }, select: { expectedCash: true } }))?.expectedCash ?? 0;
       const result = await requestApproval(context.tenantId, staff.id, {
         branchId: context.branchId,
         type: "register_close",
         entityType: "registerShift",
         entityId: shiftId,
-        amount: 0,
-        reason: `Tablet count ${payload.data.countedCash}${payload.data.note ? `: ${payload.data.note}` : ""}`.slice(0, 180),
+        amount: Math.abs(payload.data.countedCash - expectedCash),
+        reason: `${tabletCountReason(payload.data.countedCash)}${payload.data.note ? `: ${payload.data.note}` : ""}`.slice(0, 180),
         requestedBy: staff.id
       });
       if (!("approval" in result) || !result.approval) return rejection(command.id, result.status);

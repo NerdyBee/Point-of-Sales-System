@@ -69,6 +69,20 @@ Install the APK on your own phone, issue yourself a licence (section 3), set up 
 
 ---
 
+### The boss's phone (owner mode, all branches)
+For a business with several shops on one server, usually the cloud:
+1. Install the APK on the boss's phone and activate it like any phone (section 3).
+2. In setup, choose **Owner / manager phone (all branches)**. Enter the server address (for example `pos.theirbusiness.com`) and the owner's **staff ID and password**, the same as their web sign-in.
+3. The phone shows **Overview**, **Sales**, **Stock** and **Approvals** across all branches, live from the server, so it needs internet. It doesn't sell.
+
+What it does:
+- **Approve or reject** requests from the shops.
+- **Approve & close till** for a tablet's register close: it closes the till with the cashier's count. If card or transfer payments still need checking against the bank, close that till in the web app instead.
+- **Locks after 10 minutes** without use; the password opens it again.
+- **Disconnect** (the exit icon at the top) removes the business from the phone. Nothing is deleted on the server.
+
+Only staff who can see profit reports or approve requests (owners, managers) can use owner mode.
+
 ## 3. Issuing activation codes
 
 ```bash

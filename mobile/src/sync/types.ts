@@ -39,6 +39,9 @@ export interface PairingCredentials {
   server: { nodeId: string; role: "cloud" | "office" };
 }
 
-/** Which server(s) this tablet talks to; "standalone" = no server, the tablet is the only copy. */
-export type SyncMode = "local" | "cloud" | "hybrid" | "standalone";
+/**
+ * Which server(s) this tablet talks to; "standalone" = no server, the tablet is the only copy;
+ * "owner" = the boss's phone, reading all branches live from a server (src/owner), no till.
+ */
+export type SyncMode = "local" | "cloud" | "hybrid" | "standalone" | "owner";
 export type ServerKey = "local" | "cloud";

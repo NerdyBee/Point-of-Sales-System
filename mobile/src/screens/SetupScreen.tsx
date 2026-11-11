@@ -14,6 +14,7 @@ import { colors, font, radius, spacing } from "../ui/theme";
 
 import { currencies, currencyDecimals } from "../pos/currencies";
 import { formatMoney } from "../pos/pricing";
+import { OwnerSetup } from "../owner/OwnerSetup";
 const modes: { value: SyncMode; title: string; description: string }[] = [
   { value: "local", title: "Office server only", description: "Syncs over the shop Wi-Fi with the server installed in the office. Works without internet." },
   { value: "cloud", title: "Cloud only", description: "Syncs with the online server whenever this device has internet." },
@@ -22,6 +23,11 @@ const modes: { value: SyncMode; title: string; description: string }[] = [
     value: "standalone",
     title: "This device only (no server)",
     description: "For a small shop with no server. Products, staff, sales and stock are kept on this phone or tablet; back it up regularly."
+  },
+  {
+    value: "owner",
+    title: "Owner / manager phone (all branches)",
+    description: "For the boss: sales, profit and stock across all your shops, and approve requests from anywhere. Needs internet; this phone does not sell."
   }
 ];
 
@@ -39,7 +45,7 @@ interface ServerForm {
 export function SetupScreen() {
   const { settings } = useApp();
   // A tablet that is already paired can add a server but cannot switch to standalone.
-  const available = settings ? modes.filter((mode) => mode.value !== "standalone") : modes;
+  const available = settings ? modes.filter((mode) => mode.value !== "standalone" && mode.value !== "owner") : modes;
   const [mode, setMode] = useState<SyncMode>(settings?.mode ?? "local");
 
   return (
@@ -64,7 +70,7 @@ export function SetupScreen() {
           ))}
         </View>
 
-        {mode === "standalone" ? <StandaloneSetup /> : <ServerSetup mode={mode} />}
+        {mode === "standalone" ? <StandaloneSetup /> : mode === "owner" ? <OwnerSetup /> : <ServerSetup mode={mode} />}
         <AboutLine />
       </View>
     </KeyboardAwareScrollView>

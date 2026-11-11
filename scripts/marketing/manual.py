@@ -378,6 +378,11 @@ def manual_content():
     heading("Cloud sync")
     para("If your provider set up a cloud server for you, Ajoke POS copies your sales, products, stock and customers there every "
          "30 seconds while you are online, and catches up automatically after the internet comes back.")
+    heading("The owner's phone")
+    para("If your business has a cloud server, the owner can follow every branch from the Ajoke POS Android app. During setup, choose "
+         "<b>Owner / manager phone (all branches)</b>, then enter the server address and your staff ID and password. The phone shows "
+         "<b>Overview</b> (sales, profit and best sellers, per branch or all together), <b>Sales</b>, <b>Stock</b> and <b>Approvals</b>, "
+         "where you approve requests from the shops, including closing a till. It needs internet and does not sell.")
     heading("Android tablets")
     para("Ajoke POS for Android can work on its own or connect to this computer over the shop Wi-Fi. To connect a tablet, open "
          "<b>Sync</b>, choose <b>Pair a tablet</b>, create a code, and enter it on the tablet.")

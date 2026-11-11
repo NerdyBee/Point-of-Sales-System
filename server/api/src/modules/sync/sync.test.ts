@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { demoProducts, registerShifts, staffMembers } from "../../shared/data/demoStore";
-import { executeDeviceCommand, memoryIdMap, type CommandContext } from "./sync.commands";
+import { countedCashFromReason, executeDeviceCommand, memoryIdMap, type CommandContext } from "./sync.commands";
 import { deviceEntities, entitiesFlowing, entityForTable, syncEntities, trackedColumns } from "./sync.entities";
 import { blockedFields, counterDeltas, incomingFieldTimes, mergeItems, orderForApply, pendingChanges } from "./sync.merge";
 import { backfillStatement, triggerStatements } from "./sync.triggers";
@@ -185,6 +185,26 @@ describe("device command replay", () => {
     expect(sale.status).toBe("synced");
     expect(sale.idMap?.["local-sale-1"]).toMatch(/^INV-/);
     expect(product.stock).toBe(stockBefore - quantity);
+  });
+
+  it("records the cash difference a tablet's register close needs approving", async () => {
+    const { approvalRequests } = await import("../../shared/data/demoStore");
+    const shift = registerShifts.find((item) => item.terminalId === terminalId && item.status === "open")!;
+    const counted = shift.expectedCash - 700; // the drawer is 700 short
+
+    const result = await executeDeviceCommand(context(), {
+      id: "cmd-close-0001",
+      type: "register.close",
+      staffId: cashier.id,
+      createdAt: new Date().toISOString(),
+      payload: { shiftId: shift.id, countedCash: counted, note: "Short after lunch" }
+    });
+
+    expect(result.status).toBe("synced");
+    const approval = approvalRequests.find((item) => item.id === result.serverEntityId)!;
+    expect(approval).toMatchObject({ type: "register_close", entityId: shift.id, amount: 700 });
+    expect(countedCashFromReason(approval.reason)).toBe(counted);
+    expect(approval.reason).toContain("Short after lunch");
   });
 
   it("rejects commands from staff without the needed permission", async () => {

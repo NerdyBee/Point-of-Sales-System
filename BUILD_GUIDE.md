@@ -165,6 +165,8 @@ At the installer's cloud question, they enter the address and the pairing code. 
 
 ### C. Android app
 
+For a business with several shops, the boss can use the Android app in **owner mode** to see all branches and approve requests (see [mobile/DISTRIBUTION.md](mobile/DISTRIBUTION.md) section 2). It needs the server address and the owner's staff ID and password, plus a phone activation code like any phone.
+
 Send the APK (section 6). The phone shows a device code. Issue its activation code without `--product office`:
 
 ```powershell

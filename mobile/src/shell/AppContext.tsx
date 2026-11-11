@@ -103,7 +103,8 @@ export function AppProvider(props: { platform: Platform; children: ReactNode }) 
 
   // Background sync while the app is in the foreground and paired (nothing to do standalone).
   useEffect(() => {
-    if (!settings || settings.mode === "standalone") return;
+    // Nothing to sync on a standalone tablet or an owner phone (which reads live from the server).
+    if (!settings || settings.mode === "standalone" || settings.mode === "owner") return;
     let cancelled = false;
     const tick = async () => {
       if (AppState.currentState !== "active") return;

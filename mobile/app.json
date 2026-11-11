@@ -4,7 +4,7 @@
     "slug": "ajoke-pos",
     "description": "Ajoke POS - offline-first point of sale for shops: sales, stock, credit customers, receipts and reports. Developed by Ajoke Code Sphere.",
     "scheme": "ajokepos",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -31,7 +31,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.ajokecodesphere.ajokepos",
-      "versionCode": 2,
+      "versionCode": 3,
       "permissions": [
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",

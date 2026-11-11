@@ -3,6 +3,7 @@ import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, View } fro
 import { ActivationScreen } from "../screens/ActivationScreen";
 import { BackupScreen, backupAgeDays, backupReminderDays } from "../screens/BackupScreen";
 import { LockScreen } from "../screens/LockScreen";
+import { OwnerApp } from "../owner/OwnerApp";
 import { ManageScreen } from "../screens/ManageScreen";
 import { RegisterScreen } from "../screens/RegisterScreen";
 import { ReportsScreen } from "../screens/ReportsScreen";
@@ -102,6 +103,9 @@ export function Shell() {
       </View>
     );
   }
+
+  // The boss's phone has its own sign-in, tabs and lock (src/owner).
+  if (settings.mode === "owner") return <OwnerApp />;
 
   if (!staff) {
     if (lockedView === "sync") {

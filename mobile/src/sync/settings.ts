@@ -28,6 +28,11 @@ export async function loadSettings(platform: Platform): Promise<DeviceSettings |
   return row ? (JSON.parse(row.value) as DeviceSettings) : null;
 }
 
+/** Forgets how this device was set up (owner phones use this to disconnect). */
+export async function clearSettings(platform: Platform) {
+  await platform.db.run("DELETE FROM kv WHERE key = ?", [settingsKey]);
+}
+
 export async function saveSettings(platform: Platform, settings: DeviceSettings) {
   await platform.db.run("INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [settingsKey, JSON.stringify(settings)]);
 }
@@ -47,7 +52,7 @@ export async function setServerToken(platform: Platform, server: ServerKey, toke
 
 /** Servers the tablet may use, in order of preference (office LAN first). */
 export function serverPreference(settings: DeviceSettings): ServerKey[] {
-  if (settings.mode === "standalone") return [];
+  if (settings.mode === "standalone" || settings.mode === "owner") return [];
   const order: ServerKey[] = settings.mode === "cloud" ? ["cloud"] : settings.mode === "local" ? ["local"] : ["local", "cloud"];
   return order.filter((key) => settings.servers[key]);
 }
