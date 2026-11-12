@@ -15,11 +15,13 @@
   "scenes": [
     {
       "id": "intro",
+      "chapter": "Introduction",
       "caption": "Ajoke POS - point of sale for modern shops",
-      "narration": "Meet Ajoke POS. A complete point of sale system for shops, supermarkets, cafes and pharmacies. It runs on your own computer, works without internet, and can sync to the cloud when you are online."
+      "narration": "Meet Ajoke POS. A complete point of sale and back office for shops, supermarkets, cafes and pharmacies. It runs on your own computer, works without internet, and can sync to the cloud when you are online."
     },
     {
       "id": "activate",
+      "chapter": "Getting started",
       "caption": "Install on your shop computer, then activate it",
       "narration": "Install Ajoke POS on your shop computer. The first screen shows a code for that computer. Send it to your provider, and paste the activation code you receive."
     },
@@ -35,11 +37,13 @@
     },
     {
       "id": "dashboard",
+      "chapter": "Dashboard",
       "caption": "Today's sales, profit and alerts at a glance",
       "narration": "The owner dashboard shows today's sales, tax, profit and average sale at a glance, with hourly trends and low stock alerts."
     },
     {
       "id": "pos",
+      "chapter": "Selling at the till",
       "caption": "A fast POS terminal with product pictures",
       "narration": "The POS terminal is built for speed. Browse by category, search, or scan a barcode. Stock left is shown on every product."
     },
@@ -50,51 +54,117 @@
     },
     {
       "id": "pos-paid",
-      "caption": "Take cash, card or transfer - print or WhatsApp the receipt",
-      "narration": "Take payment by cash, card, transfer, or customer credit, even split between methods. Print the receipt, or send it by WhatsApp."
+      "caption": "Cash, card, transfer or customer credit",
+      "narration": "Take payment by cash, card, transfer, or customer credit, even split between methods. Then print the receipt, or send it by WhatsApp."
+    },
+    {
+      "id": "receipt",
+      "caption": "A clear printed receipt",
+      "narration": "The printed receipt shows your business details, every item, the tax, and how the customer paid."
     },
     {
       "id": "sales",
+      "chapter": "Sales, refunds and credit notes",
       "caption": "Every sale, with its receipt",
-      "narration": "Every sale is saved with its receipt. Search, reprint, and handle refunds and voids, with manager approval."
+      "narration": "Every sale is saved with its receipt. Search all your history, reprint, and handle refunds and voids, with a manager's approval."
+    },
+    {
+      "id": "credit-note",
+      "caption": "A credit note for every refund",
+      "narration": "When money goes back to a customer, print a credit note against the original invoice, with the tax reversed."
     },
     {
       "id": "catalog",
+      "chapter": "Products and Excel import",
       "caption": "Manage products, prices and categories",
       "narration": "In the catalog, manage your products, prices, costs and categories, with pictures and barcodes."
     },
     {
       "id": "catalog-add",
       "caption": "Add a product in seconds",
-      "narration": "Adding a product takes seconds."
+      "narration": "Adding a product takes seconds. Leave the SKU blank and one is made for you, and the barcode is optional."
+    },
+    {
+      "id": "import",
+      "caption": "Bring your products in from Excel",
+      "narration": "Moving from another system? Import products, customers and opening balances straight from an Excel sheet. Every row is checked first, and nothing is saved until you confirm."
     },
     {
       "id": "inventory",
+      "chapter": "Stock and suppliers",
       "caption": "Stock, suppliers, deliveries and expiry dates",
-      "narration": "Inventory tracks stock in every branch. Receive deliveries from suppliers, record expiry dates, count stock, and move it between branches."
+      "narration": "Inventory tracks stock in every branch. Receive deliveries from suppliers, record their invoices and payments, track expiry dates, count stock, and move it between branches."
     },
     {
       "id": "customers",
+      "chapter": "Customers and statements",
       "caption": "Customers, loyalty points and credit accounts",
       "narration": "Keep customer records, loyalty points, and credit accounts with limits, so trusted customers can buy now and pay later."
     },
     {
+      "id": "statement",
+      "caption": "A statement of account for each customer",
+      "narration": "Print a statement of account for any customer, showing every credit sale and payment, the balance due, and how long it has been owed."
+    },
+    {
+      "id": "quotation-new",
+      "chapter": "Quotations and proforma invoices",
+      "caption": "Price it on paper before you sell it",
+      "narration": "Need to send a price first? Make a quotation or a proforma invoice from your catalogue, priced exactly like a sale, with tax."
+    },
+    {
+      "id": "quotation-print",
+      "caption": "A professional quotation",
+      "narration": "Print it, or save it as a PDF to send to your customer."
+    },
+    {
+      "id": "quotations",
+      "caption": "Every quotation in one place",
+      "narration": "Every quotation is kept in one place: open, accepted, sold, or expired."
+    },
+    {
+      "id": "quotation-till",
+      "caption": "Sell the quotation with one tap",
+      "narration": "When the customer is ready to buy, one tap puts the quotation into the till, and it is marked as sold when the payment goes through."
+    },
+    {
       "id": "register",
+      "chapter": "Cash register and expenses",
       "caption": "Open, count and close the cash drawer",
       "narration": "The cash register keeps every till honest. Open with a float, record cash in and out, and count the drawer when you close."
     },
     {
       "id": "expenses",
       "caption": "Track business expenses",
-      "narration": "Record business expenses, so your profit figures are always real."
+      "narration": "Record business expenses, with any tax included and any withholding tax deducted, so your profit figures are always real."
     },
     {
       "id": "reports",
+      "chapter": "Reports",
       "caption": "Clear reports for any period",
       "narration": "Reports show sales, profit, tax, payments, best sellers and staff performance for any period. Export them to a spreadsheet, or print them."
     },
     {
+      "id": "debtors",
+      "chapter": "Debtors and creditors",
+      "caption": "Who owes you, and who you owe",
+      "narration": "See who owes you and for how long, split into thirty, sixty and ninety days, and which supplier invoices are due or overdue."
+    },
+    {
+      "id": "tax",
+      "chapter": "VAT and withholding tax",
+      "caption": "VAT return and withholding tax",
+      "narration": "At the end of the month, the VAT report shows the tax you charged on sales, less the tax you paid on purchases, and the withholding tax to pay to the tax office."
+    },
+    {
+      "id": "accountant",
+      "chapter": "Export for the accountant",
+      "caption": "Send your books to the accountant",
+      "narration": "Your accountant gets the month's books in one click, as Tally import files or a spreadsheet day book, so nothing needs to be typed in twice."
+    },
+    {
       "id": "staff",
+      "chapter": "Staff, roles and approvals",
       "caption": "Each staff member has their own login",
       "narration": "Every staff member gets their own sign in, so you always know who did what."
     },
@@ -110,23 +180,25 @@
     },
     {
       "id": "branches",
+      "chapter": "Branches, sync and the Android app",
       "caption": "One business, many branches and tills",
       "narration": "Run several branches and tills from one system."
     },
     {
       "id": "sync",
       "caption": "Works offline, syncs to the cloud, connects tablets",
-      "narration": "Ajoke POS keeps working when the internet is down. When you are online, it syncs with your cloud server, and connects Android tablets on your shop Wi-Fi."
+      "narration": "Ajoke POS keeps working when the internet is down. When you are online, it syncs with your cloud server, and connects Android tablets on your shop Wi-Fi. The owner can follow every branch from the Android app on their phone."
     },
     {
       "id": "audit",
+      "chapter": "Audit, settings and sign-in",
       "caption": "A full audit trail",
       "narration": "A full audit trail records every important action."
     },
     {
       "id": "settings",
       "caption": "Your business, your currency, your receipt",
-      "narration": "In settings, choose your currency from over forty, set your tax, payment methods and receipt message."
+      "narration": "In settings, choose your currency from over forty, set your tax, payment methods, receipt message, and the ledger names your accountant uses."
     },
     {
       "id": "signin",

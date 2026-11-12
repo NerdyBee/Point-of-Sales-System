@@ -62,7 +62,17 @@ def brand_corner(draw):
 def screen_frame(image_path, caption):
     """Screenshot framed on the brand colour with a caption underneath."""
     frame = Image.new("RGB", (W, H), NAVY)
-    shot = Image.open(image_path).convert("RGB").resize((1536, 864), Image.LANCZOS)
+    shot = Image.open(image_path).convert("RGB")
+    if abs(shot.width / shot.height - 1536 / 864) > 0.02:
+        # A printed page (receipt, quotation, statement): fitted whole on a light panel, not stretched.
+        page = shot.copy()
+        page.thumbnail((1536 - 80, 864 - 40), Image.LANCZOS)
+        panel = Image.new("RGB", (1536, 864), (232, 236, 243))
+        ImageDraw.Draw(panel).rectangle(((1536 - page.width) // 2 + 6, 26, (1536 + page.width) // 2 + 6, 26 + page.height), fill=(200, 205, 215))
+        panel.paste(page, ((1536 - page.width) // 2, 20))
+        shot = panel
+    else:
+        shot = shot.resize((1536, 864), Image.LANCZOS)
     mask = Image.new("L", shot.size, 0)
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, *shot.size), 18, fill=255)
     shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -134,7 +144,7 @@ def main():
     print(f"{len(scenes)} scenes; generating narration...")
     speak(scenes)
 
-    segments, subtitles, clock = [], [], 0.0
+    segments, subtitles, chapters, clock = [], [], [], 0.0
     for index, scene in enumerate(scenes):
         if scene["id"] == "intro":
             image = title_frame(story["title"], story["tagline"])
@@ -163,6 +173,8 @@ def main():
             "-c:a", "aac", "-b:a", "160k", "-ac", "2", str(segment)
         ], check=True)
         segments.append(segment)
+        if scene.get("chapter"):
+            chapters.append((clock, scene["chapter"]))
         subtitles.append((clock + 0.4, clock + 0.4 + talk, scene["narration"]))
         clock += duration
         print(f"  {index + 1:2d}/{len(scenes)} {scene['id']} ({duration:.1f}s)")
@@ -174,6 +186,10 @@ def main():
     (out / f"{output_name}.srt").write_text(
         "".join(f"{number}\n{srt_time(start)} --> {srt_time(end)}\n{text}\n\n" for number, (start, end, text) in enumerate(subtitles, 1)), encoding="utf-8"
     )
+    if chapters:
+        # YouTube chapters: paste into the video description (the first must be 0:00).
+        stamp = lambda value: f"{int(value) // 60}:{int(value) % 60:02d}"
+        (out / f"{output_name}-chapters.txt").write_text("".join(f"{stamp(start)} {title}\n" for start, title in chapters), encoding="utf-8")
     print(f"\n{final} ({clock / 60:.1f} min)")
 
 

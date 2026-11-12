@@ -172,7 +172,13 @@ def screen(shot_id, text, width=CONTENT_WIDTH):
     path = out / shot_id if shot_id.endswith(".png") else shots.get(shot_id)
     if not path:
         return
-    image = Image(str(path), width=width, height=width * 1080 / 1920)
+    from PIL import Image as PILImage
+    with PILImage.open(path) as picture:
+        ratio = picture.height / picture.width
+    if ratio > 0.6:
+        # A printed page (receipt, quotation, statement): narrower, so it fits on the page.
+        width = min(width, 110 * mm / ratio if ratio > 1 else width * 0.7)
+    image = Image(str(path), width=width, height=width * ratio)
     frame = Table([[image]], colWidths=[width], style=TableStyle([("BOX", (0, 0), (-1, -1), 0.6, LINE), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
     story.append(KeepTogether([Spacer(1, 2 * mm), frame, Paragraph(text, caption)]))
 
@@ -200,9 +206,12 @@ def manual_content():
     bullets([
         "<b>Fast selling</b> with product pictures, categories, search and barcode scanning.",
         "<b>Every payment type</b>: cash, card, transfer, mobile money, customer credit and split payments.",
-        "<b>Receipts</b> on thermal printers or sent by WhatsApp.",
+        "<b>Receipts</b> on thermal printers or sent by WhatsApp, and credit notes for refunds.",
+        "<b>Quotations and proforma invoices</b>, sold at the till with one tap when the customer is ready.",
         "<b>Stock control</b>: deliveries, suppliers, expiry dates, stock counts and transfers between branches.",
-        "<b>Customers</b> with loyalty points and credit accounts.",
+        "<b>Customers</b> with loyalty points, credit accounts and statements of account.",
+        "<b>Accounts and tax</b>: who owes you and who you owe, the VAT return and withholding tax, and an export for your accountant (Tally or a spreadsheet).",
+        "<b>Excel import</b> of products, customers and opening balances when you move from another system.",
         "<b>Cash registers</b> with opening float, cash in and out, and end-of-day counts.",
         "<b>Reports</b> for sales, profit, tax, payments and staff, exportable to a spreadsheet.",
         "<b>Staff and roles</b> with their own sign-in, permissions, manager approvals and a full audit trail.",
@@ -211,8 +220,9 @@ def manual_content():
     ])
     heading("How this manual is organised")
     para("Chapter 2 covers installation and the first start. Chapters 3 to 9 follow a normal trading day: selling, products and stock, "
-         "customers, the cash register, expenses and reports. Chapters 10 to 12 cover staff and security, branches and sync, settings, "
-         "and keeping your system safe. The screenshots show a sample shop called <i>Green Basket Market</i>.")
+         "customers, quotations, the cash register, expenses and reports. Chapter 10 covers accounts and tax. Chapters 11 to 14 cover "
+         "staff and security, branches and sync, settings, and keeping your system safe. The screenshots show a sample shop called "
+         "<i>Green Basket Market</i>.")
 
     chapter("Getting started", "Install, activate, create your business and sign in")
     heading("What you need")
@@ -278,6 +288,7 @@ def manual_content():
     ])
     screen("pos-cart", "Totals, tax and the amount due update as you add items.")
     screen("pos-paid", "After payment: print the receipt or send it by WhatsApp.")
+    screen("receipt", "The printed receipt: business details, items, tax and payment.")
     heading("More options")
     bullets([
         "<b>Split</b>: take one sale in several payments, for example part cash and part card.",
@@ -290,23 +301,38 @@ def manual_content():
     screen("sales", "Every sale with its receipt. Select a sale to reprint, refund or void it.")
     para("Open <b>Sales</b> to find any sale by receipt number, customer or payment method. Select it to see the receipt, print it "
          "again or send it by WhatsApp. Refunds and voids of completed sales are recorded with a reason and need a manager's approval.")
+    para("For a refunded or voided sale, click <b>Credit note</b> to print a credit note against the original invoice, with the tax "
+         "given back. Give it to the customer and keep a copy for your accountant.")
+    screen("credit-note", "A credit note for a refund.")
 
     chapter("Products and stock", "Catalog, inventory, suppliers and expiry dates")
     screen("catalog", "The catalog lists every product with its picture, price and stock.")
     heading("Add a product")
     steps([
         "Open <b>Catalog</b> and click <b>Add product</b>.",
-        "Enter the name, SKU, barcode, category, selling price and cost.",
+        "Enter the name, category, selling price and cost. Leave <b>SKU</b> blank and Ajoke POS makes one from the category "
+        "(for example BAK-0001); the barcode is optional.",
         "Enter the opening stock and the <b>reorder point</b> (Ajoke POS warns when stock falls to this level).",
         "Optionally upload a picture, then click <b>Save</b>.",
     ])
     screen("catalog-add", "Adding a product.")
     note("Product categories are managed in Settings. Prices use your currency's decimals, for example 4.99.")
+    heading("Import products from Excel")
+    para("Moving from another system or a spreadsheet? Click <b>Import</b> in the Catalog, download the <b>Template</b> if you like, "
+         "and choose your Excel (.xlsx) or CSV file. Your own column names usually work (for example <i>Item name</i>, "
+         "<i>Selling price</i>, <i>Qty</i>).")
+    screen("import", "Every row is checked first; problems are listed by row number.")
+    bullets([
+        "Nothing is saved until you click <b>Import</b>. Rows with problems are skipped, so fix them and import the file again.",
+        "A product already in the catalog (same SKU, or same name when there is no SKU) gets its prices and category updated.",
+        "New categories are added for you. Stock in the file is the opening stock of new products; change existing stock with a stock count.",
+    ])
     heading("Inventory")
     screen("inventory", "Inventory: stock levels, suppliers, deliveries, counts and transfers.")
     bullets([
         "<b>Receive deliveries</b> from suppliers. Record the quantity and the <b>expiry date</b> of each batch.",
-        "<b>Purchase orders</b> and supplier invoices keep track of what you ordered and what you owe.",
+        "<b>Purchase orders</b> and supplier invoices keep track of what you ordered and what you owe. Enter the VAT shown on "
+        "each invoice, and any withholding tax you deduct when paying, so the VAT and tax reports are right.",
         "<b>Stock counts</b>: count the shelves and Ajoke POS records the differences.",
         "<b>Adjustments</b> for damage or waste, always with a reason.",
         "<b>Transfers</b> move stock between branches.",
@@ -321,7 +347,28 @@ def manual_content():
         "Give trusted customers a <b>credit limit</b> so they can buy on account. Ajoke POS stops credit sales above the limit.",
         "Record payments against a customer's balance from their ledger.",
         "Loyalty points build up automatically on sales to that customer.",
+        "Click <b>Import</b> to bring in customers from Excel, with what each one already owed you (and since when).",
     ])
+    heading("Statements of account")
+    para("Click the statement button on a customer's row to print their <b>statement of account</b>: the balance brought forward, "
+         "each credit sale and payment, the balance due, and how long it has been owed.")
+    screen("statement", "A customer's statement of account.")
+
+    chapter("Quotations and proforma invoices", "Price it on paper first, sell it later")
+    para("When a customer asks for a price first, open <b>Quotations</b> and click <b>Quotation</b> (or <b>Proforma invoice</b> "
+         "when they need an invoice to arrange payment).")
+    screen("quotation-new", "Making a quotation from the catalogue.")
+    steps([
+        "Choose a saved customer or type the customer's name and phone.",
+        "Search for each item, then set the quantities. Staff who may give discounts can enter a discount per unit.",
+        "Set <b>Valid until</b> and add a note if needed (for example delivery terms).",
+        "Click <b>Save and print</b>, then print it or save it as a PDF to send.",
+    ])
+    screen("quotation-print", "The printed quotation.")
+    screen("quotations", "All quotations, with their status.")
+    para("When the customer comes to buy, click the till button on the quotation. Its items and customer go into the POS cart, "
+         "and the quotation is marked <b>Sold</b> when the sale is paid. The till uses today's prices and tells you if any changed.")
+    screen("quotation-till", "A quotation loaded into the till.")
 
     chapter("Cash register", "Open, count and close the till")
     screen("register", "The register: shift overview, payment checks and cash movements.")
@@ -338,6 +385,8 @@ def manual_content():
     screen("expenses", "Expenses with category, vendor, amount and payment method.")
     para("Record rent, utilities, supplies and other costs under <b>Expenses</b>. Choose whether it was paid from the till drawer, "
          "by card or by transfer. Large expenses wait for a manager's approval. Expenses are subtracted from profit in reports.")
+    para("If the vendor's invoice includes VAT, enter it under <b>VAT included</b>. If you deduct withholding tax (for example on "
+         "rent or professional fees), enter it under <b>Withholding tax deducted</b>; the vendor is paid the rest.")
 
     chapter("Dashboard and reports", "See how the business is doing")
     screen("dashboard", "The owner dashboard: today's sales, tax, profit, approvals and low stock.")
@@ -349,6 +398,28 @@ def manual_content():
         "See sales, profit, tax, discounts, payment methods, best-selling products and categories, staff and approvals.",
         "<b>Export CSV</b> to open the figures in Excel or Google Sheets, or <b>Print/PDF</b>.",
     ])
+
+    chapter("Accounts and tax", "Debtors, creditors, VAT and your accountant")
+    para("These panels are at the bottom of the <b>Reports</b> page.")
+    heading("Who owes us and who we owe")
+    screen("debtors", "Customer balances by age, and supplier invoices by how overdue they are.")
+    para("Each customer's balance is split into 0-30, 31-60, 61-90 and over 90 days (payments settle the oldest credit first). "
+         "Click <b>Statement</b> to print one. Supplier invoices you have not paid are shown by how late they are.")
+    heading("VAT and withholding tax")
+    screen("tax", "The VAT return and withholding tax for a period.")
+    para("Choose the period (usually last month). Ajoke POS shows the VAT you charged on sales, less VAT given back on refunds, "
+         "less the VAT on your purchases and expenses: the <b>VAT payable</b>, or a credit to carry forward. Below it is the "
+         "withholding tax you deducted, by payee, to pay to the tax office. Print it or download it as a spreadsheet.")
+    note("In Nigeria, VAT and withholding tax for a month are due by the 21st of the following month. Check the rules with your accountant.")
+    heading("Export for your accountant")
+    screen("accountant", "The month's books as Tally import files or a spreadsheet day book.")
+    steps([
+        "Choose the period and branch.",
+        "For <b>Tally</b>: download <b>1. Ledgers</b> once and import it in Tally under Import, Masters; then download "
+        "<b>2. Vouchers</b> each month and import it under Import, Transactions.",
+        "For Excel, QuickBooks, Sage or others: download the <b>Day book (CSV)</b>.",
+    ])
+    note("Ledger names (for example the cash and bank accounts) can be changed in Settings, under Accounting export, to match your accountant's.")
 
     chapter("Staff and security", "Sign-ins, roles, approvals and the audit trail")
     screen("staff", "Each staff member has their own sign-in.")
@@ -396,6 +467,7 @@ def manual_content():
         "<b>Receipt</b>: the message printed at the bottom, and WhatsApp receipts.",
         "<b>Product categories</b>: add, rename or remove categories.",
         "<b>Hardware</b>: receipt printer, cash drawer and barcode scanner.",
+        "<b>Accounting export</b>: the ledger names and Tally company your accountant uses.",
     ])
 
     chapter("Backups, updates and support", "Keep your business safe")
