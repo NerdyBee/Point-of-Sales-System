@@ -1,4 +1,4 @@
-import { ArrowDownUp, Check, ClipboardCheck, Download, FileText, Plus, RefreshCcw, Search, Trash2, Upload, X } from "lucide-react";
+import { ArrowDownUp, Check, ClipboardCheck, Download, FileSpreadsheet, FileText, Plus, RefreshCcw, Search, Trash2, Upload, X } from "lucide-react";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ExpiringPanel } from "./ExpiringPanel";
 import {
@@ -51,6 +51,7 @@ import type { Product } from "../catalog/types";
 
 import { MoneyInput } from "../../shared/components/MoneyInput";
 import { toMajorUnits } from "../../shared/utils/money";
+import { ImportDialog } from "../../shared/components/ImportDialog";
 const defaultBranchId = "";
 const fallbackBranches: BranchOption[] = [];
 
@@ -174,6 +175,7 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
   const [transfers, setTransfers] = useState<InventoryTransfer[]>([]);
   const [branches, setBranches] = useState<BranchOption[]>(fallbackBranches);
   const [branchId, setBranchId] = useState(initialBranchId);
+  const [importOpen, setImportOpen] = useState(false);
   const [adjustment, setAdjustment] = useState<StockAdjustmentPayload>(defaultAdjustment(initialBranchId));
   const [purchase, setPurchase] = useState<PurchaseReceiptPayload>(defaultPurchase(initialBranchId));
   const [supplierModalOpen, setSupplierModalOpen] = useState(false);
@@ -1003,6 +1005,7 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
 
   return (
     <div className="module-view">
+      {importOpen ? <ImportDialog kind="supplier-balances" defaultBranchId={branchId} onClose={() => setImportOpen(false)} onImported={() => void loadInventory()} /> : null}
       <div className="module-heading">
         <div>
           <p className="eyebrow">Stock control</p>
@@ -1273,6 +1276,7 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
           />
           <div className="panel-header register-history-header">
             <h2>Supplier invoices</h2>
+            <button className="ghost-button" onClick={() => setImportOpen(true)} title="Import what you owed suppliers when you started"><FileSpreadsheet size={16} /> Import balances</button>
             <span>{supplierInvoices.length} invoices</span>
           </div>
           <div className="stack">

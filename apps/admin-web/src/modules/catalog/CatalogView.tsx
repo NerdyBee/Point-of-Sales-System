@@ -1,10 +1,11 @@
-import { Check, Pencil, Plus, RefreshCcw, Search, X } from "lucide-react";
+import { Check, FileSpreadsheet, Pencil, Plus, RefreshCcw, Search, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createCatalogProduct, fetchBranchOptions, fetchCatalogProducts, readStoredAuth, resolveMediaUrl, updateCatalogProduct, uploadProductImage, type BranchOption, type ProductPayload } from "../../shared/api/client";
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 import type { Product, ProductCategory } from "./types";
 
 import { MoneyInput } from "../../shared/components/MoneyInput";
+import { ImportDialog } from "../../shared/components/ImportDialog";
 const defaultTaxRate = 0.075;
 const fallbackBranches: BranchOption[] = [];
 type StockFilter = "" | "stocked" | "low" | "out" | "services";
@@ -44,6 +45,7 @@ export function CatalogView() {
   const categories = settings?.productCategories.length ? settings.productCategories : [];
   const [form, setForm] = useState<ProductPayload>(blankProduct(defaultTaxRate, activeBranchId));
   const [modalOpen, setModalOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [branchFilter, setBranchFilter] = useState(activeBranchId);
@@ -228,6 +230,7 @@ export function CatalogView() {
 
   return (
     <div className="module-view">
+      {importOpen ? <ImportDialog kind="products" defaultBranchId={activeBranchId} onClose={() => setImportOpen(false)} onImported={() => void loadProducts()} /> : null}
       <div className="module-heading">
         <div>
           <p className="eyebrow">Products, menus and pricing</p>
@@ -235,6 +238,7 @@ export function CatalogView() {
         </div>
         <div className="button-group">
           <button className="secondary-button" onClick={loadProducts}><RefreshCcw size={18} /> Sync</button>
+          <button className="secondary-button" onClick={() => setImportOpen(true)}><FileSpreadsheet size={18} /> Import</button>
           <button className="primary-button" onClick={resetForm}><Plus size={18} /> Add product</button>
         </div>
       </div>

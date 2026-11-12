@@ -2402,3 +2402,18 @@ export interface TaxReturn {
 export async function fetchTaxReturn(from: string, to: string, branchId = "") {
   return requestJson<TaxReturn>(`/api/v1/accounting/tax-return${queryString({ from, to, branchId })}`);
 }
+
+export type ImportKind = "products" | "customers" | "supplier-balances";
+
+export interface ImportResult {
+  committed: boolean;
+  created: number;
+  updated: number;
+  skipped: number;
+  rows: { row: number; action: "create" | "update" | "skip"; label: string; errors: string[]; warnings: string[] }[];
+}
+
+/** Checks spreadsheet rows (commit false) or saves the good ones (commit true). */
+export async function importSpreadsheetRows(kind: ImportKind, branchId: string, rows: Record<string, string | number | null>[], commit: boolean) {
+  return requestJson<ImportResult>(`/api/v1/imports/${kind}`, { method: "POST", body: JSON.stringify({ branchId, rows, commit }) });
+}

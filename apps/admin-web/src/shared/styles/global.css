@@ -5038,3 +5038,46 @@ th {
   border-top: 2px solid var(--outline);
   font-weight: 700;
 }
+
+/* Spreadsheet import */
+.import-modal {
+  max-width: 820px;
+  width: min(820px, calc(100vw - 32px));
+}
+
+.import-body {
+  display: grid;
+  gap: 12px;
+}
+
+.import-body p {
+  margin: 0;
+}
+
+.import-notes {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.import-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.import-summary strong {
+  font-size: 20px;
+  margin-right: 4px;
+}
+
+.import-skipped,
+.import-error {
+  color: #b42318;
+}
+
+.import-problems {
+  max-height: 320px;
+  overflow-y: auto;
+}

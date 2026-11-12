@@ -1,4 +1,4 @@
-import { Check, CreditCard, FileText, Gift, MessageCircle, Pencil, Plus, RefreshCcw, Search, X } from "lucide-react";
+import { Check, CreditCard, FileSpreadsheet, FileText, Gift, MessageCircle, Pencil, Plus, RefreshCcw, Search, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyApproval,
@@ -26,6 +26,7 @@ import { printCustomerStatement } from "./statementPrint";
 import { dateRangeErrorMessage, hasInvertedDateRange } from "../../shared/utils/dateFilters";
 
 import { MoneyInput } from "../../shared/components/MoneyInput";
+import { ImportDialog } from "../../shared/components/ImportDialog";
 const blankCustomer: CustomerPayload = {
   name: "",
   phone: "",
@@ -59,6 +60,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
   const initialTerminalId = storedAuth?.session.terminalId ?? "";
   const activeUserId = storedAuth?.staff.id ?? "";
   const [branchId, setBranchId] = useState(initialBranchId);
+  const [importOpen, setImportOpen] = useState(false);
   const [terminalId, setTerminalId] = useState(initialTerminalId);
   const [branches, setBranches] = useState<BranchOption[]>([]);
   const [terminals, setTerminals] = useState<TerminalOption[]>([]);
@@ -474,6 +476,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
 
   return (
     <div className="module-view">
+      {importOpen ? <ImportDialog kind="customers" defaultBranchId={branchId} onClose={() => setImportOpen(false)} onImported={() => void loadCustomers(query, branchId)} /> : null}
       <div className="module-heading">
         <div>
           <p className="eyebrow">Loyalty, receipts and credit control</p>
@@ -502,6 +505,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
             </select>
           </label>
           <button className="secondary-button" onClick={() => { void loadBranchOptions(); void loadCustomers(query, branchId); }}><RefreshCcw size={18} /> Sync</button>
+          <button className="secondary-button" onClick={() => setImportOpen(true)}><FileSpreadsheet size={18} /> Import</button>
           <button className="primary-button" onClick={resetForm}><Plus size={18} /> Add customer</button>
         </div>
       </div>

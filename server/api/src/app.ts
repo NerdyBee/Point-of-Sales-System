@@ -7,6 +7,7 @@ import path from "node:path";
 import { accountingRouter } from "./modules/accounting/accounting.routes";
 import { accountsRouter } from "./modules/accounts/accounts.routes";
 import { quotationsRouter } from "./modules/quotations/quotations.routes";
+import { importsRouter } from "./modules/imports/imports.routes";
 import { approvalsRouter } from "./modules/approvals/approvals.routes";
 import { authRouter } from "./modules/auth/auth.routes";
 import { auditRouter } from "./modules/audit/audit.routes";
@@ -38,6 +39,7 @@ export function createApp() {
   app.use(cors());
   // Replication batches (office <-> cloud) can be large; everything else keeps 1mb.
   app.use("/api/v1/sync", express.json({ limit: "25mb" }));
+  app.use("/api/v1/imports", express.json({ limit: "10mb" }));
   app.use(express.json({ limit: "1mb" }));
   app.use(morgan("dev"));
   app.use(attachTenantContext);
@@ -68,6 +70,7 @@ export function createApp() {
   app.use("/api/v1/accounting", accountingRouter);
   app.use("/api/v1/accounts", accountsRouter);
   app.use("/api/v1/quotations", quotationsRouter);
+  app.use("/api/v1/imports", importsRouter);
 
   // Installed builds serve the admin web app from the same address as the API.
   const webDir = process.env.WEB_DIR ? path.resolve(process.env.WEB_DIR) : "";
