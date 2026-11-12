@@ -1,4 +1,4 @@
-import { profileSecurityUpdateSchema, profileUpdateSchema, staffInputSchema, staffSecurityUpdateSchema, staffStatusSchema } from "@pos/validation";
+import { profileSecurityUpdateSchema, profileUpdateSchema, staffInputSchema, staffSecurityUpdateSchema, staffStatusSchema, patchSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
 import { canAccessAllBranches, canAccessScopedBranches, resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import { createStaff, getStaffProfile, listStaff, resendStaffInvite, revokeStaffInvite, setStaffStatus, updateOwnProfile, updateOwnSecurity, updateStaff, updateStaffSecurity } from "./staff.repository";
@@ -140,7 +140,7 @@ staffRouter.post("/", requireTenant, requirePermission("staff.manage"), async (r
 });
 
 staffRouter.patch("/:staffId", requireTenant, requirePermission("staff.manage"), async (req, res) => {
-  const parsed = staffInputSchema.partial().safeParse(req.body);
+  const parsed = patchSchema(staffInputSchema).safeParse(req.body);
 
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid staff payload", issues: parsed.error.flatten() });

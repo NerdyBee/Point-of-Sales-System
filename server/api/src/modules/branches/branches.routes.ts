@@ -1,4 +1,4 @@
-import { branchInputSchema, terminalInputSchema } from "@pos/validation";
+import { branchInputSchema, terminalInputSchema, patchSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
 import { canAccessAllBranches, canAccessScopedBranches, resolveBranchScope, requireAuthenticatedUser, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import { createBranch, createTerminal, listBranchOptions, listBranches, updateBranch, updateTerminal } from "./branches.repository";
@@ -96,7 +96,7 @@ branchesRouter.patch("/:branchId", requireTenant, requirePermission("branch.mana
     return;
   }
 
-  const parsed = branchInputSchema.partial().safeParse(req.body);
+  const parsed = patchSchema(branchInputSchema).safeParse(req.body);
 
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid branch payload", issues: parsed.error.flatten() });
@@ -176,7 +176,7 @@ branchesRouter.post("/terminals", requireTenant, requirePermission("branch.manag
 });
 
 branchesRouter.patch("/terminals/:terminalId", requireTenant, requirePermission("branch.manage"), async (req, res) => {
-  const parsed = terminalInputSchema.partial().safeParse(req.body);
+  const parsed = patchSchema(terminalInputSchema).safeParse(req.body);
 
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid terminal payload", issues: parsed.error.flatten() });

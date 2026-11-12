@@ -1,4 +1,4 @@
-import { roleInputSchema, rolePermissionUpdateSchema, staffRoleAssignmentSchema } from "@pos/validation";
+import { roleInputSchema, rolePermissionUpdateSchema, staffRoleAssignmentSchema, patchSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
 import { canAccessAllBranches, canAccessScopedBranches, requirePermission, requireTenant, resolveBranchScope } from "../../shared/http/tenantContext";
 import { assignStaffRole, createRole, listPermissionCatalog, listRoleOptions, listRoles, updateRole, updateRolePermissions } from "./roles.repository";
@@ -57,7 +57,7 @@ rolesRouter.post("/", requireTenant, requirePermission("roles.manage"), async (r
 });
 
 rolesRouter.patch("/:roleId", requireTenant, requirePermission("roles.manage"), async (req, res) => {
-  const parsed = roleInputSchema.pick({ label: true, description: true }).partial().safeParse(req.body);
+  const parsed = patchSchema(roleInputSchema.pick({ label: true, description: true })).safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid role payload", issues: parsed.error.flatten() });
     return;

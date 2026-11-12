@@ -1,7 +1,7 @@
 import { Router, raw, type Request } from "express";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { productClearanceSchema, productInputSchema } from "@pos/validation";
+import { productClearanceSchema, productInputSchema, patchSchema } from "@pos/validation";
 import { endProductClearance, setProductClearance } from "../inventory/expiry.repository";
 import { canAccessAllBranches, canAccessScopedBranches, resolveBranchScope, requireAnyPermission, requirePermission, requireTenant } from "../../shared/http/tenantContext";
 import {
@@ -239,7 +239,7 @@ catalogRouter.delete("/products/:productId/clearance", requireTenant, requirePer
 });
 
 catalogRouter.patch("/products/:productId", requireTenant, requirePermission("catalog.manage"), async (req, res) => {
-  const parsed = productInputSchema.partial().safeParse(req.body);
+  const parsed = patchSchema(productInputSchema).safeParse(req.body);
   const productId = req.params.productId.toString();
 
   if (!parsed.success) {

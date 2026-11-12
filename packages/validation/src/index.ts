@@ -639,3 +639,15 @@ export const quotationStatusSchema = z.object({
   status: z.enum(["accepted", "cancelled", "converted"]),
   saleId: z.string().max(64).optional()
 });
+
+/**
+ * Schema for an edit (PATCH): every field optional and, unlike `.partial()` in Zod 4, without
+ * defaults, so fields the request leaves out stay as they are instead of being reset (a price
+ * change must not wipe a product's modifiers or a customer's loyalty points).
+ */
+export function patchSchema<T extends z.ZodObject>(schema: T): ReturnType<T["partial"]> {
+  const shape = Object.fromEntries(
+    Object.entries(schema.shape).map(([key, field]) => [key, (field instanceof z.ZodDefault ? field.unwrap() : field).optional()])
+  );
+  return z.object(shape) as unknown as ReturnType<T["partial"]>;
+}

@@ -1,4 +1,4 @@
-import { customerInputSchema, customerLedgerInputSchema } from "@pos/validation";
+import { customerInputSchema, customerLedgerInputSchema, patchSchema } from "@pos/validation";
 import { Router, type Request, type Response } from "express";
 import { canAccessAllBranches, canAccessScopedBranches, requireAnyPermission, requirePermission, requireTenant, resolveBranchScope } from "../../shared/http/tenantContext";
 import { createCustomer, listCustomerLedger, listCustomers, postCustomerLedger, updateCustomer } from "./customers.repository";
@@ -70,7 +70,7 @@ customersRouter.post("/", requireTenant, requirePermission("customer.manage"), a
 });
 
 customersRouter.patch("/:customerId", requireTenant, requirePermission("customer.manage"), async (req, res) => {
-  const parsed = customerInputSchema.partial().safeParse(req.body);
+  const parsed = patchSchema(customerInputSchema).safeParse(req.body);
 
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid customer payload", issues: parsed.error.flatten() });
