@@ -393,6 +393,14 @@ export function SettingsView() {
               <input value={settings.accounting?.purchases ?? ""} onChange={(event) => updateAccounting("purchases", event.target.value)} placeholder="Purchase Account" />
             </label>
             <label>
+              VAT on purchases
+              <input value={settings.accounting?.inputVat ?? ""} onChange={(event) => updateAccounting("inputVat", event.target.value)} placeholder="Input VAT" />
+            </label>
+            <label>
+              Withholding tax
+              <input value={settings.accounting?.withholdingTax ?? ""} onChange={(event) => updateAccounting("withholdingTax", event.target.value)} placeholder="WHT Payable" />
+            </label>
+            <label>
               Customer accounts
               <select value={settings.accounting?.customerLedger ?? "customer"} onChange={(event) => updateAccounting("customerLedger", event.target.value)}>
                 <option value="customer">Each customer's own ledger (Sundry Debtors)</option>

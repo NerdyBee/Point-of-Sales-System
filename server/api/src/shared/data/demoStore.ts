@@ -242,6 +242,8 @@ export interface SupplierInvoicePayment {
   reference: string;
   paidAt: string;
   note?: string;
+  /** Withholding tax kept back (part of amount, not paid to the supplier). */
+  withholdingTax?: number;
   createdBy: string;
 }
 
@@ -266,6 +268,8 @@ export interface SupplierInvoice {
   invoiceDate: string;
   dueDate?: string;
   amount: number;
+  /** VAT included in amount (input VAT). */
+  vatAmount?: number;
   amountPaid: number;
   creditTotal: number;
   balanceDue: number;
@@ -590,6 +594,10 @@ export interface Expense {
   description: string;
   vendor?: string;
   amount: number;
+  /** VAT included in amount (input VAT). */
+  vatAmount?: number;
+  /** Withholding tax kept back from the vendor. */
+  withholdingTax?: number;
   paymentMethod: PaymentMethod;
   reference?: string;
   status: "draft" | "pending_approval" | "approved" | "paid" | "rejected" | "voided";

@@ -393,6 +393,8 @@ model SupplierInvoice {
   amountPaid      Int
   creditTotal     Int      @default(0)
   balanceDue      Int
+  /// VAT included in amount (input VAT the business can claim back)
+  vatAmount       Int       @default(0)
   payments        Json
   credits         Json
   note            String?   @db.VarChar(300)
@@ -813,6 +815,10 @@ model Expense {
   description   String    @db.VarChar(180)
   vendor        String?   @db.VarChar(120)
   amount        Int
+  /// VAT included in amount (input VAT)
+  vatAmount     Int       @default(0)
+  /// Withholding tax kept back from the vendor, to pay to the tax office
+  withholdingTax Int      @default(0)
   paymentMethod String    @db.VarChar(60)
   reference     String?   @db.VarChar(100)
   status        String    @db.VarChar(40)
@@ -1022,7 +1028,9 @@ model Quotation {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, number])
+  // Not unique: an office and its cloud can each number a quote while apart, and sync must
+  // still apply both.
+  @@index([tenantId, number])
   @@index([tenantId, createdAt])
   @@index([tenantId, status])
   @@map("quotations")

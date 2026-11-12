@@ -67,6 +67,7 @@ type SupplierInvoiceInput = {
   invoiceDate: string;
   dueDate?: string;
   amount: number;
+  vatAmount?: number;
   note?: string;
 };
 type SupplierInvoicePaymentInput = {
@@ -75,6 +76,7 @@ type SupplierInvoicePaymentInput = {
   reference: string;
   paidAt: string;
   note?: string;
+  withholdingTax?: number;
 };
 type SupplierReturnInput = {
   branchId: string;
@@ -213,6 +215,7 @@ function toApiSupplierInvoice(invoice: DbSupplierInvoice): SupplierInvoice {
     invoiceDate: invoice.invoiceDate.toISOString(),
     dueDate: invoice.dueDate?.toISOString(),
     amount: invoice.amount,
+    vatAmount: invoice.vatAmount,
     amountPaid: invoice.amountPaid,
     creditTotal: invoice.creditTotal,
     balanceDue: invoice.balanceDue,
@@ -758,6 +761,7 @@ export async function createSupplierInvoice(tenantId: string, userId: string, in
       invoiceDate: input.invoiceDate,
       dueDate: input.dueDate || undefined,
       amount: input.amount,
+      vatAmount: input.vatAmount ?? 0,
       amountPaid: 0,
       creditTotal: 0,
       balanceDue: input.amount,
@@ -804,6 +808,7 @@ export async function createSupplierInvoice(tenantId: string, userId: string, in
         invoiceDate: new Date(input.invoiceDate),
         dueDate: input.dueDate ? new Date(input.dueDate) : null,
         amount: input.amount,
+        vatAmount: input.vatAmount ?? 0,
         amountPaid: 0,
         creditTotal: 0,
         balanceDue: input.amount,

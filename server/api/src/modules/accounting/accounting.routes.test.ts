@@ -44,3 +44,22 @@ describe("accountant export", () => {
     expect((await exportAs("summary", "cashier")).status).toBe(403);
   });
 });
+
+describe("VAT and withholding tax return", () => {
+  const taxReturn = (format = "summary", role = "owner") =>
+    request(app).get(`/api/v1/accounting/tax-return?from=${day(-400)}&to=${day(1)}&format=${format}`).set("x-tenant-id", "tenant-lagos-foods").set("x-role", role).set("x-user-id", "LCF-MAI-ADA");
+
+  it("returns output and input VAT and the WHT schedule", async () => {
+    const response = await taxReturn();
+    expect(response.status).toBe(200);
+    expect(response.body.vat.netVat).toBe(response.body.vat.outputVat - response.body.vat.inputVat);
+    expect(Array.isArray(response.body.withholding.rows)).toBe(true);
+  });
+
+  it("downloads a CSV, for owners and accountants only", async () => {
+    const csv = await taxReturn("csv");
+    expect(csv.headers["content-disposition"]).toMatch(/ajokepos-vat-wht-/);
+    expect(csv.text).toContain("Output VAT");
+    expect((await taxReturn("summary", "cashier")).status).toBe(403);
+  });
+});

@@ -39,6 +39,8 @@ function blankExpense(branchId = ""): ExpensePayload {
     description: "",
     vendor: "",
     amount: 0,
+    vatAmount: 0,
+    withholdingTax: 0,
     paymentMethod: "" as ExpensePaymentMethodCode,
     reference: "",
     status: "" as ExpenseStatus,
@@ -460,6 +462,16 @@ export function ExpensesView({ approvalHandoff, onApprovalHandoffConsumed }: Exp
               <label>
                 Amount
                 <MoneyInput min={1} value={form.amount} onChange={(amount) => updateForm("amount", amount)} required />
+              </label>
+              <label>
+                VAT included
+                <MoneyInput min={0} max={Math.max(0, form.amount - 1)} value={form.vatAmount ?? 0} onChange={(amount) => updateForm("vatAmount", amount)} />
+                <small className="muted-text">From the vendor's invoice; 0 if none.</small>
+              </label>
+              <label>
+                Withholding tax deducted
+                <MoneyInput min={0} max={Math.max(0, form.amount - 1)} value={form.withholdingTax ?? 0} onChange={(amount) => updateForm("withholdingTax", amount)} />
+                <small className="muted-text">{form.withholdingTax ? `Vendor receives ${displayMoney(form.amount - form.withholdingTax)}` : "e.g. rent or professional fees"}</small>
               </label>
               <label>
                 Spent date

@@ -70,13 +70,13 @@ export async function loadVoucherData(scope: ExportScope): Promise<Omit<VoucherI
         .map((entry): CustomerPaymentInput => ({ id: entry.id, branchId: entry.branchId, customerName: customerNames.get(entry.customerId) ?? entry.customerId, amount: Math.abs(entry.amount), at: entry.createdAt, note: entry.note })),
       purchases: demoInvoices
         .filter((invoice) => invoice.tenantId === tenantId && within(invoice.invoiceDate, scope) && inBranches(invoice.branchId, scope))
-        .map((invoice): PurchaseInput => ({ id: invoice.id, branchId: invoice.branchId, supplierName: invoice.supplierName, invoiceNumber: invoice.invoiceNumber, amount: invoice.amount, date: invoice.invoiceDate })),
+        .map((invoice): PurchaseInput => ({ id: invoice.id, branchId: invoice.branchId, supplierName: invoice.supplierName, invoiceNumber: invoice.invoiceNumber, amount: invoice.amount, vat: invoice.vatAmount ?? 0, date: invoice.invoiceDate })),
       supplierPayments: demoInvoices
         .filter((invoice) => invoice.tenantId === tenantId && inBranches(invoice.branchId, scope))
-        .flatMap((invoice) => invoice.payments.filter((payment) => within(payment.paidAt, scope)).map((payment): SupplierPaymentInput => ({ id: payment.id, branchId: invoice.branchId, supplierName: invoice.supplierName, invoiceNumber: invoice.invoiceNumber, amount: payment.amount, method: payment.paymentMethod, reference: payment.reference, at: payment.paidAt }))),
+        .flatMap((invoice) => invoice.payments.filter((payment) => within(payment.paidAt, scope)).map((payment): SupplierPaymentInput => ({ id: payment.id, branchId: invoice.branchId, supplierName: invoice.supplierName, invoiceNumber: invoice.invoiceNumber, amount: payment.amount, method: payment.paymentMethod, reference: payment.reference, withholdingTax: payment.withholdingTax ?? 0, at: payment.paidAt }))),
       expenses: demoExpenses
         .filter((expense) => expense.tenantId === tenantId && expense.status === "paid" && within(expense.spentAt, scope) && inBranches(expense.branchId, scope))
-        .map((expense): ExpenseInput => ({ id: expense.id, branchId: expense.branchId, category: expense.category, description: expense.description, vendor: expense.vendor, amount: expense.amount, method: expense.paymentMethod, at: expense.spentAt }))
+        .map((expense): ExpenseInput => ({ id: expense.id, branchId: expense.branchId, category: expense.category, description: expense.description, vendor: expense.vendor, amount: expense.amount, vat: expense.vatAmount ?? 0, withholdingTax: expense.withholdingTax ?? 0, method: expense.paymentMethod, at: expense.spentAt }))
     };
   }
 
@@ -117,12 +117,12 @@ export async function loadVoucherData(scope: ExportScope): Promise<Omit<VoucherI
     sales: sales.map((sale) => saleInputs.get(sale.id)!),
     returns: toReturns(returnEvents, earlierRefunds, saleInputs),
     customerPayments: ledgerRows.map((entry) => ({ id: entry.id, branchId: entry.branchId, customerName: customerNames.get(entry.customerId) ?? entry.customerId, amount: Math.abs(entry.amount), at: entry.createdAt.toISOString(), note: entry.note })),
-    purchases: invoiceRows.filter((invoice) => within(invoice.invoiceDate, scope)).map((invoice) => ({ id: invoice.id, branchId: invoice.branchId, supplierName: invoice.supplierName, invoiceNumber: invoice.invoiceNumber, amount: invoice.amount, date: invoice.invoiceDate.toISOString() })),
+    purchases: invoiceRows.filter((invoice) => within(invoice.invoiceDate, scope)).map((invoice) => ({ id: invoice.id, branchId: invoice.branchId, supplierName: invoice.supplierName, invoiceNumber: invoice.invoiceNumber, amount: invoice.amount, vat: invoice.vatAmount ?? 0, date: invoice.invoiceDate.toISOString() })),
     supplierPayments: invoiceRows.flatMap((invoice) =>
-      (Array.isArray(invoice.payments) ? (invoice.payments as { id: string; amount: number; paymentMethod: string; reference: string; paidAt: string }[]) : [])
+      (Array.isArray(invoice.payments) ? (invoice.payments as { id: string; amount: number; paymentMethod: string; reference: string; paidAt: string; withholdingTax?: number }[]) : [])
         .filter((payment) => within(payment.paidAt, scope))
-        .map((payment) => ({ id: payment.id, branchId: invoice.branchId, supplierName: invoice.supplierName, invoiceNumber: invoice.invoiceNumber, amount: payment.amount, method: payment.paymentMethod, reference: payment.reference, at: payment.paidAt }))
+        .map((payment) => ({ id: payment.id, branchId: invoice.branchId, supplierName: invoice.supplierName, invoiceNumber: invoice.invoiceNumber, amount: payment.amount, method: payment.paymentMethod, reference: payment.reference, withholdingTax: payment.withholdingTax ?? 0, at: payment.paidAt }))
     ),
-    expenses: expenseRows.map((expense) => ({ id: expense.id, branchId: expense.branchId, category: expense.category, description: expense.description, vendor: expense.vendor, amount: expense.amount, method: expense.paymentMethod, at: expense.spentAt.toISOString() }))
+    expenses: expenseRows.map((expense) => ({ id: expense.id, branchId: expense.branchId, category: expense.category, description: expense.description, vendor: expense.vendor, amount: expense.amount, vat: expense.vatAmount ?? 0, withholdingTax: expense.withholdingTax ?? 0, method: expense.paymentMethod, at: expense.spentAt.toISOString() }))
   };
 }

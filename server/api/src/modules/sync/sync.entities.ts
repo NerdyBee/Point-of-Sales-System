@@ -104,6 +104,7 @@ export const syncEntities: SyncEntity[] = [
   { model: "RegisterShift", table: "register_shifts", delegate: "registerShift", pk: ["id"], rank: 2, scope: { tenant: row("tenantId"), branch: row("branchId") }, counters: ["expectedCash"], direction: "both", device: true },
   { model: "ApprovalRequest", table: "approval_requests", delegate: "approvalRequest", pk: ["id"], rank: 2, scope: { tenant: row("tenantId"), branch: row("branchId") }, direction: "both" },
   { model: "Expense", table: "expenses", delegate: "expense", pk: ["id"], rank: 2, scope: { tenant: row("tenantId"), branch: row("branchId") }, direction: "both" },
+  { model: "Quotation", table: "quotations", delegate: "quotation", pk: ["id"], rank: 2, scope: { tenant: row("tenantId"), branch: row("branchId") }, direction: "both" },
   { model: "RestaurantTable", table: "restaurant_tables", delegate: "restaurantTable", pk: ["id"], rank: 2, scope: { tenant: row("tenantId"), branch: row("branchId") }, direction: "both", device: true },
   { model: "PrepTicket", table: "prep_tickets", delegate: "prepTicket", pk: ["id"], rank: 2, scope: { tenant: row("tenantId"), branch: row("branchId") }, direction: "both" },
   // Audit history flows up to the cloud for central review but is never pulled down.

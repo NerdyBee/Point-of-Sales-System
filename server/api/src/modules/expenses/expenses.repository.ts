@@ -39,6 +39,8 @@ function toApiExpense(expense: DbExpense): Expense {
     description: expense.description,
     vendor: expense.vendor ?? undefined,
     amount: expense.amount,
+    vatAmount: expense.vatAmount,
+    withholdingTax: expense.withholdingTax,
     paymentMethod: expense.paymentMethod as Expense["paymentMethod"],
     reference: expense.reference ?? undefined,
     status: expense.status as ExpenseStatus,

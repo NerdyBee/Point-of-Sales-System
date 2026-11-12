@@ -151,28 +151,24 @@ export async function createQuotation(tenantId: string, userId: string, input: Q
     return { status: "created" as const, quotation: toApi(row) };
   }
 
-  // Two tills saving at once can pick the same number: try the next one.
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const count = await prisma.quotation.count({ where: { tenantId, kind: input.kind } });
-    try {
-      const row = await prisma.quotation.create({
-        data: {
-          ...base,
-          id: `quote-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          number: numberAfter(count + attempt),
-          summary,
-          validUntil: endOfDay(input.validUntil)
-        }
-      });
-      await prisma.auditEvent.create({
-        data: { id: `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, tenantId, branchId: input.branchId, userId, action: input.kind === "proforma" ? ("proforma.created" as const) : ("quotation.created" as const), entityType: "quotation", entityId: row.id, metadata: { number: row.number, total: summary.total } }
-      });
-      return { status: "created" as const, quotation: toApi({ ...row, kind: row.kind as Quotation["kind"], status: row.status as QuotationStatus }) };
-    } catch (error) {
-      if ((error as { code?: string }).code !== "P2002") throw error;
-    }
-  }
-  throw new Error("Could not number the quotation; try again");
+  // Counted and saved in one transaction so two tills saving together get different numbers.
+  const row = await prisma.$transaction(async (tx) => {
+    const count = await tx.quotation.count({ where: { tenantId, kind: input.kind } });
+    const created = await tx.quotation.create({
+      data: {
+        ...base,
+        id: `quote-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        number: numberAfter(count),
+        summary,
+        validUntil: endOfDay(input.validUntil)
+      }
+    });
+    await tx.auditEvent.create({
+      data: { id: `audit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, tenantId, branchId: input.branchId, userId, action: input.kind === "proforma" ? "proforma.created" : "quotation.created", entityType: "quotation", entityId: created.id, metadata: { number: created.number, total: summary.total } }
+    });
+    return created;
+  }, { isolationLevel: "Serializable" });
+  return { status: "created" as const, quotation: toApi({ ...row, kind: row.kind as Quotation["kind"], status: row.status as QuotationStatus }) };
 }
 
 export async function setQuotationStatus(tenantId: string, userId: string, id: string, status: QuotationStatus, saleId?: string, branchIds?: string[]) {

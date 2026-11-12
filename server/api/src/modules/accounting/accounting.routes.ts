@@ -2,7 +2,8 @@ import { Router, type Request } from "express";
 import { canAccessAllBranches, canAccessScopedBranches, requirePermission, requireTenant, resolveBranchScope } from "../../shared/http/tenantContext";
 import { getCurrentTenant } from "../tenants/tenants.repository";
 import { loadVoucherData } from "./accounting.repository";
-import { dayBookCsv, tallyLedgersXml, tallyVouchersXml } from "./formats";
+import { dayBookCsv, decimalAmount, tallyLedgersXml, tallyVouchersXml } from "./formats";
+import { taxReturn, taxReturnCsv } from "./taxReturn";
 import { buildVouchers, defaultLedgers, ledgersUsed, type LedgerNames } from "./vouchers";
 
 /**
@@ -95,3 +96,40 @@ accountingRouter.get("/export", requireTenant, requirePermission("reports.profit
   res.send(tallyVouchersXml(vouchers, { company: tallyCompany, decimals }));
 });
 
+
+/**
+ * GET /api/v1/accounting/tax-return?from&to[&branchId=]&format=summary|csv
+ * VAT return (output VAT less input VAT) and withholding tax schedule for the period.
+ */
+accountingRouter.get("/tax-return", requireTenant, requirePermission("reports.profit.view"), async (req, res) => {
+  const from = parseDay(req.query.from, false);
+  const to = parseDay(req.query.to, true);
+  if (!from || !to || to < from) {
+    res.status(400).json({ error: "Choose a start and end date (YYYY-MM-DD), with the end on or after the start" });
+    return;
+  }
+  const scope = branchScope(req);
+  if ("forbidden" in scope) {
+    res.status(403).json({ error: "Branch access denied" });
+    return;
+  }
+  const tenant = await getCurrentTenant(req.tenantContext!.tenantId);
+  const settings = (tenant?.settings ?? {}) as { moneyDecimals?: number; currency?: string; taxId?: string };
+  const data = await loadVoucherData({ tenantId: req.tenantContext!.tenantId, from, to, branchIds: scope.branchIds });
+  const result = taxReturn(data);
+
+  if (req.query.format === "csv") {
+    res.setHeader("content-type", "text/csv; charset=utf-8");
+    res.setHeader("content-disposition", `attachment; filename="ajokepos-vat-wht-${req.query.from}-to-${req.query.to}.csv"`);
+    res.send(`﻿${taxReturnCsv(result, { from: String(req.query.from), to: String(req.query.to), amount: (value) => decimalAmount(value, settings.moneyDecimals ?? 0), branchName: data.branchName })}`);
+    return;
+  }
+  res.json({
+    from: req.query.from,
+    to: req.query.to,
+    currency: settings.currency,
+    taxId: settings.taxId ?? "",
+    ...result,
+    withholding: { ...result.withholding, rows: result.withholding.rows.map((row) => ({ ...row, branchName: data.branchName(row.branchId) })) }
+  });
+});

@@ -145,16 +145,20 @@ export const supplierInvoiceInputSchema = z.object({
   invoiceDate: z.string().datetime(),
   dueDate: z.string().datetime().optional().or(z.literal("")),
   amount: z.number().int().positive(),
+  /** VAT included in the amount (input VAT). */
+  vatAmount: z.number().int().nonnegative().default(0),
   note: z.string().max(240).optional().or(z.literal(""))
-});
+}).refine((invoice) => invoice.vatAmount < invoice.amount, { message: "VAT must be less than the invoice amount", path: ["vatAmount"] });
 
 export const supplierInvoicePaymentSchema = z.object({
   amount: z.number().int().positive(),
   paymentMethod: z.enum(["cash", "card", "bank_transfer", "mobile_money"]),
   reference: z.string().min(2).max(80),
   paidAt: z.string().datetime(),
-  note: z.string().max(160).optional().or(z.literal(""))
-});
+  note: z.string().max(160).optional().or(z.literal("")),
+  /** Withholding tax kept back: settles this much of the invoice without being paid to the supplier. */
+  withholdingTax: z.number().int().nonnegative().default(0)
+}).refine((payment) => payment.withholdingTax < payment.amount, { message: "Withholding tax must be less than the amount settled", path: ["withholdingTax"] });
 
 export const supplierReturnInputSchema = z.object({
   branchId: z.string().min(1),
@@ -425,8 +429,12 @@ export const expenseInputSchema = z.object({
   reference: z.string().max(100).optional().or(z.literal("")),
   spentAt: z.string().datetime(),
   status: expenseStatusSchema.default("draft"),
-  note: z.string().max(240).optional().or(z.literal(""))
-});
+  note: z.string().max(240).optional().or(z.literal("")),
+  /** VAT included in the amount (input VAT). */
+  vatAmount: z.number().int().nonnegative().default(0),
+  /** Withholding tax kept back from the vendor; the vendor is paid amount minus this. */
+  withholdingTax: z.number().int().nonnegative().default(0)
+}).refine((expense) => expense.vatAmount < expense.amount && expense.withholdingTax < expense.amount, { message: "VAT and withholding tax must be less than the amount", path: ["vatAmount"] });
 
 export const openRegisterShiftSchema = z.object({
   branchId: z.string().min(1),
@@ -514,6 +522,8 @@ export const tenantSettingsSchema = z.object({
     mobileMoney: z.string().trim().max(120).optional(),
     voucher: z.string().trim().max(120).optional(),
     purchases: z.string().trim().max(120).optional(),
+    inputVat: z.string().trim().max(120).optional(),
+    withholdingTax: z.string().trim().max(120).optional(),
     customerLedger: z.enum(["customer", "shared"]).optional(),
     sharedCustomerLedger: z.string().trim().max(120).optional(),
     supplierLedger: z.enum(["supplier", "shared"]).optional(),

@@ -115,6 +115,13 @@ Step "Creating or updating tables"
 Push-Location $Server
 & $Node "node_modules\prisma\build\index.js" db push
 $pushed = $LASTEXITCODE
+# MariaDB applies table changes one at a time; re-creating a foreign key can fail the first
+# time and succeed when run again (the steps before it are already done). Try once more.
+if ($pushed -ne 0) {
+  Write-Host "Retrying the table update once..."
+  & $Node "node_modules\prisma\build\index.js" db push
+  $pushed = $LASTEXITCODE
+}
 Pop-Location
 if ($pushed -ne 0) { Fail "Updating the database tables failed. Nothing was deleted. Send logs and this window's text to your Ajoke POS provider." }
 

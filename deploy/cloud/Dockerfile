@@ -12,5 +12,6 @@ ENV NODE_ENV=production \
     WEB_DIR=/app/web
 EXPOSE 4000
 # Apply schema changes from a new release, then start. db push refuses changes that
-# would delete data, so a risky update stops here instead of losing records.
-CMD ["sh", "-c", "npx prisma db push && node dist/server.cjs"]
+# would delete data, so a risky update stops here instead of losing records. Tried twice:
+# MariaDB can fail re-creating a foreign key the first time and succeed the second.
+CMD ["sh", "-c", "(npx prisma db push || npx prisma db push) && node dist/server.cjs"]

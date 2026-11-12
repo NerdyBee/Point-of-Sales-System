@@ -5,6 +5,7 @@ import { StatCard } from "../../shared/components/StatCard";
 import { TablePagination, usePaginatedRows } from "../../shared/components/TablePagination";
 import { AccountantExport } from "./AccountantExport";
 import { AgeingReports } from "./AgeingReports";
+import { TaxReturnPanel } from "./TaxReturnPanel";
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 import { dateRangeErrorMessage, hasInvertedDateRange } from "../../shared/utils/dateFilters";
 
@@ -698,6 +699,7 @@ export function ReportsView() {
       </section>
       )}
       <AgeingReports branchId={branchId} />
+      <TaxReturnPanel />
       <AccountantExport />
     </div>
   );

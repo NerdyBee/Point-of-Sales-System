@@ -155,6 +155,8 @@ export interface Expense {
   description: string;
   vendor?: string;
   amount: number;
+  vatAmount?: number;
+  withholdingTax?: number;
   paymentMethod: ExpensePaymentMethodCode;
   reference?: string;
   status: ExpenseStatus;
@@ -174,6 +176,10 @@ export interface ExpensePayload {
   description: string;
   vendor?: string;
   amount: number;
+  /** VAT included in amount. */
+  vatAmount?: number;
+  /** Withholding tax kept back; the vendor is paid amount minus this. */
+  withholdingTax?: number;
   paymentMethod: ExpensePaymentMethodCode;
   reference?: string;
   status: ExpenseStatus;
@@ -303,6 +309,7 @@ export interface SupplierInvoice {
   invoiceDate: string;
   dueDate?: string;
   amount: number;
+  vatAmount?: number;
   amountPaid: number;
   creditTotal: number;
   balanceDue: number;
@@ -322,6 +329,8 @@ export interface SupplierInvoicePayload {
   invoiceDate: string;
   dueDate?: string;
   amount: number;
+  /** VAT included in amount. */
+  vatAmount?: number;
   note?: string;
 }
 
@@ -331,6 +340,8 @@ export interface SupplierInvoicePaymentPayload {
   reference: string;
   paidAt: string;
   note?: string;
+  /** Withholding tax kept back: settles this much without paying it to the supplier. */
+  withholdingTax?: number;
 }
 
 export interface SupplierReturn {
@@ -2065,6 +2076,8 @@ export interface AccountingLedgers {
   mobileMoney?: string;
   voucher?: string;
   purchases?: string;
+  inputVat?: string;
+  withholdingTax?: string;
   customerLedger?: "customer" | "shared";
   sharedCustomerLedger?: string;
   supplierLedger?: "supplier" | "shared";
@@ -2088,12 +2101,22 @@ export async function fetchAccountingSummary(from: string, to: string, branchId 
 
 /** Downloads one of the accountant's files: Tally vouchers or ledgers, or the CSV day book. */
 export async function downloadAccountingExport(format: "tally" | "tally-ledgers" | "csv", from: string, to: string, branchId = "") {
-  const response = await fetch(`${apiBaseUrl}/api/v1/accounting/export${queryString({ from, to, branchId, format })}`, { headers: composeHeaders() });
+  return downloadFile(`/api/v1/accounting/export${queryString({ from, to, branchId, format })}`, `ajokepos-${format}`);
+}
+
+/** VAT return and withholding tax schedule as a CSV. */
+export async function downloadTaxReturnCsv(from: string, to: string, branchId = "") {
+  return downloadFile(`/api/v1/accounting/tax-return${queryString({ from, to, branchId, format: "csv" })}`, "ajokepos-vat-wht.csv");
+}
+
+/** Downloads a file from the API (with the signed-in user's headers); returns its name. */
+async function downloadFile(path: string, fallbackName: string) {
+  const response = await fetch(`${apiBaseUrl}${path}`, { headers: composeHeaders() });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.error ?? `Export failed (${response.status})`);
   }
-  const name = /filename="([^"]+)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ?? `ajokepos-${format}`;
+  const name = /filename="([^"]+)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ?? fallbackName;
   const url = URL.createObjectURL(await response.blob());
   const link = document.createElement("a");
   link.href = url;
@@ -2353,4 +2376,29 @@ export async function createQuotation(payload: QuotationPayload) {
 
 export async function updateQuotationStatus(id: string, status: Exclude<QuotationStatus, "open">, saleId?: string) {
   return requestJson<{ quotation: Quotation }>(`/api/v1/quotations/${encodeURIComponent(id)}/status`, { method: "POST", body: JSON.stringify({ status, saleId }) });
+}
+
+export interface TaxReturn {
+  from: string;
+  to: string;
+  currency?: string;
+  taxId: string;
+  vat: {
+    sales: { count: number; vatableValue: number; nonVatValue: number; vat: number };
+    returns: { count: number; value: number; vat: number };
+    outputVat: number;
+    purchases: { count: number; value: number; vat: number };
+    expenses: { count: number; value: number; vat: number };
+    inputVat: number;
+    netVat: number;
+  };
+  withholding: {
+    rows: { date: string; payee: string; reference: string; gross: number; withheld: number; paid: number; branchId: string; branchName: string }[];
+    total: number;
+  };
+}
+
+/** VAT return and withholding tax schedule for a period (dates as YYYY-MM-DD). */
+export async function fetchTaxReturn(from: string, to: string, branchId = "") {
+  return requestJson<TaxReturn>(`/api/v1/accounting/tax-return${queryString({ from, to, branchId })}`);
 }

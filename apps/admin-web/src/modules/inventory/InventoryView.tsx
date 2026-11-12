@@ -100,6 +100,7 @@ function defaultSupplierInvoice(branchId = defaultBranchId): SupplierInvoicePayl
     invoiceDate: new Date().toISOString(),
     dueDate: "",
     amount: 0,
+    vatAmount: 0,
     note: ""
   };
 }
@@ -110,7 +111,8 @@ function defaultSupplierPayment(balanceDue = 0): SupplierInvoicePaymentPayload {
     paymentMethod: "" as SupplierPaymentMethodCode,
     reference: "",
     paidAt: new Date().toISOString(),
-    note: ""
+    note: "",
+    withholdingTax: 0
   };
 }
 
@@ -1739,6 +1741,11 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
                 <MoneyInput min={1} value={supplierInvoiceDraft.amount} onChange={(amount) => updateSupplierInvoiceDraft("amount", amount)} required />
               </label>
               <label>
+                VAT included
+                <MoneyInput min={0} max={Math.max(0, supplierInvoiceDraft.amount - 1)} value={supplierInvoiceDraft.vatAmount ?? 0} onChange={(amount) => updateSupplierInvoiceDraft("vatAmount", amount)} />
+                <small className="muted-text">As shown on the supplier's invoice; 0 if none. Claimed back on the VAT return.</small>
+              </label>
+              <label>
                 Invoice date
                 <input type="date" value={supplierInvoiceDraft.invoiceDate.slice(0, 10)} onChange={(event) => updateSupplierInvoiceDraft("invoiceDate", new Date(`${event.target.value}T09:00:00.000Z`).toISOString())} required />
               </label>
@@ -1779,6 +1786,11 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
                 <MoneyInput min={1} max={invoicePaymentTarget.balanceDue} value={supplierPaymentDraft.amount} onChange={(amount) => updateSupplierPaymentDraft("amount", amount)} required />
               </label>
               <label>
+                Withholding tax deducted
+                <MoneyInput min={0} max={Math.max(0, supplierPaymentDraft.amount - 1)} value={supplierPaymentDraft.withholdingTax ?? 0} onChange={(amount) => updateSupplierPaymentDraft("withholdingTax", amount)} />
+                <small className="muted-text">Kept back for the tax office; the supplier receives the rest.</small>
+              </label>
+              <label>
                 Method
                 <select value={supplierPaymentDraft.paymentMethod} onChange={(event) => updateSupplierPaymentDraft("paymentMethod", event.target.value as SupplierPaymentMethodCode)}>
                   <option value="">Payment method</option>
@@ -1801,7 +1813,10 @@ export function InventoryView({ approvalHandoff, onApprovalHandoffConsumed }: In
                 <input value={supplierPaymentDraft.note ?? ""} onChange={(event) => updateSupplierPaymentDraft("note", event.target.value)} placeholder="Supplier payment note" />
               </label>
               <div className="form-summary">
-                <span>Balance after payment: {displayMoney(Math.max(0, invoicePaymentTarget.balanceDue - supplierPaymentDraft.amount))}</span>
+                <span>
+                  {supplierPaymentDraft.withholdingTax ? `Paid to supplier: ${displayMoney(supplierPaymentDraft.amount - supplierPaymentDraft.withholdingTax)} · ` : ""}
+                  Balance after payment: {displayMoney(Math.max(0, invoicePaymentTarget.balanceDue - supplierPaymentDraft.amount))}
+                </span>
                 <button className="primary-button" type="submit"><Check size={18} /> Record payment</button>
               </div>
             </form>

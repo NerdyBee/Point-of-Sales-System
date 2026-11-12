@@ -5020,3 +5020,21 @@ th {
 .quotation-matches span {
   color: var(--muted);
 }
+
+/* VAT and withholding tax (Reports) */
+.tax-return-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  margin-bottom: 12px;
+}
+
+.tax-return-grid td small {
+  display: block;
+  font-size: 11px;
+}
+
+.tax-return-total td {
+  border-top: 2px solid var(--outline);
+  font-weight: 700;
+}

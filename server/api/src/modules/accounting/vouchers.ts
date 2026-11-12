@@ -19,6 +19,10 @@ export interface LedgerNames {
   mobileMoney: string;
   voucher: string;
   purchases: string;
+  /** VAT paid on purchases and expenses, claimed back against Output VAT. */
+  inputVat: string;
+  /** Withholding tax kept back from suppliers and vendors, owed to the tax office. */
+  withholdingTax: string;
   /** Customer accounts: each customer's own name (as Sundry Debtors) or one shared ledger. */
   customerLedger: "customer" | "shared";
   sharedCustomerLedger: string;
@@ -39,6 +43,8 @@ export const defaultLedgers: LedgerNames = {
   mobileMoney: "Mobile Money",
   voucher: "Gift Vouchers",
   purchases: "Purchase Account",
+  inputVat: "Input VAT",
+  withholdingTax: "WHT Payable",
   customerLedger: "customer",
   sharedCustomerLedger: "Sundry Debtors (POS)",
   supplierLedger: "supplier",
@@ -96,6 +102,8 @@ export interface PurchaseInput {
   supplierName: string;
   invoiceNumber: string;
   amount: number;
+  /** VAT included in amount. */
+  vat?: number;
   date: string;
 }
 
@@ -107,6 +115,8 @@ export interface SupplierPaymentInput {
   amount: number;
   method: string;
   reference: string;
+  /** Part of amount kept back as withholding tax (not paid out). */
+  withholdingTax?: number;
   at: string;
 }
 
@@ -117,6 +127,10 @@ export interface ExpenseInput {
   description: string;
   vendor?: string | null;
   amount: number;
+  /** VAT included in amount. */
+  vat?: number;
+  /** Part of amount kept back as withholding tax (not paid out). */
+  withholdingTax?: number;
   method: string;
   at: string;
 }
@@ -267,10 +281,11 @@ export function buildVouchers(input: VoucherInput): Voucher[] {
       narration: `Supplier invoice ${purchase.invoiceNumber} from ${purchase.supplierName} (${input.branchName(purchase.branchId)})`,
       party: supplierLedger(ledgers, purchase.supplierName),
       branchId: purchase.branchId,
-      lines: [
-        { ledger: ledgers.purchases, amount: purchase.amount },
+      lines: merge([
+        { ledger: ledgers.purchases, amount: purchase.amount - (purchase.vat ?? 0) },
+        { ledger: ledgers.inputVat, amount: purchase.vat ?? 0 },
         { ledger: supplierLedger(ledgers, purchase.supplierName), amount: -purchase.amount }
-      ]
+      ])
     });
   }
 
@@ -282,10 +297,11 @@ export function buildVouchers(input: VoucherInput): Voucher[] {
       narration: `Payment to ${payment.supplierName} for invoice ${payment.invoiceNumber}${payment.reference ? `, ref ${payment.reference}` : ""}`,
       party: methodLedger(ledgers, payment.method),
       branchId: payment.branchId,
-      lines: [
+      lines: merge([
         { ledger: supplierLedger(ledgers, payment.supplierName), amount: payment.amount },
-        { ledger: methodLedger(ledgers, payment.method), amount: -payment.amount }
-      ]
+        { ledger: methodLedger(ledgers, payment.method), amount: -(payment.amount - (payment.withholdingTax ?? 0)) },
+        { ledger: ledgers.withholdingTax, amount: -(payment.withholdingTax ?? 0) }
+      ])
     });
   }
 
@@ -297,10 +313,12 @@ export function buildVouchers(input: VoucherInput): Voucher[] {
       narration: `${expense.description}${expense.vendor ? ` (${expense.vendor})` : ""}`,
       party: methodLedger(ledgers, expense.method),
       branchId: expense.branchId,
-      lines: [
-        { ledger: expense.category, amount: expense.amount },
-        { ledger: methodLedger(ledgers, expense.method), amount: -expense.amount }
-      ]
+      lines: merge([
+        { ledger: expense.category, amount: expense.amount - (expense.vat ?? 0) },
+        { ledger: ledgers.inputVat, amount: expense.vat ?? 0 },
+        { ledger: methodLedger(ledgers, expense.method), amount: -(expense.amount - (expense.withholdingTax ?? 0)) },
+        { ledger: ledgers.withholdingTax, amount: -(expense.withholdingTax ?? 0) }
+      ])
     });
   }
 
@@ -313,6 +331,8 @@ export function ledgersUsed(vouchers: Voucher[], ledgers: LedgerNames, expenseCa
     [ledgers.sales, "Sales Accounts"],
     [ledgers.salesReturns, "Sales Accounts"],
     [ledgers.vat, "Duties & Taxes"],
+    [ledgers.inputVat, "Duties & Taxes"],
+    [ledgers.withholdingTax, "Duties & Taxes"],
     [ledgers.serviceCharge, "Indirect Incomes"],
     [ledgers.discount, "Indirect Expenses"],
     [ledgers.cash, "Cash-in-Hand"],
