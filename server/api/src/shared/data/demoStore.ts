@@ -694,6 +694,11 @@ export interface AuditEvent {
     | "approval.approved"
     | "approval.rejected"
     | "approval.applied"
+    | "quotation.created"
+    | "proforma.created"
+    | "quotation.accepted"
+    | "quotation.cancelled"
+    | "quotation.converted"
     | "register.opened"
     | "register.cash_movement"
     | "register.payment_reconciled"
@@ -2029,3 +2034,25 @@ export function appendApprovalRequest(event: Omit<ApprovalRequest, "id" | "creat
   approvalRequests.unshift(approval);
   return approval;
 }
+
+export interface Quotation {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  kind: "quotation" | "proforma";
+  number: string;
+  status: "open" | "accepted" | "converted" | "cancelled";
+  customerId?: string;
+  customerName: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  summary: unknown;
+  validUntil: string;
+  note?: string;
+  saleId?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const quotations: Quotation[] = [];

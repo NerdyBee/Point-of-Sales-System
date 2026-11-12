@@ -4976,3 +4976,47 @@ th {
   color: #b42318;
   font-weight: 700;
 }
+
+/* Quotations */
+.quotation-modal {
+  max-width: 920px;
+  width: min(920px, calc(100vw - 32px));
+}
+
+.quotation-lines {
+  display: grid;
+  gap: 8px;
+}
+
+.quotation-lines table input {
+  max-width: 120px;
+}
+
+.quotation-matches {
+  border: 1px solid var(--outline);
+  border-radius: 6px;
+  list-style: none;
+  margin: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.quotation-matches button {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  padding: 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.quotation-matches button:hover {
+  background: var(--surface-muted, #f3f6fa);
+}
+
+.quotation-matches span {
+  color: var(--muted);
+}

@@ -2305,3 +2305,52 @@ export async function fetchCreditorsAgeing(branchId = "") {
 export async function fetchCustomerStatement(customerId: string, from: string, to: string) {
   return requestJson<CustomerStatement>(`/api/v1/accounts/customers/${encodeURIComponent(customerId)}/statement${queryString({ from, to })}`);
 }
+
+export type QuotationKind = "quotation" | "proforma";
+export type QuotationStatus = "open" | "accepted" | "converted" | "cancelled";
+
+export interface Quotation {
+  id: string;
+  branchId: string;
+  kind: QuotationKind;
+  number: string;
+  status: QuotationStatus;
+  /** Open or accepted, but past its valid-until date. */
+  expired: boolean;
+  customerId: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail: string;
+  summary: SaleSummary & { lines: CompletedSaleLine[] };
+  validUntil: string;
+  note: string;
+  saleId: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QuotationPayload {
+  branchId: string;
+  kind: QuotationKind;
+  customerId?: string;
+  customerName: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  /** YYYY-MM-DD */
+  validUntil: string;
+  note?: string;
+  lines: { productId: string; quantity: number; discount: number }[];
+}
+
+export async function fetchQuotations(branchId = "", status = "", search = "") {
+  return requestJson<{ quotations: Quotation[] }>(`/api/v1/quotations${queryString({ branchId, status, search })}`);
+}
+
+export async function createQuotation(payload: QuotationPayload) {
+  return requestJson<{ quotation: Quotation }>("/api/v1/quotations", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function updateQuotationStatus(id: string, status: Exclude<QuotationStatus, "open">, saleId?: string) {
+  return requestJson<{ quotation: Quotation }>(`/api/v1/quotations/${encodeURIComponent(id)}/status`, { method: "POST", body: JSON.stringify({ status, saleId }) });
+}

@@ -611,3 +611,21 @@ export const syncQueueStatusSchema = z.object({
   message: "Review note is required for failed or conflict records",
   path: ["error"]
 });
+
+/** A quotation or proforma invoice: catalogue lines priced like a sale, for a named customer. */
+export const quotationInputSchema = z.object({
+  branchId: z.string().min(1),
+  kind: z.enum(["quotation", "proforma"]),
+  customerId: z.string().max(64).optional().or(z.literal("")),
+  customerName: z.string().trim().min(2).max(120),
+  customerPhone: z.string().max(40).optional().or(z.literal("")),
+  customerEmail: z.string().email().optional().or(z.literal("")),
+  validUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  note: z.string().max(500).optional().or(z.literal("")),
+  lines: z.array(saleLineSchema.omit({ clearance: true })).min(1).max(200)
+});
+
+export const quotationStatusSchema = z.object({
+  status: z.enum(["accepted", "cancelled", "converted"]),
+  saleId: z.string().max(64).optional()
+});

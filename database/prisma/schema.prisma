@@ -35,6 +35,7 @@ model Tenant {
   sales                 CompletedSale[]
   approvals             ApprovalRequest[]
   expenses              Expense[]
+  quotations            Quotation[]
   subscription          TenantSubscription?
   subscriptionInvoices  SubscriptionInvoice[]
   syncQueueRecords      SyncQueueRecord[]
@@ -78,6 +79,7 @@ model Branch {
   sales          CompletedSale[]
   approvals      ApprovalRequest[]
   expenses       Expense[]
+  quotations     Quotation[]
   auditEvents    AuditEvent[]
   tables         RestaurantTable[]
   tableOrders    TableOrder[]
@@ -992,4 +994,36 @@ model PrepTicket {
 
   @@index([tenantId, branchId, station, status])
   @@map("prep_tickets")
+}
+
+/// Quotations and proforma invoices: priced like a sale, no stock or money moves until converted.
+model Quotation {
+  id            String    @id @db.VarChar(64)
+  tenantId      String    @db.VarChar(64)
+  branchId      String    @db.VarChar(64)
+  /// "quotation" or "proforma"
+  kind          String    @db.VarChar(20)
+  /// QT-000001 / PF-000001, per business
+  number        String    @db.VarChar(40)
+  status        String    @db.VarChar(20)
+  customerId    String?   @db.VarChar(64)
+  customerName  String    @db.VarChar(120)
+  customerPhone String?   @db.VarChar(40)
+  customerEmail String?   @db.VarChar(160)
+  /// Priced lines and totals, as a sale summary
+  summary       Json
+  validUntil    DateTime
+  note          String?   @db.VarChar(500)
+  saleId        String?   @db.VarChar(64)
+  createdBy     String    @db.VarChar(80)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, number])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+  @@map("quotations")
 }

@@ -1,4 +1,5 @@
-import { Ban, MessageCircle, Printer, RefreshCcw, RotateCcw, Search, X } from "lucide-react";
+import { Ban, FileMinus, MessageCircle, Printer, RefreshCcw, RotateCcw, Search, X } from "lucide-react";
+import { creditNoteHtml, printDocument } from "../../shared/utils/documentPrint";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyApproval,
@@ -502,6 +503,15 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
                   <button className="secondary-button" disabled={!selectedSale.receipt.whatsappEnabled} onClick={resendWhatsappReceipt}>
                     <MessageCircle size={15} /> WhatsApp
                   </button>
+                  {selectedSale.status !== "completed" ? (
+                    <button
+                      className="secondary-button"
+                      title="Credit note for the refund or void, against this invoice"
+                      onClick={() => setStatus(printDocument(creditNoteHtml(selectedSale, selectedSale.receipt, (amount) => displayMoney(amount, selectedSale.receipt.currency))) || "Credit note opened")}
+                    >
+                      <FileMinus size={15} /> Credit note
+                    </button>
+                  ) : null}
                 </div>
               </div>
               {selectedSale.customer ? (

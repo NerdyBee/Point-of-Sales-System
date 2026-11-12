@@ -1,6 +1,6 @@
 import { BadgePercent, Banknote, Ban, Check, CreditCard, MessageCircle, Minus, Pause, Play, Plus, Printer, ScanBarcode, Search, Smartphone, Split, Trash2, UserRound, Wifi, WifiOff, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { applyApproval, createApproval, createSale, fetchBranchOptions, fetchCatalogProducts, fetchCurrentRegister, fetchCustomers, queueReceiptDelivery, readStoredAuth, resolveMediaUrl } from "../../shared/api/client";
+import { applyApproval, createApproval, createSale, updateQuotationStatus, type Quotation, fetchBranchOptions, fetchCatalogProducts, fetchCurrentRegister, fetchCustomers, queueReceiptDelivery, readStoredAuth, resolveMediaUrl } from "../../shared/api/client";
 import type { ApprovalRequest, BranchOption, Customer, PaymentMethodCode, RegisterShift, TenantSettings, TerminalOption } from "../../shared/api/client";
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 import type { Product, ProductCategory } from "../catalog/types";
@@ -75,9 +75,12 @@ interface SalesTerminalProps {
   onTableSettled?: (receipt: SettledTableReceipt) => void;
   approvalHandoff?: ApprovalRequest | null;
   onApprovalHandoffConsumed?: () => void;
+  /** A quotation to sell: its items go into the cart, and it is marked sold when the sale completes. */
+  quotation?: Quotation | null;
+  onQuotationDone?: () => void;
 }
 
-export function SalesTerminal({ tableContext, onClearTableContext, onTableSettled, approvalHandoff, onApprovalHandoffConsumed }: SalesTerminalProps) {
+export function SalesTerminal({ tableContext, onClearTableContext, onTableSettled, approvalHandoff, onApprovalHandoffConsumed, quotation, onQuotationDone }: SalesTerminalProps) {
   const storedAuth = useMemo(() => readStoredAuth(), []);
   const cashierId = storedAuth?.staff.id ?? "";
   const [category, setCategory] = useState<ProductCategory | "All">("All");
@@ -248,6 +251,39 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
       setLastSettledReceipt(null);
     }
   }, [tableContext]);
+
+  // A quotation sent from the Quotations page: switch to its branch, then fill the cart once that
+  // branch's catalogue has loaded. Today's prices apply; the cashier is told if they changed.
+  const [activeQuotation, setActiveQuotation] = useState<Quotation | null>(null);
+  useEffect(() => {
+    if (!quotation || activeQuotation?.id === quotation.id) return;
+    if (quotation.branchId !== branchId) {
+      changeBranch(quotation.branchId);
+      return;
+    }
+    if (!products.length) return;
+    const missing = quotation.summary.lines.filter((line) => !products.some((product) => product.id === line.productId)).map((line) => line.name);
+    const lines = quotation.summary.lines.filter((line) => products.some((product) => product.id === line.productId));
+    const items = lines.map((line) => ({ product: products.find((product) => product.id === line.productId)!, quantity: line.quantity, discount: Math.round(line.discount / line.quantity) }));
+    const changed = lines.filter((line) => products.find((product) => product.id === line.productId)!.price !== Math.round(line.subtotal / line.quantity)).map((line) => line.name);
+    setCart(items);
+    setSelectedCustomerId(quotation.customerId);
+    setActiveQuotation(quotation);
+    setSyncState({
+      status: "success",
+      message: [
+        `${quotation.number} loaded into the cart.`,
+        changed.length ? `Price changed since the quote: ${changed.join(", ")}.` : "",
+        missing.length ? `No longer in the catalogue: ${missing.join(", ")}.` : ""
+      ].filter(Boolean).join(" "),
+      saleId: quotation.id
+    });
+  }, [quotation?.id, branchId, products]);
+
+  function clearQuotation() {
+    setActiveQuotation(null);
+    onQuotationDone?.();
+  }
 
   useEffect(() => {
     setPaymentSettings(settings?.paymentMethods ?? defaultPaymentSettings);
@@ -907,6 +943,10 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
         onTableSettled?.(settledReceipt);
       }
       onClearTableContext?.();
+      if (activeQuotation) {
+        await updateQuotationStatus(activeQuotation.id, "converted", response.saleId).catch(() => undefined);
+        clearQuotation();
+      }
       setRegisterShift(registerResponse.shift ?? null);
       setRegisterMessage(registerResponse.shift ? "Register shift open" : "No open register shift");
       setSyncState({
@@ -1128,6 +1168,13 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
           </div>
           <span>{tableContext?.guests ? `${tableContext.guests} guests` : `${cart.length} lines`}</span>
         </div>
+        {activeQuotation ? (
+          <div className="active-table-context">
+            <span>From {activeQuotation.kind === "proforma" ? "proforma" : "quotation"} {activeQuotation.number}</span>
+            <strong>{activeQuotation.customerName}</strong>
+            <button type="button" className="secondary-button" onClick={() => { clearQuotation(); setCart([]); }}>Clear</button>
+          </div>
+        ) : null}
         {tableContext ? (
           <div className="active-table-context">
             <span>{tableContext.tableOrderId ?? "New table sale"}</span>

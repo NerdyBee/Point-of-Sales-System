@@ -6,6 +6,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   FileBarChart,
+  FileText,
   LogOut,
   LayoutDashboard,
   ChevronDown,
@@ -40,6 +41,7 @@ import { RolesView } from "../modules/roles/RolesView";
 import { FloorPlanView } from "../modules/restaurant/FloorPlanView";
 import { SalesTerminal, type SettledTableReceipt, type TerminalTableContext } from "../modules/sales/SalesTerminal";
 import { SalesHistoryView } from "../modules/sales/SalesHistoryView";
+import { QuotationsView } from "../modules/quotations/QuotationsView";
 import { StaffView } from "../modules/staff/StaffView";
 import { SecurityView } from "../modules/security/SecurityView";
 import { SetupView } from "../modules/setup/SetupView";
@@ -47,14 +49,15 @@ import { LicenseView } from "../modules/license/LicenseView";
 import { LICENSE_VENDOR } from "../shared/vendor";
 import { SyncMonitorView } from "../modules/sync/SyncMonitorView";
 import { SettingsView } from "../modules/settings/SettingsView";
-import { clearStoredAuth, fetchBranchOptions, fetchCurrentTenant, fetchLicenseStatus, fetchSetupStatus, licenseRequiredEvent, type LicenseStatus, type SetupStatus, logoutAuthSession, readStoredAuth, refreshAuth, storeAuth, type ApprovalRequest, type AuthResponse, type BranchOption } from "../shared/api/client";
+import { clearStoredAuth, fetchBranchOptions, fetchCurrentTenant, fetchLicenseStatus, fetchSetupStatus, licenseRequiredEvent, type LicenseStatus, type SetupStatus, logoutAuthSession, readStoredAuth, refreshAuth, storeAuth, type ApprovalRequest, type AuthResponse, type BranchOption, type Quotation } from "../shared/api/client";
 
-type ModuleKey = "dashboard" | "sales" | "salesHistory" | "reports" | "catalog" | "inventory" | "expenses" | "branches" | "registers" | "floor" | "kitchen" | "customers" | "staff" | "roles" | "profile" | "security" | "sync" | "approvals" | "audit" | "settings";
+type ModuleKey = "dashboard" | "sales" | "salesHistory" | "quotations" | "reports" | "catalog" | "inventory" | "expenses" | "branches" | "registers" | "floor" | "kitchen" | "customers" | "staff" | "roles" | "profile" | "security" | "sync" | "approvals" | "audit" | "settings";
 
 const navItems = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "reports.profit.view" },
   { key: "sales", label: "POS Terminal", icon: ShoppingCart, permission: "sale.create" },
   { key: "salesHistory", label: "Sales", icon: ReceiptText, permission: "sale.create" },
+  { key: "quotations", label: "Quotations", icon: FileText, permission: "sale.create" },
   { key: "reports", label: "Reports", icon: FileBarChart, permission: "reports.profit.view" },
   { key: "catalog", label: "Catalog", icon: Store, permission: "catalog.manage" },
   { key: "inventory", label: "Inventory", icon: PackageSearch, permission: "inventory.adjust" },
@@ -84,6 +87,7 @@ function firstModuleForPermissions(permissions: string[]) {
 export function App() {
   const [activeModule, setActiveModule] = useState<ModuleKey>("dashboard");
   const [terminalTableContext, setTerminalTableContext] = useState<TerminalTableContext | null>(null);
+  const [terminalQuotation, setTerminalQuotation] = useState<Quotation | null>(null);
   const [settledTableReceipt, setSettledTableReceipt] = useState<SettledTableReceipt | null>(null);
   const [approvalHandoff, setApprovalHandoff] = useState<ApprovalRequest | null>(null);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
@@ -262,6 +266,7 @@ export function App() {
       handleAuthChange(null);
       setApprovalHandoff(null);
       setTerminalTableContext(null);
+      setTerminalQuotation(null);
       setSettledTableReceipt(null);
       setAccountMenuOpen(false);
     }
@@ -292,6 +297,16 @@ export function App() {
         }}
         approvalHandoff={approvalHandoff}
         onApprovalHandoffConsumed={() => setApprovalHandoff(null)}
+        quotation={terminalQuotation}
+        onQuotationDone={() => setTerminalQuotation(null)}
+      />
+    ),
+    quotations: (
+      <QuotationsView
+        onLoadToTill={(quote) => {
+          setTerminalQuotation(quote);
+          navigateToModule("sales");
+        }}
       />
     ),
     salesHistory: <SalesHistoryView approvalHandoff={approvalHandoff} onApprovalHandoffConsumed={() => setApprovalHandoff(null)} />,
