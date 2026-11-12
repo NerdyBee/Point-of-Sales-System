@@ -56,8 +56,10 @@ export function previewSaleTotal(
     }
 
     const lineSubtotal = product.price * line.quantity;
-    const discount = line.discount * line.quantity;
-    const taxableBase = Math.max(lineSubtotal - discount, 0);
+    // A discount can take an item down to free, not below: more would overstate the discount
+    // in the books. The tills refuse it already; this also covers quotations and old clients.
+    const discount = Math.min(line.discount, product.price) * line.quantity;
+    const taxableBase = lineSubtotal - discount;
     const vat = Math.round(taxableBase * (vatRate ?? product.taxRate));
 
     return {

@@ -123,7 +123,8 @@ export function CatalogView() {
 
   function resetForm() {
     setSelectedProduct(null);
-    setForm(blankProduct(tenantTaxRate, activeBranchId));
+    // With a single branch there is nothing to choose: fill it in.
+    setForm(blankProduct(tenantTaxRate, activeBranchId || (branches.length === 1 ? branches[0].id : "")));
     setModalOpen(true);
   }
 
@@ -365,14 +366,14 @@ export function CatalogView() {
                 <MoneyInput min={0} value={form.cost} onChange={(amount) => updateForm("cost", amount)} required />
               </label>
               <label>
-                VAT rate
+                VAT rate (%)
                 <input
-                  max={1}
+                  max={100}
                   min={0}
-                  step={0.001}
+                  step={0.01}
                   type="number"
-                  value={form.taxRate}
-                  onChange={(event) => updateForm("taxRate", Number(event.target.value))}
+                  value={Math.round(form.taxRate * 10000) / 100}
+                  onChange={(event) => updateForm("taxRate", Number(event.target.value) / 100)}
                   required
                 />
               </label>

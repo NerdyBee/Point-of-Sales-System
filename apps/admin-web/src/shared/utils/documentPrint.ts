@@ -26,8 +26,11 @@ interface DocumentParts {
 
 function documentHtml(parts: DocumentParts, business: DocumentBusiness, money: Money) {
   const amount = (value?: number) => (value ? money(value) : "");
+  // A discount column only when something was discounted.
+  const discounted = parts.rows.some((row) => row.discount);
+  const discountCell = (row: DocumentParts["rows"][number]) => (discounted ? `<td class="n">${amount(row.discount)}</td>` : "");
   const rows = parts.rows
-    .map((row, index) => `<tr><td>${index + 1}</td><td>${escape(row.description)}</td><td class="n">${row.quantity ?? ""}</td><td class="n">${amount(row.unit)}</td><td class="n">${amount(row.discount)}</td><td class="n">${money(row.amount)}</td></tr>`)
+    .map((row, index) => `<tr><td>${index + 1}</td><td>${escape(row.description)}</td><td class="n">${row.quantity ?? ""}</td><td class="n">${amount(row.unit)}</td>${discountCell(row)}<td class="n">${money(row.amount)}</td></tr>`)
     .join("");
   return `<!doctype html>
 <html>
@@ -71,7 +74,7 @@ function documentHtml(parts: DocumentParts, business: DocumentBusiness, money: M
     </header>
     <div class="to">${parts.to.map((line, index) => (index === 0 ? `<p><strong>${escape(line)}</strong></p>` : `<p>${escape(line)}</p>`)).join("")}</div>
     <table>
-      <thead><tr><th>#</th><th>Description</th><th class="n">Qty</th><th class="n">Unit price</th><th class="n">Discount</th><th class="n">Amount</th></tr></thead>
+      <thead><tr><th>#</th><th>Description</th><th class="n">Qty</th><th class="n">Unit price</th>${discounted ? '<th class="n">Discount</th>' : ""}<th class="n">Amount</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <table class="totals"><tbody>

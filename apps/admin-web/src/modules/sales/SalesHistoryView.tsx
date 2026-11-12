@@ -87,6 +87,8 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
         sale.id,
         sale.terminalId,
         sale.cashierId,
+        sale.receipt.terminalName ?? "",
+        sale.receipt.cashierName ?? "",
         sale.customer?.name ?? "",
         sale.customer?.phone ?? "",
         sale.tableId ?? "",
@@ -106,7 +108,12 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
       return matchesQuery && matchesPayment && matchesCashier && matchesCustomer;
     });
   }, [cashierFilter, customerFilter, paymentFilter, query, sales]);
-  const cashierOptions = useMemo(() => Array.from(new Set(sales.map((sale) => sale.cashierId))).sort(), [sales]);
+  // Cashier filter by ID, labelled with the name printed on the receipt.
+  const cashierOptions = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const sale of sales) if (!names.has(sale.cashierId) || sale.receipt.cashierName) names.set(sale.cashierId, sale.receipt.cashierName || sale.cashierId);
+    return [...names].sort((left, right) => left[1].localeCompare(right[1]));
+  }, [sales]);
   const completedTotal = useMemo(() => sales.filter((sale) => sale.status === "completed").reduce((sum, sale) => sum + sale.summary.total, 0), [sales]);
   const refundTotal = useMemo(() => sales.reduce((sum, sale) => sum + sale.refundTotal, 0), [sales]);
   const salesPage = usePaginatedRows(filteredSales, 10);
@@ -422,7 +429,7 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
             </select>
             <select value={cashierFilter} onChange={(event) => setCashierFilter(event.target.value)}>
               <option value="">Cashier</option>
-              {cashierOptions.map((cashierId) => <option key={cashierId} value={cashierId}>{cashierId}</option>)}
+              {cashierOptions.map(([cashierId, name]) => <option key={cashierId} value={cashierId}>{name}</option>)}
             </select>
             <select value={customerFilter} onChange={(event) => setCustomerFilter(event.target.value)}>
               <option value="">Customer type</option>
@@ -446,7 +453,7 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
                       <td className="number-cell">{salesPage.startIndex + index + 1}</td>
                       <td>{sale.id}</td>
                       <td>{sale.customer?.name ?? "Walk-in"}</td>
-                      <td>{sale.terminalId}</td>
+                      <td>{sale.receipt.terminalName || sale.terminalId}</td>
                       <td>{receiptMoney(sale, sale.summary.total)}</td>
                       <td>{receiptMoney(sale, sale.refundTotal)}</td>
                       <td><StatusBadge label={sale.status.replace("_", " ")} tone={saleTone(sale.status)} /></td>
@@ -479,7 +486,7 @@ export function SalesHistoryView({ approvalHandoff, onApprovalHandoffConsumed }:
               <div className="receipt-summary">
                 <strong>{receiptMoney(selectedSale, selectedSale.summary.total)}</strong>
                 <StatusBadge label={selectedSale.status.replace("_", " ")} tone={saleTone(selectedSale.status)} />
-                <span>{selectedSale.cashierId} on {selectedSale.terminalId}</span>
+                <span>{selectedSale.receipt.cashierName || selectedSale.cashierId} on {selectedSale.receipt.terminalName || selectedSale.terminalId}</span>
                 <span>{selectedSale.customer ? `${selectedSale.customer.name} - ${selectedSale.customer.group}` : "Walk-in customer"}</span>
                 {selectedSale.tableId ? <span>{selectedSale.tableId}{selectedSale.tableOrderId ? ` - ${selectedSale.tableOrderId}` : ""}</span> : null}
               </div>

@@ -34,6 +34,16 @@ describe("sales pricing", () => {
     });
   });
 
+  it("never discounts an item below free", () => {
+    expect(calculateSale([{ ...item, discount: 40000 }], { serviceChargeEnabled: false })).toEqual({
+      subtotal: 17000,
+      discount: 17000,
+      serviceCharge: 0,
+      vat: 0,
+      total: 0
+    });
+  });
+
   it("can remove service charge", () => {
     expect(calculateSale([item], { serviceChargeEnabled: false })).toMatchObject({
       serviceCharge: 0,

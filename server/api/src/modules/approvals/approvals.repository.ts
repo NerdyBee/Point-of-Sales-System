@@ -1,5 +1,5 @@
 import type { ApprovalRequest as DbApprovalRequest, Prisma } from "@prisma/client";
-import { appendApprovalRequest, appendAudit, approvalRequests, branches } from "../../shared/data/demoStore";
+import { appendApprovalRequest, appendAudit, approvalRequests, branches, staffMembers } from "../../shared/data/demoStore";
 import type { ApprovalRequest } from "../../shared/data/demoStore";
 import type { TenantContext } from "../../shared/http/tenantContext";
 import { prisma } from "../../shared/db/prisma";
@@ -83,6 +83,16 @@ async function appendApprovalAudit(tx: Prisma.TransactionClient, event: Paramete
   });
 }
 
+/** Approvals as people read them: who asked and who decided, by name. */
+function withStaffNames(approvals: ApprovalRequest[], staff: { id: string; name: string }[]) {
+  const names = new Map(staff.map((member) => [member.id, member.name]));
+  return approvals.map((approval) => ({
+    ...approval,
+    requestedByName: names.get(approval.requestedBy),
+    decidedByName: approval.decidedBy ? names.get(approval.decidedBy) : undefined
+  }));
+}
+
 export async function listApprovals(
   tenantId: string,
   filters: { branchId?: string; branchIds?: string[]; status?: string; type?: string; startDate?: Date; endDate?: Date }
@@ -91,7 +101,7 @@ export async function listApprovals(
   const type = filters.type ?? "all";
 
   if (useDemoStore) {
-    return approvalRequests
+    const matching = approvalRequests
       .filter((approval) => approval.tenantId === tenantId)
       .filter((approval) => {
         if (filters.branchId) return approval.branchId === filters.branchId;
@@ -102,6 +112,7 @@ export async function listApprovals(
       .filter((approval) => (type === "all" ? true : approval.type === type))
       .filter((approval) => (filters.startDate ? new Date(approval.createdAt).getTime() >= filters.startDate.getTime() : true))
       .filter((approval) => (filters.endDate ? new Date(approval.createdAt).getTime() <= filters.endDate.getTime() : true));
+    return withStaffNames(matching, staffMembers.filter((member) => member.tenantId === tenantId));
   }
 
   const createdAt = filters.startDate || filters.endDate
@@ -124,7 +135,9 @@ export async function listApprovals(
     take: 1000
   });
 
-  return approvals.map(toApiApproval);
+  const staffIds = [...new Set(approvals.flatMap((approval) => [approval.requestedBy, ...(approval.decidedBy ? [approval.decidedBy] : [])]))];
+  const staff = await prisma.staffMember.findMany({ where: { tenantId, id: { in: staffIds } }, select: { id: true, name: true } });
+  return withStaffNames(approvals.map(toApiApproval), staff);
 }
 
 export async function requestApproval(tenantId: string, userId: string, input: ApprovalRequestInput) {

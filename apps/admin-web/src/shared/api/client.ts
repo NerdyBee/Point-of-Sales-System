@@ -109,6 +109,8 @@ export interface RegisterShift {
   branchId: string;
   terminalId: string;
   cashierId: string;
+  /** The cashier's name, when they still exist. */
+  cashierName?: string;
   status: "open" | "closed";
   openingBalance: number;
   expectedCash: number;
@@ -922,6 +924,9 @@ export interface AuditEvent {
   tenantId: string;
   branchId?: string;
   userId: string;
+  /** Staff name and branch name, when they still exist. */
+  userName?: string;
+  branchName?: string;
   action: string;
   entityType: string;
   entityId: string;
@@ -944,6 +949,9 @@ export interface ApprovalRequest {
   status: ApprovalStatus;
   requestedBy: string;
   decidedBy?: string;
+  /** Names of the staff above, when they still exist. */
+  requestedByName?: string;
+  decidedByName?: string;
   decidedAt?: string;
   decisionNote?: string;
   createdAt: string;

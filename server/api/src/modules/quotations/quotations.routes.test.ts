@@ -51,4 +51,11 @@ describe("quotations and proforma invoices", () => {
     expect((await as("cashier").post("", quote({ lines: [{ productId: "p1", quantity: 1, discount: 500 }] }))).status).toBe(403);
     expect((await as("cashier").post("", quote())).status).toBe(201);
   });
+
+  it("never discounts an item below free", async () => {
+    const { quotation } = (await as().post("", quote({ lines: [{ productId: "p1", quantity: 2, discount: 99_999_999 }] }))).body;
+    expect(quotation.summary.discount).toBe(quotation.summary.subtotal);
+    expect(quotation.summary.vat).toBe(0);
+    expect(quotation.summary.total).toBe(quotation.summary.serviceCharge);
+  });
 });

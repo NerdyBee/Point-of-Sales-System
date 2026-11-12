@@ -8,12 +8,14 @@ interface SaleChargeControls {
 
 export function calculateSale(items: CartItem[], controls: SaleChargeControls = {}): SaleSummary {
   const subtotal = items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-  const discount = items.reduce((sum, item) => sum + item.discount * item.quantity, 0);
-  const taxableBase = Math.max(subtotal - discount, 0);
+  // Never more than the price (same rule as the server).
+  const unitDiscount = (item: CartItem) => Math.min(Math.max(item.discount, 0), item.product.price);
+  const discount = items.reduce((sum, item) => sum + unitDiscount(item) * item.quantity, 0);
+  const taxableBase = subtotal - discount;
   const serviceChargeRate = controls.serviceChargeRate ?? 0.05;
   const serviceCharge = controls.serviceChargeEnabled === false ? 0 : Math.round(taxableBase * serviceChargeRate);
   const vat = items.reduce((sum, item) => {
-    const lineBase = Math.max((item.product.price - item.discount) * item.quantity, 0);
+    const lineBase = (item.product.price - unitDiscount(item)) * item.quantity;
     return sum + Math.round(lineBase * (controls.vatRate ?? item.product.taxRate));
   }, 0);
 

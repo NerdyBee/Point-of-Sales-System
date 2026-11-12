@@ -40,7 +40,9 @@ export function AuditLogView() {
   const [status, setStatus] = useState("Ready");
 
   const actionOptions = useMemo(() => Array.from(new Set(events.map((event) => event.action))).sort(), [events]);
-  const actorOptions = useMemo(() => Array.from(new Set(events.map((event) => event.userId))).sort(), [events]);
+  // Staff ID -> name (the server adds names; older events of removed staff keep the ID).
+  const actorNames = useMemo(() => new Map(events.map((event) => [event.userId, event.userName || event.userId])), [events]);
+  const actorOptions = useMemo(() => Array.from(actorNames.keys()).sort((a, b) => actorNames.get(a)!.localeCompare(actorNames.get(b)!)), [actorNames]);
   const entityOptions = useMemo(() => Array.from(new Set(events.map((event) => event.entityType))).sort(), [events]);
   const filteredEvents = useMemo(() => {
     const needle = query.toLowerCase();
@@ -51,7 +53,9 @@ export function AuditLogView() {
           event.entityType,
           event.entityId,
           event.userId,
+          event.userName,
           event.branchId,
+          event.branchName,
           formatMetadata(event.metadata)
         ].filter(Boolean).join(" ").toLowerCase();
         const matchesQuery = !needle || haystack.includes(needle);
@@ -133,12 +137,14 @@ export function AuditLogView() {
 
   function exportCsv() {
     const rows = [
-      ["number", "created_at", "user_id", "branch_id", "action", "entity_type", "entity_id", "metadata"],
+      ["number", "created_at", "user_id", "user", "branch_id", "branch", "action", "entity_type", "entity_id", "metadata"],
       ...filteredEvents.map((event, index) => [
         index + 1,
         new Date(event.createdAt).toLocaleString(),
         event.userId,
+        event.userName ?? "",
         event.branchId ?? "Tenant-wide",
+        event.branchName ?? "",
         event.action,
         event.entityType,
         event.entityId,
@@ -191,7 +197,7 @@ export function AuditLogView() {
           </select>
           <select className="compact-select" value={actorFilter} onChange={(event) => changeActorFilter(event.target.value)}>
             <option value="">Actor</option>
-            {actorOptions.map((actor) => <option key={actor} value={actor}>{actor}</option>)}
+            {actorOptions.map((actor) => <option key={actor} value={actor}>{actorNames.get(actor)}</option>)}
           </select>
           <button className="secondary-button" onClick={() => loadEvents(startDate, endDate, branchId, actorFilter, actionFilter)}><RefreshCcw size={18} /> Sync</button>
           <button className="primary-button" onClick={exportCsv} disabled={filteredEvents.length === 0}><Download size={18} /> Export CSV</button>
@@ -212,7 +218,7 @@ export function AuditLogView() {
         <article className="stat-card">
           <div className="stat-card-top"><span>Actors</span><UserRound size={20} /></div>
           <strong>{actorOptions.length}</strong>
-          <small>{!actorFilter || actorFilter === "all" ? "All users" : actorFilter}</small>
+          <small>{!actorFilter || actorFilter === "all" ? "All users" : actorNames.get(actorFilter) ?? actorFilter}</small>
         </article>
         <article className="stat-card">
           <div className="stat-card-top"><span>Filtered view</span></div>
@@ -267,7 +273,7 @@ export function AuditLogView() {
                     <strong><span className="number-cell">{eventPage.startIndex + index + 1}</span>{event.action}</strong>
                     <span>{event.entityType} - {event.entityId}</span>
                   </div>
-                  <StatusBadge label={event.userId} tone={actionTone(event.action)} />
+                  <StatusBadge label={event.userName || event.userId} tone={actionTone(event.action)} />
                   <small>{new Date(event.createdAt).toLocaleString()}</small>
                 </button>
               ))
@@ -296,8 +302,8 @@ export function AuditLogView() {
               <strong>{selectedEvent.entityType}</strong>
               <span>{selectedEvent.entityId}</span>
               <dl>
-                <div><dt>User</dt><dd>{selectedEvent.userId}</dd></div>
-                <div><dt>Branch</dt><dd>{selectedEvent.branchId ?? "Tenant-wide"}</dd></div>
+                <div><dt>User</dt><dd>{selectedEvent.userName ? `${selectedEvent.userName} (${selectedEvent.userId})` : selectedEvent.userId}</dd></div>
+                <div><dt>Branch</dt><dd>{selectedEvent.branchName ?? selectedEvent.branchId ?? "Tenant-wide"}</dd></div>
                 <div><dt>Time</dt><dd>{new Date(selectedEvent.createdAt).toLocaleString()}</dd></div>
               </dl>
               <pre>{formatMetadata(selectedEvent.metadata)}</pre>

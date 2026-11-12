@@ -61,16 +61,7 @@ catalogRouter.get("/products", requireTenant, requireAnyPermission(["sale.create
     branchIds: !effectiveScope.branchId ? effectiveScope.branchScopeIds : undefined
   });
 
-  await appendCatalogAudit({
-    tenantId: req.tenantContext!.tenantId,
-    branchId: effectiveScope.branchId,
-    userId: req.tenantContext!.userId,
-    action: "catalog.view",
-    entityType: "product",
-    entityId: "collection",
-    metadata: { count: tenantProducts.length, branchId: effectiveScope.branchId, branchIds: !effectiveScope.branchId ? effectiveScope.branchScopeIds : undefined }
-  });
-
+  // Not audited: the till and most screens load the catalogue, so it would bury real events.
   res.json({ products: tenantProducts });
 });
 

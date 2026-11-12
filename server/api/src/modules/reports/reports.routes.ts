@@ -524,6 +524,8 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
     .reduce((sum, entry) => sum + Math.max(entry.amount, 0), 0);
   const hourlySales = buildSalesTrend(activeSales, period);
   const salesByCashier = activeSales.reduce((totals, sale) => totals.set(sale.cashierId, (totals.get(sale.cashierId) ?? 0) + sale.summary.total - sale.refundTotal), new Map<string, number>());
+  const staffNames = new Map(sources.staff.filter((member) => member.tenantId === tenantId).map((member) => [member.id, member.name]));
+  const staffName = (id: string) => staffNames.get(id) ?? id;
   const staffPerformance = sources.staff
     .filter((member) => member.tenantId === tenantId)
     .filter((member) => branchMatches(member.branchId))
@@ -623,7 +625,8 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
         type: movement.type,
         amount: movement.amount,
         reason: movement.reason,
-        createdBy: movement.createdBy,
+        // The report is read by people: staff by name (the ID only if the person was removed).
+        createdBy: staffName(movement.createdBy),
         createdAt: movement.createdAt
       })),
     approvals: pendingApprovals.slice(0, 5).map((approval) => ({
@@ -633,7 +636,7 @@ reportsRouter.get("/dashboard", requireTenant, requirePermission("reports.profit
       entityId: approval.entityId,
       amount: approval.amount,
       reason: approval.reason,
-      requestedBy: approval.requestedBy,
+      requestedBy: staffName(approval.requestedBy),
       createdAt: approval.createdAt
     }))
   });

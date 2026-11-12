@@ -362,9 +362,9 @@ export function StaffView() {
           <small>Quick terminal access</small>
         </article>
         <article className="stat-card">
-          <div className="stat-card-top"><span>Branch sales</span></div>
+          <div className="stat-card-top"><span>Sales this month</span></div>
           <strong>{displayMoney(staff.reduce((sum, member) => sum + member.salesTotal, 0))}</strong>
-          <small>Assigned staff total</small>
+          <small>By the staff listed, less refunds</small>
         </article>
         <article className="stat-card">
           <div className="stat-card-top"><span>Pending invites</span></div>
@@ -411,7 +411,7 @@ export function StaffView() {
         </div>
         <div className="table-wrap">
           <table>
-            <thead><tr><th>#</th><th>Employee</th><th>Role</th><th>Branch sales</th><th>Status</th><th>Invite</th><th>PIN</th><th>Permissions</th><th>Actions</th></tr></thead>
+            <thead><tr><th>#</th><th>Employee</th><th>Role</th><th>Sales this month</th><th>Status</th><th>Invite</th><th>PIN</th><th>Permissions</th><th>Actions</th></tr></thead>
             <tbody>
               {staffPage.pageRows.length === 0 ? (
                 <tr><td colSpan={9}>No staff found for this branch.</td></tr>
@@ -424,7 +424,7 @@ export function StaffView() {
                   <td><StatusBadge label={member.active ? "Active" : "Inactive"} tone={member.active ? "success" : "danger"} /></td>
                   <td><StatusBadge label={member.inviteStatus} tone={inviteTone(member.inviteStatus)} /></td>
                   <td>{member.pinEnabled ? "Enabled" : "Off"}</td>
-                  <td><button className="permission-count" onClick={() => viewStaff(member)}>{member.permissions.length} permissions</button></td>
+                  <td><button className="permission-count" onClick={() => viewStaff(member)}>{member.permissions.length} permission{member.permissions.length === 1 ? "" : "s"}</button></td>
                   <td className="row-actions">
                     <button onClick={() => viewStaff(member)} aria-label={`View ${member.name} access`}><Eye size={16} /></button>
                     <button onClick={() => editStaff(member)} aria-label={`Edit ${member.name}`}><Pencil size={16} /></button>
@@ -537,7 +537,7 @@ export function StaffView() {
                 <strong>{detailStaff.phone}</strong>
               </div>
               <div>
-                <span>Branch sales</span>
+                <span>Sales this month</span>
                 <strong>{displayMoney(detailStaff.salesTotal)}</strong>
               </div>
               <div>

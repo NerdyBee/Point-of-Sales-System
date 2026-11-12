@@ -21,15 +21,7 @@ tenantsRouter.get("/current", requireTenant, requireAuthenticatedUser, async (re
     return;
   }
 
-  await appendTenantAudit({
-    tenantId: req.tenantContext!.tenantId,
-    branchId: req.tenantContext!.branchId,
-    userId: req.tenantContext!.userId,
-    action: "tenant.view",
-    entityType: "tenant",
-    entityId: tenant.id,
-    metadata: { route: "/api/v1/tenants/current" }
-  });
+  // Not audited: every screen reads this, so it would bury the events that matter.
 
   // Installed copies: the licence's branch limit (0 = unlimited) instead of the old plan's.
   const licensed = await licensedLimits();

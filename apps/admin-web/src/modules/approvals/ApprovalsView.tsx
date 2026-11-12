@@ -112,7 +112,7 @@ export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
   const filteredApprovals = useMemo(() => {
     const needle = query.toLowerCase();
     return approvals.filter((approval) => {
-      const haystack = `${approval.type} ${approval.entityType} ${approval.entityId} ${approval.reason} ${approval.requestedBy}`.toLowerCase();
+      const haystack = `${approval.type} ${approval.entityType} ${approval.entityId} ${approval.reason} ${approval.requestedBy} ${approval.requestedByName ?? ""}`.toLowerCase();
       const matchesQuery = haystack.includes(needle);
       const matchesSource = !sourceFilter || sourceLabel(approval) === sourceFilter;
       const matchesPriority = !priorityFilter || priorityLabel(approval.amount) === priorityFilter;
@@ -417,10 +417,10 @@ export function ApprovalsView({ onOpenSource }: ApprovalsViewProps) {
                 <div><dt>Entity</dt><dd>{selectedApproval.entityType} - {selectedApproval.entityId}</dd></div>
                 <div><dt>Amount</dt><dd>{displayMoney(selectedApproval.amount)}</dd></div>
                 <div><dt>Priority</dt><dd>{priorityLabel(selectedApproval.amount)}</dd></div>
-                <div><dt>Requested by</dt><dd>{selectedApproval.requestedBy}</dd></div>
+                <div><dt>Requested by</dt><dd>{selectedApproval.requestedByName ?? selectedApproval.requestedBy}</dd></div>
                 <div><dt>Requested</dt><dd>{new Date(selectedApproval.createdAt).toLocaleString()}</dd></div>
                 <div><dt>Age</dt><dd>{ageLabel(selectedApproval.createdAt)}</dd></div>
-                <div><dt>Decided by</dt><dd>{selectedApproval.decidedBy ?? "Pending"}</dd></div>
+                <div><dt>Decided by</dt><dd>{selectedApproval.decidedByName ?? selectedApproval.decidedBy ?? "Pending"}</dd></div>
                 <div><dt>Decision</dt><dd>{selectedApproval.decisionNote ?? "Pending manager decision"}</dd></div>
               </dl>
               <button className="secondary-button wide-field" disabled={selectedApproval.status === "pending" || selectedApproval.status === "rejected"} onClick={() => onOpenSource?.(sourceModule(selectedApproval), selectedApproval)}>

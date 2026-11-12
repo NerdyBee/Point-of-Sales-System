@@ -19,6 +19,10 @@ import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
+
+// Windows' own tar (it writes .zip). Not just "tar.exe": from Git Bash that finds GNU tar, which
+// reads "c:\..." as a network host and fails.
+const windowsTar = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe");
 import { build } from "esbuild";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -189,7 +193,7 @@ async function buildOffice(server) {
   const archive = join(out, `AjokePOS-Office-${version}.zip`);
   rmSync(archive, { force: true });
   // Windows' built-in tar writes zip files much faster than Compress-Archive.
-  execFileSync("tar.exe", ["-a", "-c", "-f", archive, "AjokePOS"], { cwd: stage, stdio: "inherit" });
+  execFileSync(windowsTar, ["-a", "-c", "-f", archive, "AjokePOS"], { cwd: stage, stdio: "inherit" });
   console.log(`\nOffice package: ${archive}`);
 }
 

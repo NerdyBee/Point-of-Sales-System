@@ -291,7 +291,7 @@ export function ProfileView({ user }: ProfileViewProps) {
             <strong>{sessionExpiry}</strong>
           </div>
           <div className="profile-session-card">
-            <small>Sales total</small>
+            <small>My sales this month</small>
             <strong>{displayMoney(profileMeta.salesTotal)}</strong>
           </div>
         </section>

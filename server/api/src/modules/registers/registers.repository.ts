@@ -3,7 +3,7 @@ import type {
   PaymentRecord as DbPaymentRecord,
   RegisterShift as DbRegisterShift
 } from "@prisma/client";
-import { appendAudit, appendCashMovement, auditEvents, branches, cashMovements, paymentRecords, registerShifts, terminals } from "../../shared/data/demoStore";
+import { appendAudit, appendCashMovement, auditEvents, branches, cashMovements, paymentRecords, registerShifts, staffMembers, terminals } from "../../shared/data/demoStore";
 import type { CashMovement, PaymentRecord, RegisterShift } from "../../shared/data/demoStore";
 import { prisma } from "../../shared/db/prisma";
 import { validateAppliedApproval } from "../approvals/approvals.repository";
@@ -124,6 +124,17 @@ async function validateOpenRegisterTerminal(tenantId: string, branchId: string, 
   return { status: "valid" as const };
 }
 
+/** Shifts as people read them: the cashier by name. */
+async function withCashierNames<T extends RegisterShift>(tenantId: string, shifts: T[]): Promise<(T & { cashierName?: string })[]> {
+  const ids = [...new Set(shifts.map((shift) => shift.cashierId))];
+  if (!ids.length) return shifts;
+  const staff = useDemoStore
+    ? staffMembers.filter((member) => member.tenantId === tenantId && ids.includes(member.id))
+    : await prisma.staffMember.findMany({ where: { tenantId, id: { in: ids } }, select: { id: true, name: true } });
+  const names = new Map(staff.map((member) => [member.id, member.name]));
+  return shifts.map((shift) => ({ ...shift, cashierName: names.get(shift.cashierId) }));
+}
+
 export async function getCurrentRegister(tenantId: string, scope: BranchScopeFilter = {}, terminalId?: string, cashierId?: string) {
   if (useDemoStore) {
     const shift = registerShifts.find(
@@ -136,7 +147,7 @@ export async function getCurrentRegister(tenantId: string, scope: BranchScopeFil
     );
 
     return {
-      shift: shift ?? null,
+      shift: shift ? (await withCashierNames(tenantId, [shift]))[0] : null,
       payments: shift ? paymentRecords.filter((payment) => payment.shiftId === shift.id) : [],
       movements: shift ? cashMovements
         .filter((movement) => movement.shiftId === shift.id)
@@ -178,7 +189,7 @@ export async function getCurrentRegister(tenantId: string, scope: BranchScopeFil
   );
 
   return {
-    shift: toApiShift(shift),
+    shift: (await withCashierNames(tenantId, [toApiShift(shift)]))[0],
     payments: payments.map(toApiPayment),
     movements: movements.map((movement) => toApiMovement(movement, expectedCashByMovementId.get(movement.id)))
   };
@@ -186,7 +197,7 @@ export async function getCurrentRegister(tenantId: string, scope: BranchScopeFil
 
 export async function listRegisterShiftHistory(tenantId: string, scope: BranchScopeFilter = {}, terminalId?: string, cashierId?: string) {
   if (useDemoStore) {
-    return registerShifts
+    return withCashierNames(tenantId, registerShifts
       .filter((shift) =>
         shift.tenantId === tenantId &&
         matchesBranchScope(scope, shift.branchId) &&
@@ -194,7 +205,7 @@ export async function listRegisterShiftHistory(tenantId: string, scope: BranchSc
         (!cashierId || shift.cashierId === cashierId)
       )
       .sort((left, right) => new Date(right.openedAt).getTime() - new Date(left.openedAt).getTime())
-      .slice(0, 100);
+      .slice(0, 100));
   }
 
   const shifts = await prisma.registerShift.findMany({
@@ -208,7 +219,7 @@ export async function listRegisterShiftHistory(tenantId: string, scope: BranchSc
     take: 100
   });
 
-  return shifts.map(toApiShift);
+  return withCashierNames(tenantId, shifts.map(toApiShift));
 }
 
 export async function openRegisterShift(

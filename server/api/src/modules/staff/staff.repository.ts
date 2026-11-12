@@ -205,8 +205,29 @@ export async function listStaff(tenantId: string, scope: BranchScopeFilter = {})
     where: { tenantId, ...staffBranchFilter(scope) },
     orderBy: { name: "asc" }
   });
+  const sales = await salesThisMonthByCashier(tenantId);
 
-  return await Promise.all(staff.map((member) => serializeStaff(toApiStaff(member))));
+  return await Promise.all(staff.map((member) => serializeStaff({ ...toApiStaff(member), salesTotal: sales.get(member.id) ?? 0 })));
+}
+
+/**
+ * Each cashier's sales since the 1st of this month, less refunds, from the sales themselves
+ * (the stored counter is not kept up to date). A month keeps the query small as years of sales build up.
+ */
+async function salesThisMonthByCashier(tenantId: string, cashierId?: string) {
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const sales = await prisma.completedSale.findMany({
+    where: { tenantId, cashierId, createdAt: { gte: monthStart }, status: { not: "voided" } },
+    select: { cashierId: true, summary: true, refundTotal: true }
+  });
+  const totals = new Map<string, number>();
+  for (const sale of sales) {
+    const total = Number((sale.summary as { total?: number } | null)?.total ?? 0);
+    totals.set(sale.cashierId, (totals.get(sale.cashierId) ?? 0) + total - sale.refundTotal);
+  }
+  return totals;
 }
 
 export async function listStaffOptions(tenantId: string, scope: string | BranchScopeFilter = {}) {
@@ -232,7 +253,9 @@ export async function getStaffProfile(tenantId: string, staffId: string) {
   }
 
   const member = await prisma.staffMember.findFirst({ where: { tenantId, id: staffId } });
-  return member ? await serializeStaff(toApiStaff(member)) : null;
+  if (!member) return null;
+  const sales = await salesThisMonthByCashier(tenantId, staffId);
+  return await serializeStaff({ ...toApiStaff(member), salesTotal: sales.get(member.id) ?? 0 });
 }
 
 export async function updateOwnProfile(tenantId: string, userId: string, input: Pick<StaffInput, "name" | "email" | "phone">) {

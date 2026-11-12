@@ -964,6 +964,15 @@ button {
 .brand-mark { width: 44px; height: 44px; }
 .avatar { width: 38px; height: 38px; }
 
+/* ".top-bar span" styles the small labels there; the avatar is a span too. */
+.top-bar .avatar {
+  color: white;
+  display: grid;
+  font-size: 14px;
+  font-weight: 800;
+  text-transform: none;
+}
+
 .brand-block strong, .brand-block span {
   display: block;
 }
@@ -5027,6 +5036,21 @@ th {
   gap: 16px;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   margin-bottom: 12px;
+}
+
+/* Two tables side by side: each fits its column (tables are 760px wide at least elsewhere). */
+.tax-return-grid table {
+  min-width: 0;
+}
+
+.tax-return-grid td {
+  white-space: normal;
+}
+
+.tax-return-grid td:not(:first-child),
+.tax-return-grid th:not(:first-child) {
+  text-align: right;
+  white-space: nowrap;
 }
 
 .tax-return-grid td small {

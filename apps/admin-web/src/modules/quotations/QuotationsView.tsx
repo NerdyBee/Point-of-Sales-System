@@ -334,8 +334,8 @@ export function QuotationsView({ onLoadToTill }: QuotationsViewProps) {
                           <td>{product?.name ?? line.productId}</td>
                           <td><input type="number" min={1} value={line.quantity} onChange={(event) => updateLine(index, { quantity: Math.max(1, Math.round(Number(event.target.value) || 1)) })} /></td>
                           <td>{product ? displayMoney(product.price) : ""}</td>
-                          {canDiscount ? <td><MoneyInput min={0} max={product?.price} value={line.discount} onChange={(amount) => updateLine(index, { discount: amount })} /></td> : null}
-                          <td>{product ? displayMoney((product.price - line.discount) * line.quantity) : ""}</td>
+                          {canDiscount ? <td><MoneyInput min={0} max={product?.price} value={line.discount} onChange={(amount) => updateLine(index, { discount: Math.min(Math.max(amount, 0), product?.price ?? 0) })} /></td> : null}
+                          <td>{product ? displayMoney((product.price - Math.min(line.discount, product.price)) * line.quantity) : ""}</td>
                           <td><button type="button" className="icon-button" onClick={() => setLines((current) => current.filter((_, position) => position !== index))} aria-label="Remove item"><X size={14} /></button></td>
                         </tr>
                       );

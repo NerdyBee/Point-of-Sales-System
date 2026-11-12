@@ -49,7 +49,8 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
   const canUseAllBranches = storedAuth?.staff.role === "owner" || storedAuth?.staff.role === "state_manager";
   const canCloseRegister = activePermissions.includes("register.close");
   const initialBranchId = canUseAllBranches ? "" : storedAuth?.session.branchId ?? storedAuth?.staff.branchId ?? "";
-  const initialTerminalId = canUseAllBranches ? "" : storedAuth?.session.terminalId ?? "";
+  // The till this browser is signed in on comes first when its branch is shown.
+  const initialTerminalId = storedAuth?.session.terminalId ?? "";
   const [branchId, setBranchId] = useState(initialBranchId);
   const [branches, setBranches] = useState<BranchOption[]>(fallbackBranches);
   const [terminalId, setTerminalId] = useState(initialTerminalId);
@@ -99,6 +100,7 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
   const branchNameById = useMemo(() => new Map(branches.map((branch) => [branch.id, `${branch.name} - ${branch.city}`])), [branches]);
   const branchLocked = Boolean(branchId && branches.length === 1);
   const selectedTerminal = useMemo(() => terminals.find((terminal) => terminal.id === terminalId), [terminalId, terminals]);
+  const terminalNameById = useMemo(() => new Map(terminals.map((terminal) => [terminal.id, terminal.name])), [terminals]);
   const allBranchHistoryMode = canUseAllBranches && !branchId;
   const filteredPayments = useMemo(() => {
     const query = paymentQuery.trim().toLowerCase();
@@ -212,7 +214,8 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
       const response = await fetchBranchOptions();
       setBranches(response.branches);
       setTerminals(response.terminals);
-      const effectiveBranchId = nextBranchId || (canUseAllBranches ? "" : response.branches[0]?.id || "");
+      // "All branches" only means something with several: with one, show its drawer.
+      const effectiveBranchId = nextBranchId || (canUseAllBranches && response.branches.length > 1 ? "" : response.branches[0]?.id || "");
 
       if (!effectiveBranchId && !canUseAllBranches) {
         setTerminalId("");
@@ -630,8 +633,8 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
               <MoneyInput min={0} value={openingBalance} onChange={(amount) => setOpeningBalance(amount)} disabled={allBranchHistoryMode} required />
             </label>
             <div className="form-summary">
-              <span>{allBranchHistoryMode ? `${shiftHistory.length} shifts across accessible branches` : shift ? `Opened ${new Date(shift.openedAt).toLocaleString()}` : "Ready to start a new drawer"}</span>
-              <b>{shift ? shift.cashierId : selectedTerminal?.deviceCode ?? terminalId}</b>
+              <span>{allBranchHistoryMode ? `${shiftHistory.length} shift${shiftHistory.length === 1 ? "" : "s"} across accessible branches` : shift ? `Opened ${new Date(shift.openedAt).toLocaleString()}` : "Ready to start a new drawer"}</span>
+              <b>{shift ? shift.cashierName ?? shift.cashierId : selectedTerminal?.name ?? terminalId}</b>
             </div>
             <button className="primary-button wide-field" disabled={allBranchHistoryMode || Boolean(shift)} type="submit"><Plus size={18} /> Open shift</button>
           </form>
@@ -870,8 +873,8 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
                     <td className="number-cell">{shiftsPage.startIndex + index + 1}</td>
                     <td>{item.id}</td>
                     <td>{branchNameById.get(item.branchId) ?? item.branchId}</td>
-                    <td>{item.terminalId}</td>
-                    <td>{item.cashierId}</td>
+                    <td>{terminalNameById.get(item.terminalId) ?? item.terminalId}</td>
+                    <td>{item.cashierName ?? item.cashierId}</td>
                     <td>{new Date(item.openedAt).toLocaleString()}</td>
                     <td>{item.closedAt ? new Date(item.closedAt).toLocaleString() : "Still open"}</td>
                     <td>{displayMoney(item.expectedCash)}</td>
@@ -898,7 +901,7 @@ export function RegisterView({ approvalHandoff, onApprovalHandoffConsumed }: Reg
 
       <section className="panel register-timeline">
         <Clock3 size={18} />
-        <span>{shift ? `${shift.id} is open on ${shift.terminalId}` : "No active drawer. POS payments are blocked until a register is opened."}</span>
+        <span>{shift ? `Drawer open on ${terminalNameById.get(shift.terminalId) ?? shift.terminalId} since ${new Date(shift.openedAt).toLocaleString()}${shift.cashierName ? `, opened by ${shift.cashierName}` : ""}` : "No active drawer. POS payments are blocked until a register is opened."}</span>
         <div className="hardware-status hardware-status-inline">
           <div className={`hardware-status-row ${drawerReady ? "" : "off"}`}>
             <Banknote size={15} />

@@ -1233,7 +1233,7 @@ export function SalesTerminal({ tableContext, onClearTableContext, onTableSettle
 
         <div className="totals">
           <span>Subtotal <b>{displayMoney(summary.subtotal)}</b></span>
-          <span>Discount <b>-{displayMoney(summary.discount)}</b></span>
+          <span>Discount <b>{summary.discount ? `-${displayMoney(summary.discount)}` : displayMoney(0)}</b></span>
           <span>Service charge <b>{displayMoney(summary.serviceCharge)}</b></span>
           <span>VAT <b>{displayMoney(summary.vat)}</b></span>
           <strong>Total due <b>{displayMoney(summary.total)}</b></strong>

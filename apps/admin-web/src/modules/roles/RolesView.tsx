@@ -358,10 +358,10 @@ export function RolesView() {
               <div className="permission-groups">
                 {permissionGroupPage.pageRows.length === 0 ? (
                   <div className="empty-state">No permissions match the current search.</div>
-                ) : permissionGroupPage.pageRows.map(([group, groupPermissions], groupIndex) => (
+                ) : permissionGroupPage.pageRows.map(([group, groupPermissions]) => (
                   <div className="permission-group" key={group}>
-                    <h3><span className="number-cell">{permissionGroupPage.startIndex + groupIndex + 1}</span>{group}</h3>
-                    {groupPermissions.map((permission, permissionIndex) => (
+                    <h3>{group}</h3>
+                    {groupPermissions.map((permission) => (
                       <label className="permission-row" key={permission.action}>
                         <input
                           type="checkbox"
@@ -370,7 +370,7 @@ export function RolesView() {
                           onChange={() => togglePermission(permission.action)}
                         />
                         <span>
-                          <strong><span className="number-cell">{permissionIndex + 1}</span>{permission.label}</strong>
+                          <strong>{permission.label}</strong>
                           <small>{permission.description}</small>
                         </span>
                       </label>

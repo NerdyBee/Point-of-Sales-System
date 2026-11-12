@@ -220,6 +220,24 @@ describe("api foundation", () => {
     expect(response.body.approval).toMatchObject({ requestedBy: "cashier-1" });
   });
 
+  it("names the staff in approvals and the audit log", async () => {
+    const owner = (path: string) => request(app).get(path).set("x-tenant-id", "tenant-lagos-foods").set("x-role", "owner").set("x-user-id", "LCF-MAI-ADA");
+    await request(app)
+      .post("/api/v1/approvals")
+      .set("x-tenant-id", "tenant-lagos-foods")
+      .set("x-branch-id", "branch-lagos-main")
+      .set("x-role", "owner")
+      .set("x-user-id", "LCF-MAI-ADA")
+      .send({ branchId: "branch-lagos-main", type: "discount", entityType: "saleDraft", entityId: "terminal-web-1", amount: 500, reason: "Name check" });
+
+    const approvals = (await owner("/api/v1/approvals?branchId=branch-lagos-main")).body.approvals;
+    expect(approvals.find((approval: { reason: string }) => approval.reason === "Name check")).toMatchObject({ requestedBy: "LCF-MAI-ADA", requestedByName: "Adaeze Okafor" });
+
+    const events = (await owner("/api/v1/audit?branchId=branch-lagos-main&userId=LCF-MAI-ADA")).body.events;
+    expect(events.length).toBeGreaterThan(0);
+    expect(events[0]).toMatchObject({ userId: "LCF-MAI-ADA", userName: "Adaeze Okafor", branchName: "Main Branch" });
+  });
+
   it("filters products by tenant", async () => {
     const response = await request(app)
       .get("/api/v1/catalog/products")

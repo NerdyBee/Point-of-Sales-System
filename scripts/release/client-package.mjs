@@ -14,6 +14,10 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, wr
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Windows' own tar (it writes .zip). Not just "tar.exe": from Git Bash that finds GNU tar, which
+// reads "c:\..." as a network host and fails.
+const windowsTar = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe");
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const release = join(root, "release");
 const marketing = join(release, "marketing");
@@ -65,7 +69,7 @@ WHAT IS IN THIS FOLDER
   2 - Installation Video.mp4     The same steps as a short video (3 minutes)
   3 - Installer                  The Ajoke POS installation file (${megabytes(files[2][0])})
   4 - User Manual.pdf            How to use Ajoke POS every day
-  5 - Ajoke POS Tour Video.mp4   A 4-minute tour of everything Ajoke POS does
+  5 - Ajoke POS Tour Video.mp4   A tour of everything Ajoke POS does (7 minutes)
 
 WHAT TO DO
   1. Watch the installation video, or open the installation guide.
@@ -86,5 +90,5 @@ Ajoke POS version ${version}
 const archive = join(release, `${name}.zip`);
 rmSync(archive, { force: true });
 // Windows' built-in tar writes zip files; videos and the installer are already compressed.
-execFileSync("tar.exe", ["-a", "-c", "-f", archive, name], { cwd: release, stdio: "inherit" });
+execFileSync(windowsTar, ["-a", "-c", "-f", archive, name], { cwd: release, stdio: "inherit" });
 console.log(`\nClient package: ${archive} (${megabytes(archive)})\nFolder:         ${folder}`);
