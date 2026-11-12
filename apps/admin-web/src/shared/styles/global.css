@@ -4938,3 +4938,41 @@ th {
 .accountant-export-actions small {
   color: var(--muted);
 }
+
+/* Debtors and creditors ageing (Reports) */
+.ageing-reports h3 {
+  align-items: center;
+  display: flex;
+  font-size: 15px;
+  gap: 8px;
+  margin: 16px 0 8px;
+}
+
+.ageing-heading {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.ageing-heading .accountant-export-controls {
+  margin-bottom: 8px;
+}
+
+.ageing-table td small {
+  color: var(--muted);
+  display: block;
+  font-size: 11px;
+}
+
+.ageing-table tfoot td {
+  border-top: 2px solid var(--outline);
+  font-weight: 700;
+}
+
+.ageing-table .ageing-overdue td:nth-child(5),
+.ageing-table .ageing-over-limit {
+  color: #b42318;
+  font-weight: 700;
+}

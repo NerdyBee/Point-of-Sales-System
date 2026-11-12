@@ -1,4 +1,4 @@
-import { Check, CreditCard, Gift, MessageCircle, Pencil, Plus, RefreshCcw, Search, X } from "lucide-react";
+import { Check, CreditCard, FileText, Gift, MessageCircle, Pencil, Plus, RefreshCcw, Search, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyApproval,
@@ -22,6 +22,7 @@ import {
 import { StatusBadge } from "../../shared/components/StatusBadge";
 import { TablePagination, usePaginatedRows } from "../../shared/components/TablePagination";
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
+import { printCustomerStatement } from "./statementPrint";
 import { dateRangeErrorMessage, hasInvertedDateRange } from "../../shared/utils/dateFilters";
 
 import { MoneyInput } from "../../shared/components/MoneyInput";
@@ -77,7 +78,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
   const [ledgerEndDate, setLedgerEndDate] = useState("");
   const [ledgerModalOpen, setLedgerModalOpen] = useState(false);
   const [status, setStatus] = useState("Ready");
-  const { displayMoney } = useTenantSettings();
+  const { settings: tenantSettings, displayMoney } = useTenantSettings();
   const handledApprovalIdRef = useRef<string | null>(null);
 
   const creditExposure = useMemo(() => customers.reduce((sum, customer) => sum + customer.outstandingBalance, 0), [customers]);
@@ -266,6 +267,17 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
     setModalOpen(false);
     setSelectedCustomer(null);
     setForm(blankCustomer);
+  }
+
+  /** Statement for the ledger dates if chosen, otherwise the last three months. */
+  async function printStatement(customer: Customer) {
+    if (!tenantSettings) return;
+    const day = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    const today = new Date();
+    const from = ledgerStartDate || day(new Date(today.getFullYear(), today.getMonth() - 2, 1));
+    const to = ledgerEndDate || day(today);
+    const error = await printCustomerStatement(customer.id, from, to, tenantSettings, (amount) => displayMoney(amount));
+    setStatus(error || `Statement for ${customer.name} opened`);
   }
 
   async function openLedgerModal(customer: Customer, type: CustomerLedgerPayload["type"]) {
@@ -565,6 +577,7 @@ export function CustomersView({ approvalHandoff, onApprovalHandoffConsumed }: Cu
                       <button onClick={() => openLedgerModal(customer, "loyalty_adjustment")} aria-label={`Reward ${customer.name}`}><Gift size={16} /></button>
                       <button onClick={() => openLedgerModal(customer, "payment")} aria-label={`Record payment for ${customer.name}`}><MessageCircle size={16} /></button>
                       <button onClick={() => openLedgerModal(customer, "credit_sale")} aria-label={`Post credit sale for ${customer.name}`}><CreditCard size={16} /></button>
+                      <button onClick={() => void printStatement(customer)} aria-label={`Print statement for ${customer.name}`} title="Statement of account"><FileText size={16} /></button>
                       <button onClick={() => editCustomer(customer)} aria-label={`Edit ${customer.name}`}><Pencil size={16} /></button>
                     </td>
                   </tr>

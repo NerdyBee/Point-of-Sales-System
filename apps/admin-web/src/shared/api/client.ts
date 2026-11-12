@@ -2255,3 +2255,53 @@ export async function applyApproval(approvalId: string, entityType: string, enti
     body: JSON.stringify({ entityType, entityId, type, amount, note })
   });
 }
+
+export interface AgeBuckets {
+  current: number;
+  days31to60: number;
+  days61to90: number;
+  over90: number;
+}
+
+export interface DebtorAgeingRow {
+  customerId: string;
+  name: string;
+  phone: string;
+  creditLimit: number;
+  total: number;
+  buckets: AgeBuckets;
+  oldestDays: number;
+}
+
+export interface CreditorAgeingRow {
+  supplierId: string;
+  name: string;
+  total: number;
+  buckets: AgeBuckets & { notDue: number };
+  invoices: { invoiceNumber: string; invoiceDate: string; dueDate: string | null; balanceDue: number; daysOverdue: number }[];
+}
+
+export interface CustomerStatement {
+  from: string;
+  to: string;
+  customer: { id: string; name: string; phone: string; email: string; creditLimit: number; outstandingBalance: number };
+  openingBalance: number;
+  lines: { date: string; type: string; description: string; debit: number; credit: number; balance: number }[];
+  closingBalance: number;
+  ageing: AgeBuckets;
+}
+
+/** Customers who owe money, split by how old the debt is. */
+export async function fetchDebtorsAgeing() {
+  return requestJson<{ asOf: string; rows: DebtorAgeingRow[] }>("/api/v1/accounts/debtors");
+}
+
+/** Unpaid supplier invoices by supplier, split by how overdue they are. */
+export async function fetchCreditorsAgeing(branchId = "") {
+  return requestJson<{ asOf: string; rows: CreditorAgeingRow[] }>(`/api/v1/accounts/creditors${queryString({ branchId })}`);
+}
+
+/** A customer's statement of account (dates as YYYY-MM-DD). */
+export async function fetchCustomerStatement(customerId: string, from: string, to: string) {
+  return requestJson<CustomerStatement>(`/api/v1/accounts/customers/${encodeURIComponent(customerId)}/statement${queryString({ from, to })}`);
+}
