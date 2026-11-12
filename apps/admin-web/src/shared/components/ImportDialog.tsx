@@ -21,7 +21,7 @@ export const importGuides: Record<ImportKind, ImportGuide> = {
       ["Peak Milk Tin 400g", "Groceries", 2200, 1800, 60, 12, "", "", ""]
     ],
     notes: [
-      "Blank SKU: one is made from the category (e.g. GRO-0001). A SKU already in this branch updates that product's name, prices and category.",
+      "A SKU already in this branch, or with no SKU a product of the same name, updates that product's prices and category. New products without a SKU get one made from the category (e.g. GRO-0001).",
       "Stock is the opening stock for new products. Existing products keep their stock: use a stock count to change it.",
       "New categories are added for you. Products get a plain picture until you upload one."
     ]

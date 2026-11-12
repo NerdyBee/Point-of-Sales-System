@@ -29,6 +29,10 @@ describe("spreadsheet imports", () => {
     expect(zobo).toMatchObject({ price: 700, stock: 48, image: "/uploads/products/no-image.svg" });
     expect(zobo.sku).toMatch(/^IMP-\d{4}$/);
     expect(after.find((product) => product.sku === "MEAL-JOLLOF")!.price).toBe(9000);
+    // The same sheet again: recognised by name, not duplicated.
+    const again = await post("products", { rows: rows.slice(0, 1), commit: true });
+    expect(again.body).toMatchObject({ created: 0, updated: 1 });
+    expect((await products()).filter((product) => product.name === "Imported Zobo 50cl")).toHaveLength(1);
   });
 
   it("creates customers with an opening balance that ages from its date", async () => {

@@ -43,8 +43,9 @@ async function ensurePlaceholderImage() {
 }
 
 /**
- * Products: new SKUs (or no SKU) are created with their opening stock; a SKU already in this
- * branch updates that product's name, category, prices and reorder point. Stock on existing
+ * Products: new ones are created with their opening stock; a SKU already in this branch (or,
+ * when the row has no SKU, a product of the same name there) updates that product's name,
+ * category, prices and reorder point. Stock on existing
  * products is left alone: change it with a stock count, so the movement is recorded.
  */
 export async function importProducts(context: ImportContext, rows: RowResult<ProductRow>[]) {
@@ -52,6 +53,9 @@ export async function importProducts(context: ImportContext, rows: RowResult<Pro
   if (!settings) throw new Error("Business not found");
   const existing = await listCatalogProducts(context.tenantId);
   const bySku = new Map(existing.map((product) => [product.sku.toLowerCase(), product]));
+  // Without a SKU, a product is recognised by its name in this branch, so importing the same
+  // sheet twice updates rather than duplicates.
+  const byName = new Map(existing.filter((product) => product.branchId === context.branchId).map((product) => [product.name.trim().toLowerCase(), product]));
   const byBarcode = new Map(existing.filter((product) => product.barcode).map((product) => [product.barcode.toLowerCase(), product]));
   const categories = new Map(settings.productCategories.map((category) => [category.toLowerCase(), category]));
   const newCategories: string[] = [];
@@ -65,7 +69,7 @@ export async function importProducts(context: ImportContext, rows: RowResult<Pro
     }
     const data = { ...result.data, category: categories.get(result.data.category.toLowerCase()) ?? result.data.category };
     const outcome: ImportOutcome = { row: result.row, action: "create", label: data.name, errors: [], warnings: [] };
-    const match = data.sku ? bySku.get(data.sku.toLowerCase()) : undefined;
+    const match = data.sku ? bySku.get(data.sku.toLowerCase()) : byName.get(data.name.trim().toLowerCase());
     if (match && match.branchId !== context.branchId) outcome.errors.push(`SKU ${data.sku} is used by "${match.name}" in another branch`);
     else if (match) {
       outcome.action = "update";
