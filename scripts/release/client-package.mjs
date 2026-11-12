@@ -24,7 +24,10 @@ const folder = join(release, name);
 
 if (!process.argv.includes("--skip-build")) {
   console.log("Rebuilding the office installer...");
-  execFileSync(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "release", "--", "--office"], { cwd: root, stdio: "inherit", shell: process.platform === "win32" });
+  // npm is a .cmd file on Windows, started through cmd.exe (the `shell` option is deprecated).
+  const args = ["run", "release", "--", "--office"];
+  if (process.platform === "win32") execFileSync("cmd.exe", ["/d", "/s", "/c", "npm", ...args], { cwd: root, stdio: "inherit" });
+  else execFileSync("npm", args, { cwd: root, stdio: "inherit" });
 }
 
 // Numbered so the files sort in the order a client should open them.

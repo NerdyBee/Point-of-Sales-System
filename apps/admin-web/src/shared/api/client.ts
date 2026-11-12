@@ -964,6 +964,8 @@ export interface TenantSettings {
   website?: string;
   /** Receipt heading; "SALES INVOICE" when empty. */
   receiptTitle?: string;
+  /** Ledger names for the accountant's export (blank = the default name). */
+  accounting?: AccountingLedgers;
   productCategories: string[];
   receiptFooter: string;
   whatsappReceipts: boolean;
@@ -2048,6 +2050,57 @@ export async function fetchLicenseStatus() {
 
 export async function activateServerLicense(code: string) {
   return requestPublicJson<LicenseStatus>("/api/v1/license", { method: "POST", body: JSON.stringify({ code }) });
+}
+
+export interface AccountingLedgers {
+  tallyCompany?: string;
+  sales?: string;
+  salesReturns?: string;
+  vat?: string;
+  serviceCharge?: string;
+  discount?: string;
+  cash?: string;
+  card?: string;
+  bankTransfer?: string;
+  mobileMoney?: string;
+  voucher?: string;
+  purchases?: string;
+  customerLedger?: "customer" | "shared";
+  sharedCustomerLedger?: string;
+  supplierLedger?: "supplier" | "shared";
+  sharedSupplierLedger?: string;
+}
+
+export interface AccountingExportSummary {
+  from: string;
+  to: string;
+  currency?: string;
+  tallyCompany: string;
+  ledgers: Required<Omit<AccountingLedgers, "tallyCompany">>;
+  voucherCount: number;
+  byType: Record<string, { count: number; total: number }>;
+}
+
+/** What the accountant's export for a period holds (dates as YYYY-MM-DD). */
+export async function fetchAccountingSummary(from: string, to: string, branchId = "") {
+  return requestJson<AccountingExportSummary>(`/api/v1/accounting/export${queryString({ from, to, branchId, format: "summary" })}`);
+}
+
+/** Downloads one of the accountant's files: Tally vouchers or ledgers, or the CSV day book. */
+export async function downloadAccountingExport(format: "tally" | "tally-ledgers" | "csv", from: string, to: string, branchId = "") {
+  const response = await fetch(`${apiBaseUrl}/api/v1/accounting/export${queryString({ from, to, branchId, format })}`, { headers: composeHeaders() });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error ?? `Export failed (${response.status})`);
+  }
+  const name = /filename="([^"]+)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ?? `ajokepos-${format}`;
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
+  return name;
 }
 
 export interface SetupStatus {

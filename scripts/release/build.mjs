@@ -42,8 +42,11 @@ const wantOffice = !args.has("--cloud");
 
 function run(command, commandArgs, cwd = root) {
   console.log(`> ${command} ${commandArgs.join(" ")}`);
-  // npm/npx are .cmd files on Windows, which only run through a shell; arguments here are fixed strings.
-  execFileSync(process.platform === "win32" ? `${command}.cmd` : command, commandArgs, { cwd, stdio: "inherit", shell: process.platform === "win32" });
+  // npm/npx are .cmd files on Windows, started through cmd.exe (the `shell` option is deprecated).
+  // Prisma's "update available" notice is about pre-release versions; not wanted in builds.
+  const env = { ...process.env, PRISMA_HIDE_UPDATE_MESSAGE: "1" };
+  if (process.platform === "win32") execFileSync("cmd.exe", ["/d", "/s", "/c", command, ...commandArgs], { cwd, stdio: "inherit", env });
+  else execFileSync(command, commandArgs, { cwd, stdio: "inherit", env });
 }
 
 function installedVersion(name) {

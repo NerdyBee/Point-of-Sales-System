@@ -4888,3 +4888,53 @@ th {
   padding: 4px 8px;
   white-space: nowrap;
 }
+
+/* Export for accountant (Reports) */
+.muted-text {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0 0 12px;
+}
+
+.accountant-export-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.accountant-export-controls label {
+  color: var(--muted);
+  display: grid;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 4px;
+}
+
+.accountant-export-controls input,
+.accountant-export-controls select {
+  border: 1px solid var(--outline);
+  border-radius: 6px;
+  min-height: 36px;
+  padding: 0 8px;
+}
+
+.accountant-export-summary {
+  margin-bottom: 12px;
+  max-width: 560px;
+}
+
+.accountant-export-actions {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.accountant-export-actions > div {
+  display: grid;
+  gap: 6px;
+}
+
+.accountant-export-actions small {
+  color: var(--muted);
+}

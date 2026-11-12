@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchBranchOptions, fetchDashboardReport, readStoredAuth, type BranchOption, type DashboardReport, type ReportPeriod } from "../../shared/api/client";
 import { StatCard } from "../../shared/components/StatCard";
 import { TablePagination, usePaginatedRows } from "../../shared/components/TablePagination";
+import { AccountantExport } from "./AccountantExport";
 import { useTenantSettings } from "../../shared/hooks/useTenantSettings";
 import { dateRangeErrorMessage, hasInvertedDateRange } from "../../shared/utils/dateFilters";
 
@@ -695,6 +696,7 @@ export function ReportsView() {
         />
       </section>
       )}
+      <AccountantExport />
     </div>
   );
 }

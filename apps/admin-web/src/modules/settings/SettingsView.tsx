@@ -1,4 +1,4 @@
-import { Building2, Check, CreditCard, Pencil, Plus, Printer, ReceiptText, RefreshCcw, Search, Tag, Trash2, X } from "lucide-react";
+import { Building2, Check, Landmark, CreditCard, Pencil, Plus, Printer, ReceiptText, RefreshCcw, Search, Tag, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { fetchBranchOptions, fetchCatalogProducts, fetchCurrentTenant, readStoredAuth, renameProductCategory, updateTenantSettings, type BranchOption, type TenantProfile, type TenantSettings } from "../../shared/api/client";
 import { notifyTenantSettingsUpdated } from "../../shared/hooks/useTenantSettings";
@@ -97,6 +97,10 @@ export function SettingsView() {
   useEffect(() => {
     void loadSettings();
   }, []);
+
+  function updateAccounting(key: keyof NonNullable<TenantSettings["accounting"]>, value: string) {
+    updateSetting("accounting", { ...(settings.accounting ?? {}), [key]: value } as TenantSettings["accounting"]);
+  }
 
   function updateSetting<K extends keyof TenantSettings>(key: K, value: TenantSettings[K]) {
     setSettings((current) => ({ ...current, [key]: value }));
@@ -333,6 +337,74 @@ export function SettingsView() {
             <label className="toggle-line">
               <input type="checkbox" checked={settings.serviceChargeEnabled} onChange={(event) => updateSetting("serviceChargeEnabled", event.target.checked)} />
               Include service charge by default
+            </label>
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-header">
+            <h2>Accounting export</h2>
+            <Landmark size={20} />
+          </div>
+          <p className="muted-text">Ledger names for the export on the Reports page. Use the names in your accountant's Tally company; leave a box empty for the name shown.</p>
+          <div className="settings-form">
+            <label>
+              Company name in Tally
+              <input value={settings.accounting?.tallyCompany ?? ""} onChange={(event) => updateAccounting("tallyCompany", event.target.value)} placeholder="Exactly as in Tally" />
+            </label>
+            <label>
+              Sales
+              <input value={settings.accounting?.sales ?? ""} onChange={(event) => updateAccounting("sales", event.target.value)} placeholder="Sales Account" />
+            </label>
+            <label>
+              Sales returns
+              <input value={settings.accounting?.salesReturns ?? ""} onChange={(event) => updateAccounting("salesReturns", event.target.value)} placeholder="Sales Returns" />
+            </label>
+            <label>
+              VAT
+              <input value={settings.accounting?.vat ?? ""} onChange={(event) => updateAccounting("vat", event.target.value)} placeholder="Output VAT" />
+            </label>
+            <label>
+              Service charge
+              <input value={settings.accounting?.serviceCharge ?? ""} onChange={(event) => updateAccounting("serviceCharge", event.target.value)} placeholder="Service Charge" />
+            </label>
+            <label>
+              Discounts
+              <input value={settings.accounting?.discount ?? ""} onChange={(event) => updateAccounting("discount", event.target.value)} placeholder="Discount Allowed" />
+            </label>
+            <label>
+              Cash
+              <input value={settings.accounting?.cash ?? ""} onChange={(event) => updateAccounting("cash", event.target.value)} placeholder="Cash" />
+            </label>
+            <label>
+              Card payments
+              <input value={settings.accounting?.card ?? ""} onChange={(event) => updateAccounting("card", event.target.value)} placeholder="POS Card Account" />
+            </label>
+            <label>
+              Transfers
+              <input value={settings.accounting?.bankTransfer ?? ""} onChange={(event) => updateAccounting("bankTransfer", event.target.value)} placeholder="Bank Account" />
+            </label>
+            <label>
+              Mobile money
+              <input value={settings.accounting?.mobileMoney ?? ""} onChange={(event) => updateAccounting("mobileMoney", event.target.value)} placeholder="Mobile Money" />
+            </label>
+            <label>
+              Purchases
+              <input value={settings.accounting?.purchases ?? ""} onChange={(event) => updateAccounting("purchases", event.target.value)} placeholder="Purchase Account" />
+            </label>
+            <label>
+              Customer accounts
+              <select value={settings.accounting?.customerLedger ?? "customer"} onChange={(event) => updateAccounting("customerLedger", event.target.value)}>
+                <option value="customer">Each customer's own ledger (Sundry Debtors)</option>
+                <option value="shared">One shared ledger</option>
+              </select>
+            </label>
+            <label>
+              Supplier accounts
+              <select value={settings.accounting?.supplierLedger ?? "supplier"} onChange={(event) => updateAccounting("supplierLedger", event.target.value)}>
+                <option value="supplier">Each supplier's own ledger (Sundry Creditors)</option>
+                <option value="shared">One shared ledger</option>
+              </select>
             </label>
           </div>
         </section>

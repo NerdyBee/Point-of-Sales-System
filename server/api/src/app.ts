@@ -4,6 +4,7 @@ import helmet from "helmet";
 import morgan from "morgan";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { accountingRouter } from "./modules/accounting/accounting.routes";
 import { approvalsRouter } from "./modules/approvals/approvals.routes";
 import { authRouter } from "./modules/auth/auth.routes";
 import { auditRouter } from "./modules/audit/audit.routes";
@@ -62,6 +63,7 @@ export function createApp() {
   app.use("/api/v1/sync", syncRouter);
   app.use("/api/v1/approvals", approvalsRouter);
   app.use("/api/v1/audit", auditRouter);
+  app.use("/api/v1/accounting", accountingRouter);
 
   // Installed builds serve the admin web app from the same address as the API.
   const webDir = process.env.WEB_DIR ? path.resolve(process.env.WEB_DIR) : "";
